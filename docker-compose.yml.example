@@ -1,0 +1,53 @@
+services:
+  web:
+    build:
+      context: ./web
+      target: dev
+    ports:
+      - '3000:3000'
+    env_file:
+      - ./web/.env.local
+    volumes:
+      - ./web/src:/app/src
+      - ./web/public:/app/public
+      - type: bind
+        source: '~/.config'
+        target: '/root/.config'
+    environment:
+      - AGENT_API_URL=http://agent:8000
+    depends_on:
+      agent:
+        condition: service_healthy
+    restart: unless-stopped
+    healthcheck:
+      test: ['CMD', 'wget', '--spider', '-q', 'http://localhost:3000']
+      interval: 10s
+      timeout: 5s
+      retries: 3
+      start_period: 15s
+
+  agent:
+    build:
+      context: ./agent
+    ports:
+      - '8000:8000'
+    volumes:
+      - ./agent/src:/app/src
+      - ./agent/knowledge:/app/knowledge
+      - type: bind
+        source: '~/.config'
+        target: '/root/.config'
+    environment:
+      - GOOGLE_CLOUD_PROJECT=your-gcp-project-id
+      - GOOGLE_CLOUD_LOCATION=us-central1
+      - GOOGLE_GENAI_USE_VERTEXAI=true
+      - GCS_BUCKET=your-gcs-bucket
+      - RECOMMEND_MODE=no_grounding  # hybrid | web_only | no_grounding
+      - USE_PERSONAL_DATA=true  # true | false
+    restart: unless-stopped
+    healthcheck:
+      test: ['CMD', 'python', '-c', 'import urllib.request; urllib.request.urlopen("http://localhost:8000/docs")']
+      interval: 10s
+      timeout: 5s
+      retries: 3
+      start_period: 10s

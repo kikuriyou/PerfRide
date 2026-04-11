@@ -1,0 +1,23 @@
+# docs/.doc-deps.yml
+# ドキュメントが記述するソースファイルの依存関係
+# CIでソースが変更されたのにドキュメントが未更新の場合に警告する
+
+docs/product-specs/implementation-specification.md:
+  - web/src/app/simulator/_lib/physics.ts
+  - web/src/app/optimizer/_lib/paceOptimizer.ts
+  - web/src/app/planner/_lib/planner.ts
+  - web/src/lib/strava.ts
+  - web/src/lib/auth.ts
+
+docs/product-specs/team-specification.md:
+  - web/src/app/simulator/_lib/physics.ts
+  - web/src/app/optimizer/_lib/paceOptimizer.ts
+  - web/src/app/planner/_lib/planner.ts
+
+ARCHITECTURE.md:
+  - web/src/app/api/
+
+README.md:
+  - web/src/app/
+  - web/src/components/
+  - web/src/lib/

@@ -1,0 +1,48 @@
+version: 1
+
+summary_rules:
+  write_command: uv run --no-project python3 .claude/scripts/sync_ai_context.py --write
+  check_command: uv run --no-project python3 .claude/scripts/sync_ai_context.py --check
+
+sources:
+  claude_project:
+    path: .claude/context/project-context.md
+    description: Project overview, commands, and repository conventions.
+  codex_contract:
+    path: .claude/context/codex-agent-contract.md
+    description: Codex-specific responsibilities, output shape, and quality rules.
+  workflow_rule:
+    path: .claude/rules/workflow.md
+    description: Task lifecycle, automated hooks, and recovery protocol.
+  self_improvement_rule:
+    path: .claude/rules/self-improvement.md
+    description: How to respond after user corrections.
+  design_doc:
+    path: .claude/docs/DESIGN.md
+    description: Architecture decisions, implementation patterns, and open questions.
+  registry:
+    path: .claude/context/registry.yml
+    description: Machine-readable source registry for generated AI entry files.
+
+outputs:
+  claude_entry:
+    path: CLAUDE.md
+    kind: claude_entry
+    title: PerfRide
+    body: claude_project
+    references:
+      - workflow_rule
+      - self_improvement_rule
+      - design_doc
+      - registry
+  codex_agents:
+    path: .codex/AGENTS.md
+    kind: codex_agents
+    title: AGENTS.md — Codex Agent Contract
+    body: codex_contract
+    inline_references: true
+    references:
+      - claude_project
+      - workflow_rule
+      - self_improvement_rule
+      - design_doc

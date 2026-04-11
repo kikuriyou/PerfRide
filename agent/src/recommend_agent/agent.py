@@ -1,0 +1,111 @@
+"""PerfRide Training Recommendation Agent - ADK Agent Definition."""
+
+from pathlib import Path
+
+from google.adk.agents import Agent
+
+from recommend_agent.constants import RECOMMEND_MODE, USE_PERSONAL_DATA
+from recommend_agent.tools.get_expert_knowledge import get_expert_knowledge
+from recommend_agent.tools.get_recent_activities import get_recent_activities
+from recommend_agent.tools.search_latest_knowledge import search_latest_knowledge
+
+# Load system prompts from markdown files
+_PROMPT_DIR = Path(__file__).parent / "prompts"
+_SYSTEM_PROMPT = (_PROMPT_DIR / "system_prompt.md").read_text(encoding="utf-8")
+_GENERIC_PROMPT = (_PROMPT_DIR / "system_prompt_generic.md").read_text(encoding="utf-8")
+
+# Cache agents by (mode, use_personal_data) to avoid rebuilding per request
+_agent_cache: dict[tuple[str, bool], Agent] = {}
+
+
+def _build_tools(mode: str, use_personal_data: bool) -> list:
+    tools: list = []
+
+    if use_personal_data:
+        tools.append(get_recent_activities)
+
+    if mode == "web_only":
+        tools.append(search_latest_knowledge)
+    elif mode == "no_grounding":
+        pass
+    else:
+        # hybrid (default)
+        tools.extend([get_expert_knowledge, search_latest_knowledge])
+
+    return tools
+
+
+def _build_instruction(mode: str, use_personal_data: bool) -> str:
+    prompt = _SYSTEM_PROMPT if use_personal_data else _GENERIC_PROMPT
+
+    _old_rules = (
+        "3. Call `get_expert_knowledge` to reference "
+        "specific workout templates or training science\n"
+        "4. Only call `search_latest_knowledge` when "
+        "the knowledge files don't cover the situation"
+    )
+
+    if mode == "web_only":
+        prompt = prompt.replace(
+            _old_rules,
+            "3. Call `search_latest_knowledge` to retrieve "
+            "training knowledge for the recommendation",
+        )
+        prompt = prompt.replace(
+            "12. `get_expert_knowledge` や `search_latest_knowledge` "
+            "で取得した情報を使った場合、ツールが返す `sources` を"
+            "JSON出力の `references` フィールドに含めること",
+            "12. `search_latest_knowledge` で取得した情報を使った場合、"
+            "ツールが返す `sources` をJSON出力の `references` フィールドに含めること",
+        )
+    elif mode == "no_grounding":
+        prompt = prompt.replace(
+            _old_rules,
+            "3. あなたの知識に基づいてトレーニングを推薦すること",
+        )
+        prompt = prompt.replace(
+            "12. `get_expert_knowledge` や `search_latest_knowledge` "
+            "で取得した情報を使った場合、ツールが返す `sources` を"
+            "JSON出力の `references` フィールドに含めること\n"
+            "13. 実際に参照した情報源のみを含め、参照を捏造しないこと\n",
+            "",
+        )
+        prompt = prompt.replace(
+            "- `references`: 参照した情報源の配列（省略可）。各要素:\n"
+            "  - `title`: ソース名・文献引用（string）\n"
+            "  - `url`: URL（string or null）",
+            "",
+        )
+        prompt = prompt.replace(
+            ',\n  "references": [\n'
+            '    {"title": "Training and Racing with a Power Meter'
+            ' - Coggan & Allen", "url": null},\n'
+            '    {"title": "TrainerRoad Blog", '
+            '"url": "https://www.trainerroad.com/blog"}\n'
+            "  ]",
+            "",
+        )
+
+    return prompt
+
+
+def build_agent(mode: str, use_personal_data: bool) -> Agent:
+    key = (mode, use_personal_data)
+    if key in _agent_cache:
+        return _agent_cache[key]
+
+    agent = Agent(
+        name="recommend_training_agent",
+        model="gemini-2.5-flash",
+        description=(
+            "Cycling training recommendation agent that suggests "
+            "today's workout based on recent activity data and training goals."
+        ),
+        instruction=_build_instruction(mode, use_personal_data),
+        tools=_build_tools(mode, use_personal_data),
+    )
+    _agent_cache[key] = agent
+    return agent
+
+
+root_agent = build_agent(RECOMMEND_MODE, USE_PERSONAL_DATA)
