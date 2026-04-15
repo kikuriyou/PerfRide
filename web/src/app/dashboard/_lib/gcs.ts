@@ -22,6 +22,7 @@ interface ActivityCacheData {
     max_heartrate: number | null;
     suffer_score: number | null;
     tss_estimated: number;
+    intensity_factor: number | null;
   }>;
   fitness_metrics: {
     ctl: number;
@@ -84,7 +85,10 @@ export async function writeActivityCache(
   const processedActivities = rides.map((activity) => {
     const tss = estimateTSS(activity, ftp);
 
-    // Update daily CTL/ATL (simplified: treat each activity as a day)
+    const userFTP = ftp || 200;
+    const npWatts = activity.weighted_average_watts || activity.average_watts;
+    const intensityFactor = npWatts ? Math.round((npWatts / userFTP) * 100) / 100 : null;
+
     ctl = ctl + (tss - ctl) / CTL_DECAY;
     atl = atl + (tss - atl) / ATL_DECAY;
 
@@ -104,6 +108,7 @@ export async function writeActivityCache(
       max_heartrate: activity.max_heartrate || null,
       suffer_score: activity.suffer_score || null,
       tss_estimated: Math.round(tss),
+      intensity_factor: intensityFactor,
     };
   });
 
@@ -174,6 +179,12 @@ export async function writeActivityCache(
       description: 'Strava Suffer Score (relative effort)',
     },
     { name: 'tss_estimated', type: 'number', description: 'Estimated Training Stress Score' },
+    {
+      name: 'intensity_factor',
+      type: 'number | null',
+      description:
+        'Intensity Factor = NP/FTP. Proxies ride intensity: <0.75 easy, 0.75-0.85 tempo, >=0.85 hard',
+    },
     {
       name: 'fitness_metrics.ctl',
       type: 'number',

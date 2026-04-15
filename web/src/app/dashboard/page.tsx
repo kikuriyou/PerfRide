@@ -6,6 +6,7 @@ import { cookies } from 'next/headers';
 import { redirect } from 'next/navigation';
 import FitnessChartWrapper from './_components/FitnessChartWrapper';
 import RideCard from './_components/RideCard';
+import InsightCards from './_components/InsightCards';
 import RecommendCard from './_components/RecommendCard';
 import { writeActivityCache } from './_lib/gcs';
 
@@ -47,9 +48,11 @@ export default async function DashboardPage() {
     const ftpCookie = cookieStore.get('perfride_ftp');
     const userFtp = ftpCookie ? parseInt(ftpCookie.value, 10) || 200 : 200;
 
-    writeActivityCache(allActivities, userFtp).catch((cacheErr) => {
+    try {
+      await writeActivityCache(allActivities, userFtp);
+    } catch (cacheErr) {
       console.error('Failed to write activity cache to GCS:', cacheErr);
-    });
+    }
   } catch (e) {
     console.error(e);
   }
@@ -78,6 +81,9 @@ export default async function DashboardPage() {
           Your recent activities and training summary
         </p>
       </header>
+
+      {/* Insight Cards */}
+      <InsightCards />
 
       {/* Today's Recommendation */}
       <section style={{ marginBottom: '1.5rem' }}>

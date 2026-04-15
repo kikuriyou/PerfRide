@@ -66,7 +66,7 @@ def search_latest_knowledge(query: str) -> dict:
         grounded_query = f"{query} ({domain_filter})"
 
         response = client.models.generate_content(
-            model="gemini-2.5-flash-lite",
+            model="gemini-3.1-flash-lite-preview",
             contents=grounded_query,
             config=types.GenerateContentConfig(
                 tools=[types.Tool(google_search=types.GoogleSearch())],

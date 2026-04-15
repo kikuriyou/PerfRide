@@ -13,6 +13,7 @@ from recommend_agent.tools.search_latest_knowledge import search_latest_knowledg
 _PROMPT_DIR = Path(__file__).parent / "prompts"
 _SYSTEM_PROMPT = (_PROMPT_DIR / "system_prompt.md").read_text(encoding="utf-8")
 _GENERIC_PROMPT = (_PROMPT_DIR / "system_prompt_generic.md").read_text(encoding="utf-8")
+_INSIGHT_PROMPT = (_PROMPT_DIR / "insight_prompt.md").read_text(encoding="utf-8")
 
 # Cache agents by (mode, use_personal_data) to avoid rebuilding per request
 _agent_cache: dict[tuple[str, bool], Agent] = {}
@@ -96,7 +97,7 @@ def build_agent(mode: str, use_personal_data: bool) -> Agent:
 
     agent = Agent(
         name="recommend_training_agent",
-        model="gemini-2.5-flash",
+        model="gemini-3-flash-preview",
         description=(
             "Cycling training recommendation agent that suggests "
             "today's workout based on recent activity data and training goals."
@@ -106,6 +107,24 @@ def build_agent(mode: str, use_personal_data: bool) -> Agent:
     )
     _agent_cache[key] = agent
     return agent
+
+
+_insight_agent: Agent | None = None
+
+
+def build_insight_agent() -> Agent:
+    global _insight_agent
+    if _insight_agent is not None:
+        return _insight_agent
+
+    _insight_agent = Agent(
+        name="insight_agent",
+        model="gemini-3-flash-preview",
+        description="Generates user-facing insight text from detected training signals.",
+        instruction=_INSIGHT_PROMPT,
+        tools=[],
+    )
+    return _insight_agent
 
 
 root_agent = build_agent(RECOMMEND_MODE, USE_PERSONAL_DATA)

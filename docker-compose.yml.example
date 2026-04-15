@@ -39,7 +39,7 @@ services:
         target: '/root/.config'
     environment:
       - GOOGLE_CLOUD_PROJECT=your-gcp-project-id
-      - GOOGLE_CLOUD_LOCATION=us-central1
+      - GOOGLE_CLOUD_LOCATION=global
       - GOOGLE_GENAI_USE_VERTEXAI=true
       - GCS_BUCKET=your-gcs-bucket
       - RECOMMEND_MODE=no_grounding  # hybrid | web_only | no_grounding

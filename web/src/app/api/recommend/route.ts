@@ -21,6 +21,8 @@ export async function POST(request: Request) {
         goal_custom: body.goalCustom || null,
         recommend_mode: body.recommendMode || null,
         use_personal_data: body.usePersonalData ?? null,
+        constraint: body.constraint || null,
+        mode: body.mode || 'recommend',
       }),
     });
 

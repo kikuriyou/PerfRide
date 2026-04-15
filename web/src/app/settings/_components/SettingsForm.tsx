@@ -1,8 +1,26 @@
 'use client';
 
 import { useSettings } from '@/lib/settings';
-import type { RecommendMode } from '@/lib/settings';
+import type { RecommendMode, CoachAutonomy } from '@/lib/settings';
 import { useState, useEffect } from 'react';
+
+const COACH_AUTONOMY_OPTIONS: { value: CoachAutonomy; label: string; description: string }[] = [
+  {
+    value: 'observe',
+    label: 'データの変化だけ教えて',
+    description: 'トレーニングデータの変化を通知します。ワークアウト提案は表示しません。',
+  },
+  {
+    value: 'suggest',
+    label: 'トレーニングも提案して',
+    description: 'データ通知に加えて、今日のワークアウトを提案します。',
+  },
+  {
+    value: 'coach',
+    label: '週間プランまで任せたい',
+    description: '週単位のトレーニングプランを自動生成します（Phase 2で有効化予定）。',
+  },
+];
 
 const RECOMMEND_MODE_OPTIONS: { value: RecommendMode; label: string; description: string }[] = [
   {
@@ -33,6 +51,9 @@ export default function SettingsForm() {
     settings.recommendMode,
   );
   const [localUsePersonalData, setLocalUsePersonalData] = useState(settings.usePersonalData);
+  const [localCoachAutonomy, setLocalCoachAutonomy] = useState<CoachAutonomy>(
+    settings.coachAutonomy,
+  );
   const [saved, setSaved] = useState(false);
 
   useEffect(() => {
@@ -43,6 +64,7 @@ export default function SettingsForm() {
     setLocalGoalCustom(settings.goalCustom || '');
     setLocalRecommendMode(settings.recommendMode);
     setLocalUsePersonalData(settings.usePersonalData);
+    setLocalCoachAutonomy(settings.coachAutonomy);
   }, [settings]);
 
   const handleSave = () => {
@@ -54,6 +76,7 @@ export default function SettingsForm() {
       goalCustom: localGoalCustom,
       recommendMode: localRecommendMode,
       usePersonalData: localUsePersonalData,
+      coachAutonomy: localCoachAutonomy,
     });
     setSaved(true);
     setTimeout(() => setSaved(false), 2000);
@@ -227,6 +250,52 @@ export default function SettingsForm() {
             />
           </div>
         )}
+      </div>
+
+      {/* Coach Autonomy Setting */}
+      <div style={cardStyle}>
+        <h3 style={{ marginTop: 0, marginBottom: '1rem' }}>🧠 コーチの自律度</h3>
+        <p style={{ fontSize: '0.9rem', opacity: 0.7, marginBottom: '1rem' }}>
+          AIコーチがどこまで積極的に介入するかを選べます。
+        </p>
+        <div style={{ display: 'grid', gap: '0.75rem' }}>
+          {COACH_AUTONOMY_OPTIONS.map((opt) => (
+            <label
+              key={opt.value}
+              style={{
+                display: 'flex',
+                alignItems: 'flex-start',
+                gap: '0.75rem',
+                cursor: 'pointer',
+                padding: '0.75rem 1rem',
+                borderRadius: 'var(--radius-md)',
+                border: `1px solid ${localCoachAutonomy === opt.value ? 'var(--primary)' : 'var(--border)'}`,
+                background:
+                  localCoachAutonomy === opt.value ? 'color-mix(in srgb, var(--primary) 8%, transparent)' : 'transparent',
+                transition: 'border-color 0.15s, background 0.15s',
+              }}
+            >
+              <input
+                type="radio"
+                name="coachAutonomy"
+                value={opt.value}
+                checked={localCoachAutonomy === opt.value}
+                onChange={() => setLocalCoachAutonomy(opt.value)}
+                style={{
+                  marginTop: '0.2rem',
+                  accentColor: 'var(--primary)',
+                  cursor: 'pointer',
+                }}
+              />
+              <div>
+                <div style={{ fontWeight: 600 }}>{opt.label}</div>
+                <div style={{ fontSize: '0.85rem', opacity: 0.6, marginTop: '0.25rem' }}>
+                  {opt.description}
+                </div>
+              </div>
+            </label>
+          ))}
+        </div>
       </div>
 
       {/* Recommend Mode Setting */}

@@ -1,0 +1,22 @@
+- generic [active] [ref=e1]:
+  - banner [ref=e2]:
+    - generic [ref=e3]:
+      - generic [ref=e4]:
+        - link "PerfRide" [ref=e5] [cursor=pointer]:
+          - /url: /
+        - navigation [ref=e6]:
+          - link "Simulator" [ref=e7] [cursor=pointer]:
+            - /url: /simulator
+          - link "Optimizer" [ref=e8] [cursor=pointer]:
+            - /url: /optimizer
+          - link "Planner" [ref=e9] [cursor=pointer]:
+            - /url: /planner
+          - link "Settings" [ref=e10] [cursor=pointer]:
+            - /url: /settings
+      - generic [ref=e12]:
+        - 'button "Theme: system" [ref=e13] [cursor=pointer]': 🖥️
+        - button "Connect with Strava" [ref=e14] [cursor=pointer]
+  - main
+  - button "Open Next.js Dev Tools" [ref=e20] [cursor=pointer]:
+    - img [ref=e21]
+  - alert [ref=e26]

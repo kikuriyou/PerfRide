@@ -3,6 +3,7 @@
 import { createContext, useContext, useState, useEffect, ReactNode } from 'react';
 
 export type RecommendMode = 'hybrid' | 'web_only' | 'no_grounding';
+export type CoachAutonomy = 'observe' | 'suggest' | 'coach';
 
 interface UserSettings {
   ftp: number;
@@ -12,6 +13,7 @@ interface UserSettings {
   goalCustom?: string;
   recommendMode: RecommendMode;
   usePersonalData: boolean;
+  coachAutonomy: CoachAutonomy;
 }
 
 interface SettingsContextType {
@@ -27,6 +29,7 @@ const defaultSettings: UserSettings = {
   goalCustom: '',
   recommendMode: 'hybrid',
   usePersonalData: true,
+  coachAutonomy: 'suggest',
 };
 
 const SettingsContext = createContext<SettingsContextType | undefined>(undefined);
@@ -61,7 +64,16 @@ export function SettingsProvider({ children }: { children: ReactNode }) {
   }, [settings, isLoaded]);
 
   const updateSettings = (newSettings: Partial<UserSettings>) => {
-    setSettings((prev) => ({ ...prev, ...newSettings }));
+    setSettings((prev) => {
+      if (newSettings.ftp !== undefined && newSettings.ftp !== prev.ftp) {
+        try {
+          localStorage.removeItem('perfride_recommendation_cache');
+        } catch {
+          // ignore
+        }
+      }
+      return { ...prev, ...newSettings };
+    });
   };
 
   return (
