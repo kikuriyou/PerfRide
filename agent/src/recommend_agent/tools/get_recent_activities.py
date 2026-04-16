@@ -3,6 +3,8 @@
 import json
 import os
 
+from recommend_agent.tools._request_context import activity_override_var
+
 
 def get_recent_activities() -> dict:
     """Retrieves recent cycling activity data and schema from GCS shared storage.
@@ -14,6 +16,18 @@ def get_recent_activities() -> dict:
         dict: A dictionary containing 'status' and either 'data' with activities
               and schema, or 'error_message' on failure.
     """
+    override = activity_override_var.get()
+    if override is not None:
+        return {
+            "status": "success",
+            "data": {
+                "activities": override.get("activities", []),
+                "fitness_metrics": override.get("fitness_metrics", {}),
+                "last_updated": override.get("last_updated", "unknown"),
+                "schema": override.get("schema"),
+            },
+        }
+
     bucket_name = os.environ["GCS_BUCKET"]
 
     try:
@@ -22,7 +36,6 @@ def get_recent_activities() -> dict:
         client = storage.Client()
         bucket = client.bucket(bucket_name)
 
-        # Read activity cache
         activity_blob = bucket.blob("activity_cache.json")
         if not activity_blob.exists():
             return {
@@ -32,7 +45,6 @@ def get_recent_activities() -> dict:
 
         activity_data = json.loads(activity_blob.download_as_text())
 
-        # Read schema
         schema_data = None
         schema_blob = bucket.blob("schema.json")
         if schema_blob.exists():

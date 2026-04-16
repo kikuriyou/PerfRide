@@ -125,3 +125,38 @@ class TestSummarizeRecentRides:
         result = _summarize_recent_rides(activities, today)
         assert "AM Ride" in result
         assert "PM Ride" in result
+
+    def test_as_of_anchors_today_label(self):
+        as_of = datetime(2026, 4, 10, 23, 59, tzinfo=JST)
+        activities = [
+            {
+                "start_date_local": "2026-04-10T08:00:00Z",
+                "name": "AsOf Ride",
+                "tss_estimated": 55,
+                "intensity_factor": 0.72,
+            },
+            {
+                "start_date_local": "2026-04-09T18:00:00Z",
+                "name": "Prev Ride",
+                "tss_estimated": 70,
+                "intensity_factor": 0.80,
+            },
+        ]
+        result = _summarize_recent_rides(activities, as_of)
+        assert "今日 (2026-04-10): AsOf Ride" in result
+        assert "昨日 (2026-04-09): Prev Ride" in result
+        assert "一昨日 (2026-04-08): ライドなし" in result
+
+    def test_future_rides_are_not_shown_with_earlier_as_of(self):
+        as_of = datetime(2026, 4, 10, 23, 59, tzinfo=JST)
+        activities = [
+            {
+                "start_date_local": "2026-04-15T08:00:00Z",
+                "name": "Future Ride",
+                "tss_estimated": 99,
+                "intensity_factor": 0.95,
+            },
+        ]
+        result = _summarize_recent_rides(activities, as_of)
+        assert "Future Ride" not in result
+        assert result.count("ライドなし") == 3

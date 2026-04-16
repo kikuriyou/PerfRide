@@ -3,29 +3,19 @@
 import { useState, useEffect, useRef, Suspense } from 'react';
 import type { CSSProperties, ReactNode } from 'react';
 import { useSettings } from '@/lib/settings';
-import type { RecommendMode } from '@/lib/settings';
 import { logCoachEvent } from '@/lib/coach-events';
 import dynamic from 'next/dynamic';
 import WorkoutChart from '@/components/WorkoutChart';
-import type { WorkoutInterval } from '@/types/workout';
+import {
+  CACHE_KEY,
+  loadCachedRecommendation,
+  saveCachedRecommendation,
+  shouldReadCache,
+  shouldWriteCache,
+  type Recommendation,
+} from './recommendCache';
 
 const ReactMarkdown = dynamic(() => import('react-markdown'), { ssr: false });
-
-interface Recommendation {
-  summary: string;
-  detail: string;
-  created_at: string;
-  from_cache: boolean;
-  workout_intervals?: WorkoutInterval[];
-  totalDurationMin?: number;
-  workoutName?: string;
-  references?: { title: string; url: string | null }[];
-  why_now?: string;
-  based_on?: string;
-}
-
-const CACHE_KEY = 'perfride_recommendation_cache';
-const CACHE_TTL_MS = 30 * 60 * 1000;
 
 type GoalKey = 'hillclimb_tt' | 'road_race' | 'ftp_improvement' | 'fitness_maintenance' | 'other';
 type Panel = 'detail' | 'alternatives' | 'duration';
@@ -62,57 +52,6 @@ const DURATION_OPTIONS: DurationOption[] = [
   { label: '45分版', minutes: 45 },
   { label: '90分版', minutes: 90 },
 ];
-
-interface CachedRecommendationEntry extends Recommendation {
-  _cachedAt: number;
-  _recommendMode: RecommendMode;
-  _usePersonalData: boolean;
-  _ftp: number;
-}
-
-function loadCachedRecommendation(
-  recommendMode: RecommendMode,
-  usePersonalData: boolean,
-  ftp: number,
-): Recommendation | null {
-  try {
-    const raw = localStorage.getItem(CACHE_KEY);
-    if (!raw) return null;
-    const cached = JSON.parse(raw) as Partial<CachedRecommendationEntry>;
-    const age = Date.now() - (cached._cachedAt || 0);
-    if (age > CACHE_TTL_MS) return null;
-    if (
-      cached._recommendMode !== recommendMode ||
-      cached._usePersonalData !== usePersonalData ||
-      cached._ftp !== ftp
-    ) {
-      return null;
-    }
-    return cached as Recommendation;
-  } catch {
-    return null;
-  }
-}
-
-function saveCachedRecommendation(
-  rec: Recommendation,
-  recommendMode: RecommendMode,
-  usePersonalData: boolean,
-  ftp: number,
-): void {
-  try {
-    const entry: CachedRecommendationEntry = {
-      ...rec,
-      _cachedAt: Date.now(),
-      _recommendMode: recommendMode,
-      _usePersonalData: usePersonalData,
-      _ftp: ftp,
-    };
-    localStorage.setItem(CACHE_KEY, JSON.stringify(entry));
-  } catch {
-    // localStorage full or unavailable
-  }
-}
 
 const chipStyle: CSSProperties = {
   background: 'var(--surface)',
@@ -219,7 +158,7 @@ function MenuItem({ onClick, disabled, children }: MenuItemProps) {
 }
 
 function RecommendCardInner() {
-  const { settings, updateSettings } = useSettings();
+  const { settings, updateSettings, isLoaded } = useSettings();
   const [recommendation, setRecommendation] = useState<Recommendation | null>(null);
   const [originalRecommendation, setOriginalRecommendation] = useState<Recommendation | null>(null);
   const [loading, setLoading] = useState(false);
@@ -238,7 +177,9 @@ function RecommendCardInner() {
     forceRefresh = false,
     overrides?: { goal?: GoalKey; goalCustom?: string; constraint?: string },
   ) => {
-    if (!forceRefresh && !overrides?.constraint) {
+    const asOf = settings.asOf ?? null;
+    const hasConstraint = !!overrides?.constraint;
+    if (shouldReadCache(asOf, forceRefresh, hasConstraint)) {
       const cached = loadCachedRecommendation(
         settings.recommendMode,
         settings.usePersonalData,
@@ -264,6 +205,7 @@ function RecommendCardInner() {
           recommendMode: settings.recommendMode,
           usePersonalData: settings.usePersonalData,
           constraint: overrides?.constraint ?? null,
+          asOf,
         }),
       });
 
@@ -275,7 +217,7 @@ function RecommendCardInner() {
 
       const data: Recommendation = await res.json();
       setRecommendation(data);
-      if (!overrides?.constraint) {
+      if (shouldWriteCache(asOf, hasConstraint)) {
         saveCachedRecommendation(
           data,
           settings.recommendMode,
@@ -345,10 +287,13 @@ function RecommendCardInner() {
 
   useEffect(() => {
     setMounted(true);
-    if (settings.coachAutonomy !== 'observe') {
-      fetchRecommendation();
-    }
-  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+  }, []);
+
+  useEffect(() => {
+    if (!isLoaded) return;
+    if (settings.coachAutonomy === 'observe') return;
+    fetchRecommendation();
+  }, [isLoaded, settings.asOf]); // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => {
     const altOpen = openPanels.has('alternatives');

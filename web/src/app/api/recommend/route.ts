@@ -1,14 +1,56 @@
 import { NextResponse } from 'next/server';
 
-/**
- * API Route: POST /api/recommend
- * Proxies training recommendation requests to the Python agent service.
- */
+import {
+  parseJstClock,
+  readActivityCache,
+  recomputeFitnessFromProcessed,
+} from '@/app/dashboard/_lib/gcs';
+
+interface RecommendBody {
+  goal?: string;
+  ftp?: number;
+  goalCustom?: string | null;
+  recommendMode?: string | null;
+  usePersonalData?: boolean | null;
+  constraint?: string | null;
+  mode?: string;
+  asOf?: string | null;
+}
+
+interface ActivityOverride {
+  activities: unknown[];
+  fitness_metrics: { ctl: number; atl: number; tsb: number; weekly_tss: number };
+  last_updated: string;
+  schema: unknown | null;
+}
+
+async function buildActivityOverride(asOf: Date): Promise<ActivityOverride | null> {
+  const cache = await readActivityCache();
+  if (!cache) return null;
+  const recomputed = recomputeFitnessFromProcessed(cache.activities, asOf);
+  return {
+    activities: recomputed.activities,
+    fitness_metrics: recomputed.fitness_metrics,
+    last_updated: recomputed.last_updated,
+    schema: null,
+  };
+}
+
 export async function POST(request: Request) {
   try {
-    const body = await request.json();
+    const body: RecommendBody = await request.json();
 
     const agentUrl = process.env.AGENT_API_URL || 'http://localhost:8000';
+
+    let asOfParsed: Date | null = null;
+    let activityOverride: ActivityOverride | null = null;
+    if (body.asOf) {
+      const parsed = parseJstClock(body.asOf);
+      if (parsed) {
+        asOfParsed = parsed;
+        activityOverride = await buildActivityOverride(parsed);
+      }
+    }
 
     const response = await fetch(`${agentUrl}/recommend`, {
       method: 'POST',
@@ -23,6 +65,8 @@ export async function POST(request: Request) {
         use_personal_data: body.usePersonalData ?? null,
         constraint: body.constraint || null,
         mode: body.mode || 'recommend',
+        as_of: asOfParsed ? asOfParsed.toISOString() : null,
+        activity_override: activityOverride,
       }),
     });
 

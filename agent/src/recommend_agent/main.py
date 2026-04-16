@@ -15,6 +15,10 @@ from pydantic import BaseModel
 
 from recommend_agent.agent import build_agent, build_insight_agent
 from recommend_agent.constants import RECOMMEND_MODE, USE_PERSONAL_DATA
+from recommend_agent.tools._request_context import (
+    activity_override_var,
+    as_of_var,
+)
 from recommend_agent.tools.detect_signals import detect_signals
 from recommend_agent.tools.search_latest_knowledge import (
     reset_search_count,
@@ -57,6 +61,8 @@ class RecommendRequest(BaseModel):
     use_personal_data: bool | None = None
     constraint: str | None = None
     mode: str = "recommend"
+    as_of: str | None = None
+    activity_override: dict[str, object] | None = None
 
 
 class InsightItem(BaseModel):
@@ -110,6 +116,24 @@ def _load_activity_cache_json() -> dict | None:
         return json.loads(blob.download_as_text())
     except Exception:
         return None
+
+
+def _get_activity_cache(override: dict[str, object] | None = None) -> dict | None:
+    if override is not None:
+        return dict(override)
+    return _load_activity_cache_json()
+
+
+def _parse_as_of(as_of_str: str | None) -> datetime | None:
+    if not as_of_str:
+        return None
+    try:
+        dt = datetime.fromisoformat(as_of_str)
+    except ValueError:
+        return None
+    if dt.tzinfo is None:
+        dt = dt.replace(tzinfo=JST)
+    return dt.astimezone(JST)
 
 
 def _activity_jst_date(start_date_local: str) -> str | None:
@@ -258,7 +282,8 @@ def _should_regenerate(cache: dict[str, object] | None, use_personal_data: bool)
 
 async def _handle_insight(request: RecommendRequest) -> InsightResponse:
     """Detect signals via rules, then use LLM to generate user-facing text."""
-    signals = detect_signals()
+    as_of = _parse_as_of(request.as_of)
+    signals = detect_signals(override=request.activity_override, as_of=as_of)
 
     if not signals:
         return InsightResponse(items=[])
@@ -350,9 +375,14 @@ async def recommend_training(request: RecommendRequest) -> InsightResponse | Rec
         request.use_personal_data if request.use_personal_data is not None else USE_PERSONAL_DATA
     )
 
-    cache = _load_cache()
+    as_of = _parse_as_of(request.as_of)
+    bypass_cache = as_of is not None or request.constraint is not None
 
-    # Invalidate cache if goal, mode, personal data, or FTP changed
+    if as_of is not None:
+        print(f"[DEV as_of={as_of.isoformat()}]")
+
+    cache = None if bypass_cache else _load_cache()
+
     if cache and (
         cache.get("goal") != request.goal
         or cache.get("mode") != effective_mode
@@ -361,7 +391,7 @@ async def recommend_training(request: RecommendRequest) -> InsightResponse | Rec
     ):
         cache = None
 
-    if cache and not request.constraint and not _should_regenerate(cache, effective_personal):
+    if cache and not _should_regenerate(cache, effective_personal):
         return RecommendResponse(
             summary=str(cache.get("summary", "")),
             detail=str(cache.get("detail", "")),
@@ -375,7 +405,6 @@ async def recommend_training(request: RecommendRequest) -> InsightResponse | Rec
             based_on=cache.get("based_on"),  # type: ignore[arg-type]
         )
 
-    # Build the user message with goal and FTP context
     goal_labels = {
         "hillclimb_tt": "レース準備（ヒルクライム/TT）",
         "road_race": "レース準備（ロードレース）",
@@ -385,7 +414,7 @@ async def recommend_training(request: RecommendRequest) -> InsightResponse | Rec
     }
     goal_text = goal_labels.get(request.goal, request.goal)
 
-    now_jst = datetime.now(JST)
+    now_jst = as_of if as_of is not None else datetime.now(JST)
     if effective_personal:
         user_message = (
             f"今日のおすすめトレーニングを提案してください。\n"
@@ -393,7 +422,7 @@ async def recommend_training(request: RecommendRequest) -> InsightResponse | Rec
             f"- FTP: {request.ftp}W\n"
             f"- 今日の日付: {now_jst.strftime('%Y-%m-%d (%A)')}"
         )
-        cache_json = _load_activity_cache_json()
+        cache_json = _get_activity_cache(request.activity_override)
         if cache_json is not None:
             summary = _summarize_recent_rides(cache_json.get("activities", []) or [], now_jst)
             if summary:
@@ -406,6 +435,9 @@ async def recommend_training(request: RecommendRequest) -> InsightResponse | Rec
 
     if request.constraint:
         user_message += f"\n- 制約: {request.constraint}"
+
+    override_token = activity_override_var.set(request.activity_override)
+    as_of_token = as_of_var.set(as_of)
 
     try:
         reset_search_count()
@@ -452,16 +484,22 @@ async def recommend_training(request: RecommendRequest) -> InsightResponse | Rec
                 "detail": final_response,
             }
 
-        now_utc = datetime.now(UTC)
-        created_at = now_utc.isoformat()
+        if as_of is not None:
+            created_at = as_of.astimezone(UTC).isoformat()
+        else:
+            created_at = datetime.now(UTC).isoformat()
 
-        today_str = datetime.now(JST).strftime("%Y-%m-%d")
+        today_str = now_jst.strftime("%Y-%m-%d")
         prev_count = 0
         if cache and cache.get("generation_date") == today_str:
             count = cache.get("generation_count", 0)
             prev_count = count if isinstance(count, int) else 0
 
-        activity_mtime = _get_activity_cache_mtime() if effective_personal else None
+        activity_mtime = (
+            _get_activity_cache_mtime()
+            if effective_personal and request.activity_override is None
+            else None
+        )
         cache_data: dict[str, object] = {
             "summary": parsed.get("summary", ""),
             "detail": parsed.get("detail", ""),
@@ -480,7 +518,7 @@ async def recommend_training(request: RecommendRequest) -> InsightResponse | Rec
             "why_now": parsed.get("why_now"),
             "based_on": parsed.get("based_on"),
         }
-        if not request.constraint:
+        if not bypass_cache:
             _save_cache(cache_data)
 
         return RecommendResponse(
@@ -501,6 +539,9 @@ async def recommend_training(request: RecommendRequest) -> InsightResponse | Rec
             status_code=500,
             detail=f"Failed to generate recommendation: {e}",
         ) from e
+    finally:
+        activity_override_var.reset(override_token)
+        as_of_var.reset(as_of_token)
 
 
 @app.get("/health")

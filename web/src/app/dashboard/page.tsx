@@ -8,6 +8,7 @@ import FitnessChartWrapper from './_components/FitnessChartWrapper';
 import RideCard from './_components/RideCard';
 import InsightCards from './_components/InsightCards';
 import RecommendCard from './_components/RecommendCard';
+import DevAsOfBanner from './_components/DevAsOfBanner';
 import { writeActivityCache } from './_lib/gcs';
 
 export default async function DashboardPage() {
@@ -81,6 +82,8 @@ export default async function DashboardPage() {
           Your recent activities and training summary
         </p>
       </header>
+
+      <DevAsOfBanner />
 
       {/* Insight Cards */}
       <InsightCards />

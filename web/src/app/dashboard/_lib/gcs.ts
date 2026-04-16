@@ -5,33 +5,39 @@
 
 import { StravaActivity } from '@/lib/strava';
 
-interface ActivityCacheData {
-  activities: Array<{
-    id: number;
-    name: string;
-    type: string;
-    sport_type: string;
-    start_date_local: string;
-    distance_km: number;
-    moving_time_hours: number;
-    total_elevation_gain_m: number;
-    average_speed_kmh: number;
-    average_watts: number | null;
-    weighted_average_watts: number | null;
-    average_heartrate: number | null;
-    max_heartrate: number | null;
-    suffer_score: number | null;
-    tss_estimated: number;
-    intensity_factor: number | null;
-  }>;
-  fitness_metrics: {
-    ctl: number;
-    atl: number;
-    tsb: number;
-    weekly_tss: number;
-  };
+export interface ProcessedActivity {
+  id: number;
+  name: string;
+  type: string;
+  sport_type: string;
+  start_date_local: string;
+  distance_km: number;
+  moving_time_hours: number;
+  total_elevation_gain_m: number;
+  average_speed_kmh: number;
+  average_watts: number | null;
+  weighted_average_watts: number | null;
+  average_heartrate: number | null;
+  max_heartrate: number | null;
+  suffer_score: number | null;
+  tss_estimated: number;
+  intensity_factor: number | null;
+}
+
+export interface FitnessMetrics {
+  ctl: number;
+  atl: number;
+  tsb: number;
+  weekly_tss: number;
+}
+
+export interface FitnessComputation {
+  activities: ProcessedActivity[];
+  fitness_metrics: FitnessMetrics;
   last_updated: string;
 }
+
+type ActivityCacheData = FitnessComputation;
 
 interface SchemaField {
   name: string;
@@ -39,9 +45,22 @@ interface SchemaField {
   description: string;
 }
 
-/**
- * Estimates TSS for an activity (mirrors FitnessChart.tsx logic).
- */
+const CTL_DECAY = 42;
+const ATL_DECAY = 7;
+
+const JST_OFFSET_MS = 9 * 60 * 60 * 1000;
+
+function jstTimestamp(dateStr: string): number {
+  const core = dateStr.replace(/(Z|[+-]\d{2}:?\d{2})$/, '');
+  const parsed = Date.parse(core + 'Z');
+  return Number.isNaN(parsed) ? NaN : parsed - JST_OFFSET_MS;
+}
+
+export function parseJstClock(dateStr: string): Date | null {
+  const ts = jstTimestamp(dateStr);
+  return Number.isNaN(ts) ? null : new Date(ts);
+}
+
 function estimateTSS(activity: StravaActivity, ftp: number): number {
   const hours = activity.moving_time / 3600;
   const userFTP = ftp || 200;
@@ -56,42 +75,63 @@ function estimateTSS(activity: StravaActivity, ftp: number): number {
   return Math.min(baseTSS, 300);
 }
 
-/**
- * Writes activity cache to GCS for the recommendation agent to consume.
- */
-export async function writeActivityCache(
+function weekStartMonday(reference: Date): Date {
+  const weekStart = new Date(reference);
+  const dayOfWeek = reference.getDay();
+  const daysToMonday = dayOfWeek === 0 ? 6 : dayOfWeek - 1;
+  weekStart.setDate(reference.getDate() - daysToMonday);
+  weekStart.setHours(0, 0, 0, 0);
+  return weekStart;
+}
+
+function summarizeFromProcessed(
+  processed: ProcessedActivity[],
+  reference: Date,
+): FitnessComputation {
+  let ctl = 0;
+  let atl = 0;
+  for (const activity of processed) {
+    const tss = activity.tss_estimated;
+    ctl = ctl + (tss - ctl) / CTL_DECAY;
+    atl = atl + (tss - atl) / ATL_DECAY;
+  }
+
+  const weekStart = weekStartMonday(reference);
+  const weekStartTs = weekStart.getTime();
+  const weeklyTSS = processed
+    .filter((a) => jstTimestamp(a.start_date_local) >= weekStartTs)
+    .reduce((sum, a) => sum + a.tss_estimated, 0);
+
+  return {
+    activities: processed,
+    fitness_metrics: {
+      ctl: Math.round(ctl),
+      atl: Math.round(atl),
+      tsb: Math.round(ctl - atl),
+      weekly_tss: Math.round(weeklyTSS),
+    },
+    last_updated: reference.toISOString(),
+  };
+}
+
+export function computeFitnessMetrics(
   activities: StravaActivity[],
   ftp: number = 200,
-): Promise<void> {
-  // Dynamic import to avoid bundling GCS client in browser
-  const { Storage } = await import('@google-cloud/storage');
-
-  const storage = new Storage();
-  const bucketName = process.env.GCS_BUCKET!;
-  const bucket = storage.bucket(bucketName);
+  asOf?: Date,
+): FitnessComputation {
+  const reference = asOf ?? new Date();
+  const referenceTs = reference.getTime();
+  const userFTP = ftp || 200;
 
   const rides = activities
     .filter((a) => a.type === 'Ride' || a.type === 'VirtualRide')
-    .sort(
-      (a, b) => new Date(a.start_date_local).getTime() - new Date(b.start_date_local).getTime(),
-    );
+    .filter((a) => jstTimestamp(a.start_date_local) <= referenceTs)
+    .sort((a, b) => jstTimestamp(a.start_date_local) - jstTimestamp(b.start_date_local));
 
-  // Calculate CTL/ATL/TSB
-  let ctl = 0;
-  let atl = 0;
-  const CTL_DECAY = 42;
-  const ATL_DECAY = 7;
-
-  const processedActivities = rides.map((activity) => {
+  const processedActivities: ProcessedActivity[] = rides.map((activity) => {
     const tss = estimateTSS(activity, ftp);
-
-    const userFTP = ftp || 200;
     const npWatts = activity.weighted_average_watts || activity.average_watts;
     const intensityFactor = npWatts ? Math.round((npWatts / userFTP) * 100) / 100 : null;
-
-    ctl = ctl + (tss - ctl) / CTL_DECAY;
-    atl = atl + (tss - atl) / ATL_DECAY;
-
     return {
       id: activity.id,
       name: activity.name,
@@ -112,36 +152,37 @@ export async function writeActivityCache(
     };
   });
 
-  // Get recent weekly TSS
-  const now = new Date();
-  const weekStart = new Date(now);
-  const dayOfWeek = now.getDay();
-  const daysToMonday = dayOfWeek === 0 ? 6 : dayOfWeek - 1;
-  weekStart.setDate(now.getDate() - daysToMonday);
-  weekStart.setHours(0, 0, 0, 0);
+  return summarizeFromProcessed(processedActivities, reference);
+}
 
-  const weeklyTSS = processedActivities
-    .filter((a) => new Date(a.start_date_local) >= weekStart)
-    .reduce((sum, a) => sum + a.tss_estimated, 0);
+export function recomputeFitnessFromProcessed(
+  activities: ProcessedActivity[],
+  asOf: Date,
+): FitnessComputation {
+  const asOfTs = asOf.getTime();
+  const ridesUpToAsOf = activities
+    .filter((a) => jstTimestamp(a.start_date_local) <= asOfTs)
+    .sort((a, b) => jstTimestamp(a.start_date_local) - jstTimestamp(b.start_date_local));
+  return summarizeFromProcessed(ridesUpToAsOf, asOf);
+}
 
-  const cacheData: ActivityCacheData = {
-    activities: processedActivities,
-    fitness_metrics: {
-      ctl: Math.round(ctl),
-      atl: Math.round(atl),
-      tsb: Math.round(ctl - atl),
-      weekly_tss: Math.round(weeklyTSS),
-    },
-    last_updated: new Date().toISOString(),
-  };
+export async function writeActivityCache(
+  activities: StravaActivity[],
+  ftp: number = 200,
+): Promise<void> {
+  const { Storage } = await import('@google-cloud/storage');
 
-  // Write activity cache
+  const storage = new Storage();
+  const bucketName = process.env.GCS_BUCKET!;
+  const bucket = storage.bucket(bucketName);
+
+  const cacheData: ActivityCacheData = computeFitnessMetrics(activities, ftp);
+
   const cacheBlob = bucket.file('activity_cache.json');
   await cacheBlob.save(JSON.stringify(cacheData, null, 2), {
     contentType: 'application/json',
   });
 
-  // Write schema (only if not exists or has changed)
   const schemaBlob = bucket.file('schema.json');
   const schema: SchemaField[] = [
     { name: 'id', type: 'number', description: 'Strava activity ID' },
@@ -211,4 +252,20 @@ export async function writeActivityCache(
   await schemaBlob.save(JSON.stringify(schema, null, 2), {
     contentType: 'application/json',
   });
+}
+
+export async function readActivityCache(): Promise<ActivityCacheData | null> {
+  try {
+    const { Storage } = await import('@google-cloud/storage');
+    const storage = new Storage();
+    const bucketName = process.env.GCS_BUCKET!;
+    const bucket = storage.bucket(bucketName);
+    const blob = bucket.file('activity_cache.json');
+    const [exists] = await blob.exists();
+    if (!exists) return null;
+    const [buf] = await blob.download();
+    return JSON.parse(buf.toString('utf-8')) as ActivityCacheData;
+  } catch {
+    return null;
+  }
 }

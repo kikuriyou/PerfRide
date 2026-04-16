@@ -315,3 +315,123 @@ class TestDetectSignals:
                     order[priorities[i]] <= order[priorities[i + 1]]
                     for i in range(len(priorities) - 1)
                 )
+
+
+class TestNowInjection:
+    """Injecting `now` should make detection results deterministic."""
+
+    def _activity_at(self, iso_date: str, **kwargs) -> dict:
+        return {
+            "start_date_local": iso_date,
+            "tss_estimated": kwargs.get("tss", 50),
+            "pr_count": kwargs.get("pr_count", 0),
+            "name": kwargs.get("name", "Ride"),
+            "intensity_factor": kwargs.get("intensity_factor"),
+            "moving_time_hours": kwargs.get("moving_time_hours", 1.0),
+        }
+
+    def test_long_gap_with_fixed_now(self):
+        fixed_now = datetime(2026, 4, 16, 10, 0, tzinfo=JST)
+        activities = [self._activity_at("2026-04-10T08:00:00")]
+        result = _check_long_gap(activities, now=fixed_now)
+        assert result["triggered"] is True
+        assert result["data"]["days_since_last"] == 6
+
+    def test_long_gap_with_earlier_now_not_triggered(self):
+        fixed_now = datetime(2026, 4, 12, 10, 0, tzinfo=JST)
+        activities = [self._activity_at("2026-04-10T08:00:00")]
+        result = _check_long_gap(activities, now=fixed_now)
+        assert result["triggered"] is False
+        assert result["data"]["days_since_last"] == 2
+
+    def test_new_pr_with_fixed_now(self):
+        fixed_now = datetime(2026, 4, 16, 10, 0, tzinfo=JST)
+        activities = [self._activity_at("2026-04-14T08:00:00", pr_count=2)]
+        result = _check_new_pr(activities, now=fixed_now)
+        assert result["triggered"] is True
+
+    def test_new_pr_excluded_when_older_than_3d(self):
+        fixed_now = datetime(2026, 4, 20, 10, 0, tzinfo=JST)
+        activities = [self._activity_at("2026-04-14T08:00:00", pr_count=2)]
+        result = _check_new_pr(activities, now=fixed_now)
+        assert result["triggered"] is False
+
+    def test_recent_intensity_high_with_future_filter(self):
+        fixed_now = datetime(2026, 4, 14, 10, 0, tzinfo=JST)
+        activities = [
+            self._activity_at("2026-04-13T08:00:00", tss=90, intensity_factor=0.90),
+            self._activity_at("2026-04-16T08:00:00", tss=90, intensity_factor=0.90),
+        ]
+        result = _check_recent_intensity_high(activities, now=fixed_now)
+        assert result["data"]["hard_rides_last_3d"] == 1
+        assert result["triggered"] is False
+
+    def test_weekly_tss_spike_with_fixed_now(self):
+        fixed_now = datetime(2026, 4, 16, 10, 0, tzinfo=JST)
+        activities = [
+            self._activity_at("2026-04-13T08:00:00", tss=200),
+            self._activity_at("2026-04-06T08:00:00", tss=80),
+            self._activity_at("2026-03-30T08:00:00", tss=80),
+        ]
+        result = _check_weekly_tss_spike(activities, now=fixed_now)
+        assert result["triggered"] is True
+        assert result["data"]["current_week_tss"] == 200.0
+
+    def test_weekly_tss_front_loaded_with_fixed_now(self):
+        fixed_now = datetime(2026, 4, 16, 10, 0, tzinfo=JST)
+        activities = [
+            self._activity_at("2026-04-13T08:00:00", tss=90, intensity_factor=0.90),
+            self._activity_at("2026-04-14T08:00:00", tss=90, intensity_factor=0.90),
+        ]
+        result = _check_weekly_tss_front_loaded(activities, now=fixed_now)
+        assert result["triggered"] is True
+        assert result["data"]["hard_rides_front"] == 2
+
+
+class TestDetectSignalsWithOverride:
+    def test_override_bypasses_gcs(self):
+        cache = {
+            "activities": [
+                {
+                    "start_date_local": "2026-04-14T08:00:00",
+                    "tss_estimated": 90,
+                    "intensity_factor": 0.90,
+                    "pr_count": 0,
+                    "name": "Ride",
+                    "moving_time_hours": 1.0,
+                }
+            ],
+            "fitness_metrics": {"tsb": -30},
+        }
+        fixed_now = datetime(2026, 4, 16, 10, 0, tzinfo=JST)
+        result = detect_signals(override=cache, as_of=fixed_now)
+        types = [s["type"] for s in result]
+        assert "tsb_critical" in types
+
+    def test_as_of_filters_future_activities(self):
+        cache = {
+            "activities": [
+                {
+                    "start_date_local": "2026-04-10T08:00:00",
+                    "tss_estimated": 50,
+                    "pr_count": 0,
+                    "name": "Past",
+                    "intensity_factor": 0.70,
+                    "moving_time_hours": 1.0,
+                },
+                {
+                    "start_date_local": "2026-04-20T08:00:00",
+                    "tss_estimated": 50,
+                    "pr_count": 5,
+                    "name": "Future",
+                    "intensity_factor": 0.90,
+                    "moving_time_hours": 1.0,
+                },
+            ],
+            "fitness_metrics": {"tsb": 0},
+        }
+        fixed_now = datetime(2026, 4, 16, 10, 0, tzinfo=JST)
+        result = detect_signals(override=cache, as_of=fixed_now)
+        types = [s["type"] for s in result]
+        assert "new_pr" not in types
+        assert "long_gap" in types

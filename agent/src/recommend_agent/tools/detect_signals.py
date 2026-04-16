@@ -34,6 +34,21 @@ def _load_activity_cache() -> dict | None:
         return None
 
 
+def _resolve_now(now: datetime | None) -> datetime:
+    return now if now is not None else datetime.now(JST)
+
+
+def _parse_activity_date(act: dict) -> datetime | None:
+    try:
+        date_str = act.get("start_date_local", "")
+        act_date = datetime.fromisoformat(date_str)
+        if act_date.tzinfo is None:
+            act_date = act_date.replace(tzinfo=JST)
+        return act_date
+    except (ValueError, TypeError):
+        return None
+
+
 def _check_tsb_critical(metrics: dict) -> dict:
     tsb = metrics.get("tsb", 0)
     return {
@@ -44,8 +59,8 @@ def _check_tsb_critical(metrics: dict) -> dict:
     }
 
 
-def _check_weekly_tss_spike(activities: list[dict]) -> dict:
-    now = datetime.now(JST)
+def _check_weekly_tss_spike(activities: list[dict], now: datetime | None = None) -> dict:
+    now = _resolve_now(now)
     monday = now - timedelta(days=now.weekday())
     monday_start = monday.replace(hour=0, minute=0, second=0, microsecond=0)
 
@@ -53,23 +68,19 @@ def _check_weekly_tss_spike(activities: list[dict]) -> dict:
     past_weeks_tss: list[float] = []
 
     for act in activities:
-        try:
-            date_str = act.get("start_date_local", "")
-            act_date = datetime.fromisoformat(date_str)
-            if act_date.tzinfo is None:
-                act_date = act_date.replace(tzinfo=JST)
-            tss = act.get("tss_estimated", 0) or 0
-
-            if act_date >= monday_start:
-                current_week_tss += tss
-            else:
-                weeks_ago = (monday_start - act_date).days // 7
-                if 0 <= weeks_ago < 4:
-                    while len(past_weeks_tss) <= weeks_ago:
-                        past_weeks_tss.append(0.0)
-                    past_weeks_tss[weeks_ago] += tss
-        except (ValueError, TypeError):
+        act_date = _parse_activity_date(act)
+        if act_date is None:
             continue
+        tss = act.get("tss_estimated", 0) or 0
+
+        if act_date >= monday_start:
+            current_week_tss += tss
+        else:
+            weeks_ago = (monday_start - act_date).days // 7
+            if 0 <= weeks_ago < 4:
+                while len(past_weeks_tss) <= weeks_ago:
+                    past_weeks_tss.append(0.0)
+                past_weeks_tss[weeks_ago] += tss
 
     avg_past = sum(past_weeks_tss) / len(past_weeks_tss) if past_weeks_tss else 0
     triggered = avg_past > 0 and current_week_tss > avg_past * 1.5
@@ -85,8 +96,8 @@ def _check_weekly_tss_spike(activities: list[dict]) -> dict:
     }
 
 
-def _check_long_gap(activities: list[dict]) -> dict:
-    now = datetime.now(JST)
+def _check_long_gap(activities: list[dict], now: datetime | None = None) -> dict:
+    now = _resolve_now(now)
     if not activities:
         return {
             "type": "long_gap",
@@ -97,15 +108,11 @@ def _check_long_gap(activities: list[dict]) -> dict:
 
     latest_date: datetime | None = None
     for act in activities:
-        try:
-            date_str = act.get("start_date_local", "")
-            act_date = datetime.fromisoformat(date_str)
-            if act_date.tzinfo is None:
-                act_date = act_date.replace(tzinfo=JST)
-            if latest_date is None or act_date > latest_date:
-                latest_date = act_date
-        except (ValueError, TypeError):
+        act_date = _parse_activity_date(act)
+        if act_date is None:
             continue
+        if latest_date is None or act_date > latest_date:
+            latest_date = act_date
 
     if latest_date is None:
         return {
@@ -124,30 +131,26 @@ def _check_long_gap(activities: list[dict]) -> dict:
     }
 
 
-def _check_new_pr(activities: list[dict]) -> dict:
-    now = datetime.now(JST)
+def _check_new_pr(activities: list[dict], now: datetime | None = None) -> dict:
+    now = _resolve_now(now)
     recent_cutoff = now - timedelta(days=3)
 
     for act in activities:
-        try:
-            date_str = act.get("start_date_local", "")
-            act_date = datetime.fromisoformat(date_str)
-            if act_date.tzinfo is None:
-                act_date = act_date.replace(tzinfo=JST)
-            if act_date < recent_cutoff:
-                continue
-            if act.get("pr_count", 0) and act["pr_count"] > 0:
-                return {
-                    "type": "new_pr",
-                    "triggered": True,
-                    "data": {
-                        "activity_name": act.get("name", ""),
-                        "pr_count": act["pr_count"],
-                    },
-                    "priority": PRIORITY_MAP["new_pr"],
-                }
-        except (ValueError, TypeError):
+        act_date = _parse_activity_date(act)
+        if act_date is None:
             continue
+        if act_date < recent_cutoff:
+            continue
+        if act.get("pr_count", 0) and act["pr_count"] > 0:
+            return {
+                "type": "new_pr",
+                "triggered": True,
+                "data": {
+                    "activity_name": act.get("name", ""),
+                    "pr_count": act["pr_count"],
+                },
+                "priority": PRIORITY_MAP["new_pr"],
+            }
 
     return {
         "type": "new_pr",
@@ -157,32 +160,35 @@ def _check_new_pr(activities: list[dict]) -> dict:
     }
 
 
-def _check_recent_intensity_high(activities: list[dict]) -> dict:
-    now = datetime.now(JST)
+def _is_hard_ride(act: dict) -> bool:
+    intensity_factor = act.get("intensity_factor")
+    if intensity_factor is not None:
+        return intensity_factor >= 0.85
+    tss = act.get("tss_estimated", 0) or 0
+    hours = act.get("moving_time_hours", 0) or 0
+    if hours <= 0:
+        return False
+    try:
+        return (tss / hours) >= 80
+    except ZeroDivisionError:
+        return False
+
+
+def _check_recent_intensity_high(activities: list[dict], now: datetime | None = None) -> dict:
+    now = _resolve_now(now)
     cutoff = now - timedelta(days=3)
 
     hard_count = 0
     for act in activities:
-        try:
-            date_str = act.get("start_date_local", "")
-            act_date = datetime.fromisoformat(date_str)
-            if act_date.tzinfo is None:
-                act_date = act_date.replace(tzinfo=JST)
-            if act_date < cutoff:
-                continue
-
-            intensity_factor = act.get("intensity_factor")
-            if intensity_factor is not None:
-                if intensity_factor >= 0.85:
-                    hard_count += 1
-                continue
-
-            tss = act.get("tss_estimated", 0) or 0
-            hours = act.get("moving_time_hours", 0) or 0
-            if hours > 0 and (tss / hours) >= 80:
-                hard_count += 1
-        except (ValueError, TypeError, ZeroDivisionError):
+        act_date = _parse_activity_date(act)
+        if act_date is None:
             continue
+        if act_date < cutoff:
+            continue
+        if act_date > now:
+            continue
+        if _is_hard_ride(act):
+            hard_count += 1
 
     return {
         "type": "recent_intensity_high",
@@ -192,34 +198,23 @@ def _check_recent_intensity_high(activities: list[dict]) -> dict:
     }
 
 
-def _check_weekly_tss_front_loaded(activities: list[dict]) -> dict:
-    now = datetime.now(JST)
+def _check_weekly_tss_front_loaded(activities: list[dict], now: datetime | None = None) -> dict:
+    now = _resolve_now(now)
     monday = now - timedelta(days=now.weekday())
     monday_start = monday.replace(hour=0, minute=0, second=0, microsecond=0)
     thursday_end = monday_start + timedelta(days=4)
 
     hard_count = 0
     for act in activities:
-        try:
-            date_str = act.get("start_date_local", "")
-            act_date = datetime.fromisoformat(date_str)
-            if act_date.tzinfo is None:
-                act_date = act_date.replace(tzinfo=JST)
-            if act_date < monday_start or act_date >= thursday_end:
-                continue
-
-            intensity_factor = act.get("intensity_factor")
-            if intensity_factor is not None:
-                if intensity_factor >= 0.85:
-                    hard_count += 1
-                continue
-
-            tss = act.get("tss_estimated", 0) or 0
-            hours = act.get("moving_time_hours", 0) or 0
-            if hours > 0 and (tss / hours) >= 80:
-                hard_count += 1
-        except (ValueError, TypeError, ZeroDivisionError):
+        act_date = _parse_activity_date(act)
+        if act_date is None:
             continue
+        if act_date < monday_start or act_date >= thursday_end:
+            continue
+        if act_date > now:
+            continue
+        if _is_hard_ride(act):
+            hard_count += 1
 
     triggered = hard_count >= 2
 
@@ -231,26 +226,31 @@ def _check_weekly_tss_front_loaded(activities: list[dict]) -> dict:
     }
 
 
-def detect_signals() -> list[dict]:
-    """Run all signal detection rules against activity_cache.json from GCS.
-
-    Returns a list of signal dicts, each with: type, triggered, data, priority.
-    Only triggered signals are included in the result.
-    """
-    cache = _load_activity_cache()
+def detect_signals(
+    override: dict | None = None,
+    as_of: datetime | None = None,
+) -> list[dict]:
+    """Run all signal detection rules against activity_cache.json (or override)."""
+    cache = override if override is not None else _load_activity_cache()
     if cache is None:
         return []
 
-    activities = cache.get("activities", [])
-    metrics = cache.get("fitness_metrics", {})
+    activities = cache.get("activities", []) or []
+    metrics = cache.get("fitness_metrics", {}) or {}
+    now = _resolve_now(as_of)
+
+    if as_of is not None:
+        activities = [
+            a for a in activities if (date := _parse_activity_date(a)) is not None and date <= now
+        ]
 
     all_signals = [
         _check_tsb_critical(metrics),
-        _check_weekly_tss_spike(activities),
-        _check_recent_intensity_high(activities),
-        _check_long_gap(activities),
-        _check_new_pr(activities),
-        _check_weekly_tss_front_loaded(activities),
+        _check_weekly_tss_spike(activities, now),
+        _check_recent_intensity_high(activities, now),
+        _check_long_gap(activities, now),
+        _check_new_pr(activities, now),
+        _check_weekly_tss_front_loaded(activities, now),
     ]
 
     triggered = [s for s in all_signals if s["triggered"]]

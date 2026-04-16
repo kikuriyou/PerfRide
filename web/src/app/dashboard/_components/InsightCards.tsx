@@ -89,6 +89,7 @@ export default function InsightCards() {
             goalCustom: settings.goalCustom,
             usePersonalData: settings.usePersonalData,
             mode: 'insight',
+            asOf: settings.asOf ?? null,
           }),
         });
 
@@ -104,8 +105,8 @@ export default function InsightCards() {
         const priorityOrder: Record<string, number> = { high: 0, medium: 1, low: 2 };
         fetched.sort((a, b) => (priorityOrder[a.priority] ?? 99) - (priorityOrder[b.priority] ?? 99));
 
-        const deduped = filterDedup(fetched);
-        setItems(deduped.slice(0, MAX_CARDS));
+        const finalItems = settings.asOf ? fetched : filterDedup(fetched);
+        setItems(finalItems.slice(0, MAX_CARDS));
       } catch {
         // silently fail
       } finally {
@@ -115,7 +116,7 @@ export default function InsightCards() {
 
     fetchInsights();
     return () => { cancelled = true; };
-  }, [settings.goal, settings.ftp, settings.goalCustom, settings.usePersonalData, settings.coachAutonomy]);
+  }, [settings.goal, settings.ftp, settings.goalCustom, settings.usePersonalData, settings.coachAutonomy, settings.asOf]);
 
   if (loading || items.length === 0) return null;
 

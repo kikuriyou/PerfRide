@@ -54,7 +54,9 @@ export default function SettingsForm() {
   const [localCoachAutonomy, setLocalCoachAutonomy] = useState<CoachAutonomy>(
     settings.coachAutonomy,
   );
+  const [localAsOf, setLocalAsOf] = useState<string>(settings.asOf ?? '');
   const [saved, setSaved] = useState(false);
+  const isDev = process.env.NODE_ENV === 'development';
 
   useEffect(() => {
     setLocalFtp(settings.ftp);
@@ -65,7 +67,17 @@ export default function SettingsForm() {
     setLocalRecommendMode(settings.recommendMode);
     setLocalUsePersonalData(settings.usePersonalData);
     setLocalCoachAutonomy(settings.coachAutonomy);
+    setLocalAsOf(settings.asOf ?? '');
   }, [settings]);
+
+  const normalizeAsOf = (raw: string): string | null => {
+    const trimmed = raw.trim();
+    if (!trimmed) return null;
+    if (/^\d{4}-\d{2}-\d{2}$/.test(trimmed)) {
+      return `${trimmed}T23:59`;
+    }
+    return trimmed;
+  };
 
   const handleSave = () => {
     updateSettings({
@@ -77,9 +89,15 @@ export default function SettingsForm() {
       recommendMode: localRecommendMode,
       usePersonalData: localUsePersonalData,
       coachAutonomy: localCoachAutonomy,
+      asOf: normalizeAsOf(localAsOf),
     });
     setSaved(true);
     setTimeout(() => setSaved(false), 2000);
+  };
+
+  const handleResetAsOf = () => {
+    setLocalAsOf('');
+    updateSettings({ asOf: null });
   };
 
   const estimateAge = 220 - localMaxHR;
@@ -358,6 +376,53 @@ export default function SettingsForm() {
           <span>{localUsePersonalData ? 'ON — Stravaデータを使用' : 'OFF — 汎用推薦'}</span>
         </label>
       </div>
+
+      {isDev && (
+        <div
+          style={{
+            ...cardStyle,
+            border: '1px dashed var(--primary)',
+            background: 'color-mix(in srgb, var(--primary) 4%, var(--surface))',
+          }}
+        >
+          <h3 style={{ marginTop: 0, marginBottom: '0.5rem' }}>🧪 確認時刻（開発用）</h3>
+          <p style={{ fontSize: '0.85rem', opacity: 0.75, marginBottom: '1rem' }}>
+            この時刻を「今」とみなしてダッシュボードを評価します。設定中はキャッシュをバイパスします。
+            日付のみ入力した場合は JST 23:59 を既定値として扱います。
+          </p>
+          <div style={{ display: 'flex', gap: '0.75rem', alignItems: 'center', flexWrap: 'wrap' }}>
+            <input
+              type="datetime-local"
+              value={localAsOf}
+              onChange={(e) => setLocalAsOf(e.target.value)}
+              style={{
+                padding: '0.75rem 1rem',
+                borderRadius: 'var(--radius-md)',
+                border: '1px solid var(--border)',
+                background: 'var(--background)',
+                color: 'var(--foreground)',
+                fontSize: '1rem',
+              }}
+            />
+            <button
+              onClick={handleResetAsOf}
+              className="btn"
+              style={{
+                border: '1px solid var(--border)',
+                background: 'transparent',
+                color: 'var(--foreground)',
+              }}
+            >
+              リセット
+            </button>
+          </div>
+          {settings.asOf && (
+            <div style={{ marginTop: '0.75rem', fontSize: '0.85rem', opacity: 0.7 }}>
+              現在の確認時刻: <strong>{settings.asOf.replace('T', ' ')} (JST)</strong>
+            </div>
+          )}
+        </div>
+      )}
 
       {/* Save Button */}
       <button onClick={handleSave} className="btn btn-primary" style={{ justifySelf: 'start' }}>

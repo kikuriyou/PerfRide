@@ -14,11 +14,13 @@ interface UserSettings {
   recommendMode: RecommendMode;
   usePersonalData: boolean;
   coachAutonomy: CoachAutonomy;
+  asOf: string | null;
 }
 
 interface SettingsContextType {
   settings: UserSettings;
   updateSettings: (newSettings: Partial<UserSettings>) => void;
+  isLoaded: boolean;
 }
 
 const defaultSettings: UserSettings = {
@@ -30,6 +32,7 @@ const defaultSettings: UserSettings = {
   recommendMode: 'hybrid',
   usePersonalData: true,
   coachAutonomy: 'suggest',
+  asOf: null,
 };
 
 const SettingsContext = createContext<SettingsContextType | undefined>(undefined);
@@ -77,7 +80,7 @@ export function SettingsProvider({ children }: { children: ReactNode }) {
   };
 
   return (
-    <SettingsContext.Provider value={{ settings, updateSettings }}>
+    <SettingsContext.Provider value={{ settings, updateSettings, isLoaded }}>
       {children}
     </SettingsContext.Provider>
   );
