@@ -3,6 +3,7 @@
 import { useSettings } from '@/lib/settings';
 import type { RecommendMode, CoachAutonomy } from '@/lib/settings';
 import { useState, useEffect } from 'react';
+import NotificationSettings from '@/app/dashboard/_components/NotificationSettings';
 
 const COACH_AUTONOMY_OPTIONS: { value: CoachAutonomy; label: string; description: string }[] = [
   {
@@ -423,6 +424,11 @@ export default function SettingsForm() {
           )}
         </div>
       )}
+
+      {/* Notifications */}
+      <div style={cardStyle}>
+        <NotificationSettings />
+      </div>
 
       {/* Save Button */}
       <button onClick={handleSave} className="btn btn-primary" style={{ justifySelf: 'start' }}>

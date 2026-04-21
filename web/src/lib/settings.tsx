@@ -1,6 +1,6 @@
 'use client';
 
-import { createContext, useContext, useState, useEffect, ReactNode } from 'react';
+import { createContext, useContext, useState, useEffect, useRef, ReactNode } from 'react';
 
 export type RecommendMode = 'hybrid' | 'web_only' | 'no_grounding';
 export type CoachAutonomy = 'observe' | 'suggest' | 'coach';
@@ -44,6 +44,7 @@ function syncFtpCookie(ftp: number) {
 export function SettingsProvider({ children }: { children: ReactNode }) {
   const [settings, setSettings] = useState<UserSettings>(defaultSettings);
   const [isLoaded, setIsLoaded] = useState(false);
+  const initialLoadDone = useRef(false);
 
   useEffect(() => {
     const saved = localStorage.getItem('userSettings');
@@ -63,6 +64,15 @@ export function SettingsProvider({ children }: { children: ReactNode }) {
     if (isLoaded) {
       localStorage.setItem('userSettings', JSON.stringify(settings));
       syncFtpCookie(settings.ftp);
+      if (initialLoadDone.current) {
+        fetch('/api/settings/sync', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(settings),
+        }).catch(() => {});
+      } else {
+        initialLoadDone.current = true;
+      }
     }
   }, [settings, isLoaded]);
 

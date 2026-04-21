@@ -9,17 +9,17 @@ from recommend_agent.tools.get_expert_knowledge import get_expert_knowledge
 from recommend_agent.tools.get_recent_activities import get_recent_activities
 from recommend_agent.tools.search_latest_knowledge import search_latest_knowledge
 
-# Load system prompts from markdown files
 _PROMPT_DIR = Path(__file__).parent / "prompts"
 _SYSTEM_PROMPT = (_PROMPT_DIR / "system_prompt.md").read_text(encoding="utf-8")
 _GENERIC_PROMPT = (_PROMPT_DIR / "system_prompt_generic.md").read_text(encoding="utf-8")
 _INSIGHT_PROMPT = (_PROMPT_DIR / "insight_prompt.md").read_text(encoding="utf-8")
+_WEBHOOK_PROMPT = (_PROMPT_DIR / "webhook_prompt.md").read_text(encoding="utf-8")
 
 # Cache agents by (mode, use_personal_data) to avoid rebuilding per request
-_agent_cache: dict[tuple[str, bool], Agent] = {}
+_agent_cache: dict[tuple[str, bool, str], Agent] = {}
 
 
-def _build_tools(mode: str, use_personal_data: bool) -> list:
+def _build_tools(mode: str, use_personal_data: bool, trigger: str = "dashboard") -> list:
     tools: list = []
 
     if use_personal_data:
@@ -30,8 +30,32 @@ def _build_tools(mode: str, use_personal_data: bool) -> list:
     elif mode == "no_grounding":
         pass
     else:
-        # hybrid (default)
         tools.extend([get_expert_knowledge, search_latest_knowledge])
+
+    if trigger == "webhook":
+        from recommend_agent.tools.build_and_register_workout import (
+            build_and_register_workout,
+        )
+        from recommend_agent.tools.explore_outdoor_routes import explore_outdoor_routes
+        from recommend_agent.tools.get_current_fitness import get_current_fitness
+        from recommend_agent.tools.get_training_plan import get_training_plan
+        from recommend_agent.tools.get_user_profile import get_user_profile
+        from recommend_agent.tools.get_weather_forecast import get_weather_forecast
+        from recommend_agent.tools.send_notification import send_notification
+        from recommend_agent.tools.update_training_plan import update_training_plan
+
+        tools.extend(
+            [
+                get_current_fitness,
+                get_training_plan,
+                get_user_profile,
+                get_weather_forecast,
+                explore_outdoor_routes,
+                build_and_register_workout,
+                update_training_plan,
+                send_notification,
+            ]
+        )
 
     return tools
 
@@ -90,10 +114,14 @@ def _build_instruction(mode: str, use_personal_data: bool) -> str:
     return prompt
 
 
-def build_agent(mode: str, use_personal_data: bool) -> Agent:
-    key = (mode, use_personal_data)
+def build_agent(mode: str, use_personal_data: bool, trigger: str = "dashboard") -> Agent:
+    key = (mode, use_personal_data, trigger)
     if key in _agent_cache:
         return _agent_cache[key]
+
+    instruction = _build_instruction(mode, use_personal_data)
+    if trigger == "webhook":
+        instruction = instruction + "\n\n" + _WEBHOOK_PROMPT
 
     agent = Agent(
         name="recommend_training_agent",
@@ -102,8 +130,8 @@ def build_agent(mode: str, use_personal_data: bool) -> Agent:
             "Cycling training recommendation agent that suggests "
             "today's workout based on recent activity data and training goals."
         ),
-        instruction=_build_instruction(mode, use_personal_data),
-        tools=_build_tools(mode, use_personal_data),
+        instruction=instruction,
+        tools=_build_tools(mode, use_personal_data, trigger),
     )
     _agent_cache[key] = agent
     return agent

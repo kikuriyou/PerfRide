@@ -23,7 +23,8 @@
     "react-dom": "^19.2.3",
     "react-leaflet": "^5.0.0",
     "react-markdown": "^10.1.0",
-    "recharts": "^3.5.1"
+    "recharts": "^3.5.1",
+    "web-push": "^3.6.7"
   },
   "devDependencies": {
     "@types/node": "^20",

@@ -1,5 +1,6 @@
 """PerfRide Training Recommendation API Server."""
 
+import asyncio
 import json
 import os
 from datetime import UTC, datetime, timedelta
@@ -392,6 +393,8 @@ async def recommend_training(request: RecommendRequest) -> InsightResponse | Rec
         cache = None
 
     if cache and not _should_regenerate(cache, effective_personal):
+        if effective_personal and _should_trigger_ambient():
+            asyncio.create_task(_run_ambient_flow())
         return RecommendResponse(
             summary=str(cache.get("summary", "")),
             detail=str(cache.get("detail", "")),
@@ -521,6 +524,9 @@ async def recommend_training(request: RecommendRequest) -> InsightResponse | Rec
         if not bypass_cache:
             _save_cache(cache_data)
 
+        if effective_personal and not bypass_cache and _should_trigger_ambient():
+            asyncio.create_task(_run_ambient_flow())
+
         return RecommendResponse(
             summary=parsed.get("summary", ""),
             detail=parsed.get("detail", ""),
@@ -542,6 +548,187 @@ async def recommend_training(request: RecommendRequest) -> InsightResponse | Rec
     finally:
         activity_override_var.reset(override_token)
         as_of_var.reset(as_of_token)
+
+
+class WebhookRecommendRequest(BaseModel):
+    trigger: str = "webhook"
+    activity_id: int | None = None
+
+
+class RespondRequest(BaseModel):
+    session_id: str
+    action: str
+    user_message: str | None = None
+    modification_count: int = 0
+
+
+# Store session IDs for webhook conversations
+_webhook_sessions: dict[str, str] = {}
+
+# Ambient flow state
+_ambient_running = False
+
+
+def _save_ambient_state(session_id: str, trigger: str) -> None:
+    from recommend_agent.gcs import now_jst_iso, write_gcs_json
+
+    activity_mtime = _get_activity_cache_mtime()
+    write_gcs_json("ambient_state.json", {
+        "last_run_at": now_jst_iso(),
+        "activity_cache_mtime": activity_mtime.isoformat() if activity_mtime else None,
+        "session_id": session_id,
+        "trigger": trigger,
+    })
+
+
+def _should_trigger_ambient() -> bool:
+    if _ambient_running:
+        return False
+    try:
+        from recommend_agent.gcs import read_gcs_json
+
+        activity_mtime = _get_activity_cache_mtime()
+        if activity_mtime is None:
+            return False
+        state = read_gcs_json("ambient_state.json")
+        if state is None:
+            return True
+        stored_mtime = state.get("activity_cache_mtime")
+        if stored_mtime is None:
+            return True
+        return activity_mtime.isoformat() != stored_mtime
+    except Exception:
+        return False
+
+
+async def _run_ambient_flow() -> None:
+    global _ambient_running
+    if _ambient_running:
+        return
+    _ambient_running = True
+    try:
+        agent = build_agent(mode=RECOMMEND_MODE, use_personal_data=True, trigger="webhook")
+        session = await session_service.create_session(
+            app_name="perfride_webhook",
+            user_id="perfride_user",
+        )
+        _webhook_sessions["latest"] = session.id
+
+        runner = Runner(
+            agent=agent,
+            app_name="perfride_webhook",
+            session_service=session_service,
+        )
+        content = types.Content(
+            role="user",
+            parts=[types.Part.from_text(text=(
+                "ダッシュボード表示をトリガーとして次回セッションを判断します。\n"
+                "最新のアクティビティデータに基づき、次回セッションを判断し、"
+                "必要に応じてZwiftに登録してください。"
+            ))],
+        )
+
+        async for _event in runner.run_async(
+            user_id="perfride_user",
+            session_id=session.id,
+            new_message=content,
+        ):
+            pass
+
+        _save_ambient_state(session.id, "dashboard")
+        print(f"[ambient] Completed via dashboard trigger, session={session.id}")
+    except Exception as e:
+        print(f"[ambient] Flow failed: {e}")
+    finally:
+        _ambient_running = False
+
+
+@app.post("/api/agent/recommend")
+async def recommend_webhook(request: WebhookRecommendRequest):
+    """Webhook-triggered recommendation (called by Next.js after Strava webhook)."""
+    agent = build_agent(
+        mode=RECOMMEND_MODE,
+        use_personal_data=True,
+        trigger="webhook",
+    )
+
+    session = await session_service.create_session(
+        app_name="perfride_webhook",
+        user_id="perfride_user",
+    )
+    _webhook_sessions["latest"] = session.id
+
+    runner = Runner(
+        agent=agent,
+        app_name="perfride_webhook",
+        session_service=session_service,
+    )
+
+    content = types.Content(
+        role="user",
+        parts=[types.Part.from_text(text=(
+            f"アクティビティが完了しました。\n"
+            f"Activity ID: {request.activity_id}\n"
+            f"次回セッションを判断し、必要に応じてZwiftに登録してください。"
+        ))],
+    )
+
+    final_response = ""
+    async for event in runner.run_async(
+        user_id="perfride_user",
+        session_id=session.id,
+        new_message=content,
+    ):
+        if event.is_final_response() and event.content and event.content.parts:
+            final_response = event.content.parts[0].text
+
+    _save_ambient_state(session.id, "webhook")
+
+    return {
+        "status": "ok",
+        "session_id": session.id,
+        "response": final_response,
+    }
+
+
+@app.post("/recommend/respond")
+async def recommend_respond(request: RespondRequest):
+    """Handle user response to a notification (feedback loop)."""
+    agent = build_agent(
+        mode=RECOMMEND_MODE,
+        use_personal_data=True,
+        trigger="webhook",
+    )
+
+    runner = Runner(
+        agent=agent,
+        app_name="perfride_webhook",
+        session_service=session_service,
+    )
+
+    content = types.Content(
+        role="user",
+        parts=[types.Part.from_text(text=(
+            f"ユーザーの応答: {request.action}\n"
+            f"メッセージ: {request.user_message or 'なし'}\n"
+            f"修正回数: {request.modification_count}/3"
+        ))],
+    )
+
+    final_response = ""
+    async for event in runner.run_async(
+        user_id="perfride_user",
+        session_id=request.session_id,
+        new_message=content,
+    ):
+        if event.is_final_response() and event.content and event.content.parts:
+            final_response = event.content.parts[0].text
+
+    return {
+        "status": "ok",
+        "session_id": request.session_id,
+        "response": final_response,
+    }
 
 
 @app.get("/health")
