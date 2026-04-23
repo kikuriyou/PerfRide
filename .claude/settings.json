@@ -103,7 +103,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "uv run --no-project python \"$CLAUDE_PROJECT_DIR/.claude/hooks/enforce-plan-review.py\"",
+            "command": "uv run --no-project python3 \"$CLAUDE_PROJECT_DIR/.claude/hooks/enforce-plan-review.py\"",
             "timeout": 5
           }
         ]
@@ -115,12 +115,12 @@
         "hooks": [
           {
             "type": "command",
-            "command": "uv run --no-project python \"$CLAUDE_PROJECT_DIR/.claude/hooks/lint-on-save.py\"",
+            "command": "uv run --no-project python3 \"$CLAUDE_PROJECT_DIR/.claude/hooks/lint-on-save.py\"",
             "timeout": 30
           },
           {
             "type": "command",
-            "command": "uv run --no-project python \"$CLAUDE_PROJECT_DIR/.claude/hooks/auto-test-after-impl.py\"",
+            "command": "uv run --no-project python3 \"$CLAUDE_PROJECT_DIR/.claude/hooks/auto-test-after-impl.py\"",
             "timeout": 90
           }
         ]
@@ -132,7 +132,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "echo '{\"hookSpecificOutput\": {\"additionalContext\": \"Context compaction triggered. Key context: Check CLAUDE.md for project rules, .claude/docs/DESIGN.md for design decisions, .claude/rules/ for coding standards. Also check tasks/lessons.md for past corrections before proceeding.\"}}'"
+            "command": "echo '{\"hookSpecificOutput\": {\"additionalContext\": \"Context compaction triggered. Key context: Check CLAUDE.md for project rules, .taskflow/workflow.md for shared taskflow rules, .claude/docs/DESIGN.md for design decisions, and tasks/lessons.md for past corrections.\"}}'"
           }
         ]
       }

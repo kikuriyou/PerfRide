@@ -1,189 +1,83 @@
 ---
 name: dev
 description: |
-  Full development cycle: plan → plan review → implement → test → review.
-  Single command to execute all phases with minimal user intervention.
-  User approval required only at plan review phase.
+  Advance one shared taskflow phase at a time while keeping state.json current.
 metadata:
-  short-description: Auto dev cycle (plan → review → implement → test → review)
+  short-description: Shared taskflow phase runner
 ---
 
 # Dev
 
-**Full development cycle meta-skill. Plan from $ARGUMENTS, get approval, implement, test, review -- all in one command.**
+Move exactly one taskflow phase forward for $ARGUMENTS and stop with an updated `next_action`.
 
 ```
-/dev <task description>
-
-Phase 1: PLAN
-  /plan を使用。複雑なタスクは /codex:rescue で相談
-    ↓
-Phase 2: PLAN REVIEW  ← ユーザー承認必須
-  /codex:adversarial-review でプランの弱点を検証 → 結果をユーザーに提示
-    ↓
-Phase 3: IMPLEMENT
-  テストがない → テストを先に書く → 実装 → テスト実行
-  テストがある → そのまま実装
-    ↓
-Phase 4: TEST
-  変更領域に応じたテスト実行 (max 3 retries)
-    ↓
-Phase 5: REVIEW LOOP (max 3 iterations)
-  /review 実行
-  ├─ Critical/High の指摘あり → 修正 → Phase 4 (re-test) → Phase 5 に戻る
-  └─ 指摘なし → Final Report に移行
-  ※ 3回ループしても残る場合はユーザーに判断を委ねる
-    ↓
-FINAL REPORT
-  変更ファイル、テスト結果、レビュー結果
-  + Lessons Learned (修正・指摘があれば tasks/lessons.md に追記)
-  + ドキュメント更新が必要な場合は注記
+/dev <task description or task-id>
 ```
 
----
+## Start
 
-## Phase 1: PLAN
+1. Read `.taskflow/workflow.md`.
+2. Resolve the task:
+   - Existing task: `uv run --no-project python3 .taskflow/scripts/taskflow.py resume --task-id <task-id>`
+   - New task: pick `tasks/YYYYMMDD_<slug>/`, run `init`, then move into `/plan`
+3. Read `tasks/<task-id>/state.json` and `plan.md`.
 
-**Analyze $ARGUMENTS and create implementation plan.**
+## Phase Rules
 
-1. Read relevant files (Glob/Grep/Read)
-2. Identify affected areas (frontend `src/`, agent `agent/`, or both)
-3. Check `.claude/docs/` for existing context
+### `plan`
 
-**Scale decision:**
+- Draft or refine the spec-driven `plan.md`
+- When the plan is ready, move to approval:
 
-| Task Complexity | Action |
-|-----------------|--------|
-| 3+ steps or design decisions | `/codex:rescue` でプラン策定を委譲 |
-| Simple (1-2 steps, obvious) | Plan inline |
-
-Write plan to `tasks/YYYYMMDD/plan.md` as a checkable list:
-
-```markdown
-## Task: {task title}
-
-### Plan
-
-- [ ] Step 1: {description} (`{file(s)}`)
-- [ ] Step 2: ...
-
-### Notes
-
-- {Key design decisions}
-- {Risks or caveats}
+```bash
+uv run --no-project python3 .taskflow/scripts/taskflow.py advance --task-id <task-id> --phase approval --next-action "Present What, Acceptance, and Non-functional for approval."
 ```
 
----
+- Stop and show the plan to the user
 
-## Phase 2: PLAN REVIEW (MANDATORY GATE)
+### `approval`
 
-**Present the plan to the user and wait for explicit approval.**
+- Present only `What`, `Acceptance`, and `Non-functional`
+- Wait for explicit user approval
+- After approval, record it:
 
-1. `/codex:adversarial-review` を実行してプランの弱点・リスク・設計上の問題を検証
-2. Present the plan + Codex feedback to the user:
-
-```markdown
-## Plan: {task title}
-
-### Steps ({N} items)
-{step list}
-
-### Codex Review
-{summary of Codex feedback}
-
----
-Options:
-1. **Approve** — proceed to implementation
-2. **Request changes** — returns to Phase 1
-3. **Reject** — stop
+```bash
+uv run --no-project python3 .taskflow/scripts/taskflow.py approve --task-id <task-id> --approved-by user
 ```
 
-- **Do NOT proceed to Phase 3 without explicit user approval**
-- If changes requested: update plan and re-present
+- Do not edit `agent/` or `web/src/` before approval
 
----
+### `implement`
 
-## Phase 3: IMPLEMENT
+- Implement only the approved scope
+- If `How` changes after approval, record a short note:
 
-**Execute the approved plan step by step.**
-
-### Test-First Logic
-
-```
-Existing tests for the change area?
-  ├─ No  → Write tests first → Implement → Run tests
-  └─ Yes → Implement directly → Run tests
+```bash
+uv run --no-project python3 .taskflow/scripts/taskflow.py advance --task-id <task-id> --note "Adjusted How: <short reason>"
 ```
 
-For each step:
+- Update the plan checkboxes as work finishes
+- When the implementation slice is ready, move to test
 
-1. **Read before write** -- understand existing code patterns
-2. **Implement the change** -- follow codebase conventions
-3. **Mark complete** -- update checkbox in tasks/YYYYMMDD/plan.md
+### `test`
 
----
+- Run the relevant checks for the changed area
+- If checks fail, fix them or set `status=blocked`
+- If checks pass, move to review
 
-## Phase 4: TEST
+### `review`
 
-**Run tests based on which files were changed.**
+- Run `/review`
+- Fix Critical/High findings before closing
+- If the change is ready, move to `done` and write `result.md`
 
-| Changed Area | Test Command |
-|-------------|-------------|
-| `agent/` only | `cd agent && uv run pytest -v` |
-| `src/` only | `npm run build` + `npm run test` |
-| Both | Run both sets |
+### `done`
 
-### Failure Handling (max 3 attempts)
+- Summarize changes, validation, and remaining risks
+- Update `tasks/lessons.md` if the user corrected the work
 
-```
-Test failure → Analyze error → Fix → Re-test
-  ↓ (still failing after 3 attempts)
-STOP: Report to user with error details
-```
+## Rules
 
-- Do NOT retry blindly with the same change
-- After 3 failures: present error details and ask user
-
----
-
-## Phase 5: REVIEW LOOP (max 3 iterations)
-
-**Review the implementation for quality and security.**
-
-```
-Run /review
-  ↓
-Critical/High issues found?
-  ├─ Yes → Fix → Phase 4 (re-test) → Phase 5 again
-  └─ No  → Proceed to Final Report
-```
-
-- Max 3 review iterations
-- If issues remain after 3 loops: present remaining issues to user for decision
-
----
-
-## Final Report
-
-```markdown
-## Done: {task title}
-
-### Changed Files
-{output of `git diff --stat`}
-
-### Test Results
-- Agent: {PASS/FAIL/SKIP}
-- Frontend build: {PASS/FAIL/SKIP}
-- Frontend tests: {PASS/FAIL/SKIP}
-
-### Review Results
-- Iterations: {N}
-- Findings: {N} issues found, {N} fixed
-- Remaining: {list or "None"}
-
-### Lessons Learned
-{修正・指摘があれば tasks/lessons.md にも追記}
-
-### Documentation
-{ドキュメント更新が必要な場合は注記}
-```
+- Always update `state.json` before finishing
+- If the phase is unclear, run `status` or `resume` first
+- Use `/codex:rescue` when the plan or fix requires deeper reasoning

@@ -54,3 +54,10 @@ Codex handles planning, design, code review, root-cause analysis, and complex im
 - Avoid unnecessary abstractions.
 - Keep failures observable instead of swallowing exceptions.
 - Preserve or improve testability.
+
+## Repo Taskflow
+
+- `.taskflow/workflow.md` is the shared workflow contract for Claude and Codex.
+- Before resuming a task, read `tasks/<task-id>/state.json` or run `uv run --no-project python3 .taskflow/scripts/taskflow.py resume --task-id <task-id>`.
+- Source edits in `agent/` and `web/src/` require a current `approval.json` whose `spec_hash` matches `What`, `Acceptance`, and `Non-functional`.
+- Keep `state.json.next_action` current whenever you stop or change phase.

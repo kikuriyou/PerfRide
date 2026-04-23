@@ -13,7 +13,10 @@ sources:
     description: Codex-specific responsibilities, output shape, and quality rules.
   workflow_rule:
     path: .claude/rules/workflow.md
-    description: Task lifecycle, automated hooks, and recovery protocol.
+    description: Claude-side summary of the shared taskflow and adapters.
+  taskflow_workflow:
+    path: .taskflow/workflow.md
+    description: Shared workflow contract, gate rules, and taskflow commands.
   self_improvement_rule:
     path: .claude/rules/self-improvement.md
     description: How to respond after user corrections.
@@ -32,6 +35,7 @@ outputs:
     body: claude_project
     references:
       - workflow_rule
+      - taskflow_workflow
       - self_improvement_rule
       - design_doc
       - registry
@@ -44,5 +48,6 @@ outputs:
     references:
       - claude_project
       - workflow_rule
+      - taskflow_workflow
       - self_improvement_rule
       - design_doc

@@ -59,3 +59,4 @@ docker-compose.yml
 
 # Local AI context (contains project-specific config)
 .claude/context/local-env.md
+.taskflow/active-task.json

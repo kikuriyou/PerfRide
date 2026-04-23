@@ -1,0 +1,61 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Taskflow State",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "task_id",
+    "title",
+    "phase",
+    "status",
+    "runner",
+    "next_action",
+    "artifacts",
+    "updated_at"
+  ],
+  "properties": {
+    "task_id": {
+      "type": "string",
+      "minLength": 1
+    },
+    "title": {
+      "type": "string",
+      "minLength": 1
+    },
+    "phase": {
+      "type": "string",
+      "enum": ["plan", "approval", "implement", "test", "review", "done"]
+    },
+    "status": {
+      "type": "string",
+      "enum": ["pending", "in_progress", "blocked", "completed"]
+    },
+    "runner": {
+      "type": "string",
+      "enum": ["claude", "codex", "human", "system"]
+    },
+    "next_action": {
+      "type": "string",
+      "minLength": 1
+    },
+    "artifacts": {
+      "type": "object",
+      "minProperties": 1,
+      "additionalProperties": {
+        "type": "string",
+        "minLength": 1
+      }
+    },
+    "notes": {
+      "type": "array",
+      "items": {
+        "type": "string",
+        "minLength": 1
+      }
+    },
+    "updated_at": {
+      "type": "string",
+      "minLength": 1
+    }
+  }
+}

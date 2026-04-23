@@ -29,5 +29,5 @@ docker compose up
 - Frontend imports use `@/*` alias (maps to `web/src/*`)
 - `web/next.config.ts` keeps `output: "standalone"` for Docker
 - Agent env uses `GOOGLE_GENAI_USE_VERTEXAI=true` (see `.claude/context/local-env.md` for project ID)
-- Claude hooks run Python via `uv run --no-project python`
+- Claude hooks run Python via `uv run --no-project python3`
 - Frontend tests use Vitest and live in `__tests__/` directories

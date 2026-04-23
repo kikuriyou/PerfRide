@@ -1,81 +1,68 @@
 ---
 name: plan
-description: Create a detailed implementation plan for a feature or task. Use when user wants to plan before coding.
+description: Create or update a spec-driven task plan before coding.
 disable-model-invocation: true
 ---
 
-# Create Implementation Plan
+# Create Spec-Driven Plan
 
-Create an implementation plan for $ARGUMENTS.
+Create or update `tasks/<task-id>/plan.md` for $ARGUMENTS.
 
-## Planning Process
+## Before Writing
 
-### 1. Requirements Analysis
+1. Read `.taskflow/workflow.md` and `.taskflow/plan-template.md`.
+2. Inspect the relevant code, tests, docs, and task artifacts.
+3. If the task directory does not exist yet, initialize it first:
 
-First clarify:
-
-- **Purpose**: What to achieve
-- **Scope**: What to include, what to exclude
-- **Constraints**: Technical, time, dependencies
-
-### 2. Current State Investigation
-
-Investigate the codebase:
-
-```
-- Related existing code
-- Files affected
-- Libraries/patterns to use
-- Existing tests
+```bash
+uv run --no-project python3 .taskflow/scripts/taskflow.py init --task-id <task-id> --title "<title>"
 ```
 
-### 3. Break Down Implementation Steps
+## Required Sections
 
-Break into small steps:
-
-1. Each step is independently testable
-2. Consider dependency order
-3. High-risk steps first
-
-### 4. Output Format
+`plan.md` must contain:
 
 ```markdown
-## Implementation Plan: {Title}
+## Task: {Title}
 
-### Purpose
+## What
 
-{1-2 sentences}
+- Goal:
+- Scope:
+- Non-goal:
 
-### Scope
+## Acceptance
 
-- New files: {list}
-- Modified files: {list}
-- Dependencies: {list}
+- [ ] User-visible outcome:
+- [ ] Validation command or manual check:
 
-### Implementation Steps
+## Non-functional
 
-#### Step 1: {Title}
+- Security:
+- Compatibility:
+- Observability:
+- Performance:
 
-- [ ] {Specific task}
-- [ ] {Specific task}
-      **Verification**: {Completion criteria for this step}
+## How
 
-#### Step 2: {Title}
+### Phase 1: {Title}
 
-...
+- [ ] {Investigation or implementation step}
+- [ ] {Verification or handoff step}
 
-### Risks & Considerations
+## Risks
 
-- {Potential issues and mitigations}
-
-### Open Questions
-
-- {Items to clarify before implementation}
+- {Main risk}
+- {Rollback or mitigation}
 ```
 
-## Notes
+Approval covers only `What`, `Acceptance`, and `Non-functional`.
+`How` may change after approval if `state.json.next_action` is updated and a short note is appended.
 
-- Plans should be at actionable granularity
-- Include verification method for each step
-- Ask questions at planning stage for unclear points
-- Don't over-detail (adjust during implementation)
+## After Writing
+
+Move the task to approval:
+
+```bash
+uv run --no-project python3 .taskflow/scripts/taskflow.py advance --task-id <task-id> --phase approval --next-action "Present What, Acceptance, and Non-functional for approval."
+```

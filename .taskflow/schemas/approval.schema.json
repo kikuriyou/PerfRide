@@ -1,0 +1,30 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Taskflow Approval",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "task_id",
+    "approved_by",
+    "approved_at",
+    "spec_hash"
+  ],
+  "properties": {
+    "task_id": {
+      "type": "string",
+      "minLength": 1
+    },
+    "approved_by": {
+      "type": "string",
+      "minLength": 1
+    },
+    "approved_at": {
+      "type": "string",
+      "minLength": 1
+    },
+    "spec_hash": {
+      "type": "string",
+      "pattern": "^[a-f0-9]{64}$"
+    }
+  }
+}
