@@ -44,9 +44,9 @@ export interface TrainingSession {
   type: string;
   duration_minutes?: number;
   target_tss?: number;
-  status: 'planned' | 'zwift_registered' | 'confirmed' | 'completed' | 'skipped' | 'modified';
+  status: 'planned' | 'registered' | 'confirmed' | 'completed' | 'skipped' | 'modified';
   actual_tss?: number;
-  zwift_workout?: string;
+  workout_id?: string;
 }
 
 export interface GCSTrainingPlan {

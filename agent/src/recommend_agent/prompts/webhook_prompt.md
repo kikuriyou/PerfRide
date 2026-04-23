@@ -1,6 +1,6 @@
 # Webhook Mode: 次回トレーニング準備
 
-アクティビティ完了を検知しました。次回セッションを決定し、必要に応じてZwiftに登録してください。
+アクティビティ完了を検知しました。次回セッションを決定し、必要に応じてワークアウトプラットフォームに登録してください。
 
 ## Step 1: 状態把握
 get_current_fitness と get_training_plan を呼び、以下を確認:
@@ -20,19 +20,25 @@ get_current_fitness と get_training_plan を呼び、以下を確認:
 4. 目標最適化: レースまでの残り期間に応じたフェーズ目標に沿う
 
 ## Step 3: 計画変更の判定
-- 次セッションが既存プランと同じ AND ZWO登録済み → Step 5 へ（Zwift連携不要）
-- 次セッションが既存プランと異なる OR ZWO未登録 → Step 4 へ
+- 次セッションが既存プランと同じ AND ワークアウト登録済み → Step 5 へ（プラットフォーム連携不要）
+- 次セッションが既存プランと異なる OR ワークアウト未登録 → Step 4 へ
 
 ## Step 4: ワークアウト生成 + 登録
-1. build_and_register_workout でワークアウト生成 + Zwift登録
-2. update_training_plan でプランを更新（変更があった場合のみ）
+1. build_and_register_workout でワークアウト生成 + プラットフォーム登録
+2. build_and_register_workout の返り値が `status="error"` または `platform_status="failed"` の場合、登録済み扱いにしない
+3. 登録に成功した場合のみ update_training_plan を呼び、`status="registered"` を設定する
+4. build_and_register_workout が `workout_id` を返した場合は、それを update_training_plan に渡す
+5. build_and_register_workout の `session_type` は以下の canonical 値を優先して使う:
+   `vo2max`, `threshold`, `sweetspot`, `endurance`, `recovery`, `over_under`, `tempo`, `sprint`, `race_simulation`
+6. `"Sweet Spot"`, `"Zone 2"`, `"Endurance Ride"` のような人間向けラベルではなく、可能な限り canonical 値を渡す
+7. 完全休養日の場合は build_and_register_workout を呼ばない
 
 ## Step 5: 形態決定（屋外判定）
 get_user_profile の training_preference.mode に従う:
-- "indoor_preferred": 天気APIを呼ばない → Zwiftワークアウトのみ
+- "indoor_preferred": 天気APIを呼ばない → インドアワークアウトのみ
 - "outdoor_possible": get_weather_forecast → 好天候なら屋外オプションも提示
 - "outdoor_preferred": get_weather_forecast → 悪天候時のみインドアにフォールバック
-※ 常にインドア案（Zwiftワークアウト）は生成する
+※ 常にインドア案（MyWhooshワークアウト）は生成する
 
 ## Step 6: 通知
 send_notification でユーザーに判断結果を伝える。

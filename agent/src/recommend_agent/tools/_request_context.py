@@ -12,3 +12,8 @@ as_of_var: ContextVar[datetime | None] = ContextVar(
     "perfride_as_of",
     default=None,
 )
+
+webhook_trace_id_var: ContextVar[str | None] = ContextVar(
+    "perfride_webhook_trace_id",
+    default=None,
+)

@@ -1,5 +1,6 @@
 """Tests for the Zwift module: ZWO templates, generator, and build_and_register_workout."""
 
+from datetime import datetime
 from unittest.mock import patch
 
 import pytest
@@ -168,9 +169,11 @@ class TestZwoGenerator:
 class TestBuildAndRegisterWorkout:
     @patch("mywhoosh.client.MyWhooshClient.upload_workout")
     @patch("mywhoosh.client.MyWhooshClient.login")
-    def test_success_mywhoosh(self, mock_login, mock_upload):
+    @patch("recommend_agent.tools.build_and_register_workout._current_jst")
+    def test_success_mywhoosh(self, mock_now, mock_login, mock_upload):
         from mywhoosh.client import AuthSession, DeployResult
 
+        mock_now.return_value = datetime.fromisoformat("2026-04-24T13:05:00+09:00")
         mock_login.return_value = AuthSession(access_token="fake", whoosh_id="id123")
         mock_upload.return_value = DeployResult(status="registered", message="OK")
 
@@ -187,8 +190,13 @@ class TestBuildAndRegisterWorkout:
         assert result["status"] == "success"
         assert result["estimated_tss"] > 0
         assert "VO2max" in result["summary"]
+        assert result["summary"].startswith("PerfRide 20260424-1305 ")
+        assert result["base_summary"].startswith("VO2max")
+        assert result["registered_at"] == "2026-04-24T13:05:00+09:00"
         assert result["platform_status"] == "registered"
         assert len(result["intervals"]) > 0
+        uploaded_payload = mock_upload.call_args.args[0]
+        assert uploaded_payload["Name"] == result["summary"]
 
     @patch("mywhoosh.client.MyWhooshClient.upload_workout")
     @patch("mywhoosh.client.MyWhooshClient.login")
@@ -208,7 +216,7 @@ class TestBuildAndRegisterWorkout:
             ftp=260,
         )
 
-        assert result["status"] == "success"
+        assert result["status"] == "error"
         assert result["platform_status"] == "failed"
         assert "401" in result["platform_message"]
 
@@ -225,6 +233,40 @@ class TestBuildAndRegisterWorkout:
 
         assert result["status"] == "error"
         assert "Unknown session type" in result["error_message"]
+
+    @patch("mywhoosh.client.MyWhooshClient.upload_workout")
+    @patch("mywhoosh.client.MyWhooshClient.login")
+    def test_alias_session_types_are_normalized(self, mock_login, mock_upload):
+        from mywhoosh.client import AuthSession, DeployResult
+
+        mock_login.return_value = AuthSession(access_token="fake", whoosh_id="id123")
+        mock_upload.return_value = DeployResult(status="registered", message="OK")
+
+        from recommend_agent.tools.build_and_register_workout import (
+            build_and_register_workout,
+        )
+
+        aliases = [
+            "Endurance Ride",
+            "Endurance",
+            "Zone 2",
+            "Zone 2 Steady State",
+            "Sweet Spot",
+            "Recovery",
+            "Recovery Ride",
+            "VO2 Max",
+            "Over-Under",
+            "Race Simulation",
+        ]
+
+        for alias in aliases:
+            result = build_and_register_workout(
+                session_type=alias,
+                duration_minutes=60,
+                ftp=260,
+            )
+            assert result["status"] == "success", f"Failed for {alias}"
+            assert result["platform_status"] == "registered", f"Not registered for {alias}"
 
     @patch("mywhoosh.client.MyWhooshClient.upload_workout")
     @patch("mywhoosh.client.MyWhooshClient.login")

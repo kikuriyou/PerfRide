@@ -19,6 +19,7 @@ from recommend_agent.constants import RECOMMEND_MODE, USE_PERSONAL_DATA
 from recommend_agent.tools._request_context import (
     activity_override_var,
     as_of_var,
+    webhook_trace_id_var,
 )
 from recommend_agent.tools.detect_signals import detect_signals
 from recommend_agent.tools.search_latest_knowledge import (
@@ -553,6 +554,7 @@ async def recommend_training(request: RecommendRequest) -> InsightResponse | Rec
 class WebhookRecommendRequest(BaseModel):
     trigger: str = "webhook"
     activity_id: int | None = None
+    trace_id: str | None = None
 
 
 class RespondRequest(BaseModel):
@@ -567,6 +569,10 @@ _webhook_sessions: dict[str, str] = {}
 
 # Ambient flow state
 _ambient_running = False
+
+
+def _log_webhook_flow(trace_id: str, message: str) -> None:
+    print(f"[agent-webhook trace_id={trace_id}] {message}")
 
 
 def _save_ambient_state(session_id: str, trigger: str) -> None:
@@ -624,7 +630,7 @@ async def _run_ambient_flow() -> None:
             parts=[types.Part.from_text(text=(
                 "ダッシュボード表示をトリガーとして次回セッションを判断します。\n"
                 "最新のアクティビティデータに基づき、次回セッションを判断し、"
-                "必要に応じてZwiftに登録してください。"
+                "必要に応じてワークアウトプラットフォームに登録してください。"
             ))],
         )
 
@@ -646,49 +652,73 @@ async def _run_ambient_flow() -> None:
 @app.post("/api/agent/recommend")
 async def recommend_webhook(request: WebhookRecommendRequest):
     """Webhook-triggered recommendation (called by Next.js after Strava webhook)."""
-    agent = build_agent(
-        mode=RECOMMEND_MODE,
-        use_personal_data=True,
-        trigger="webhook",
+    trace_id = request.trace_id or (
+        f"activity-{request.activity_id or 'unknown'}-{int(datetime.now(UTC).timestamp())}"
+    )
+    trace_token = webhook_trace_id_var.set(trace_id)
+    _log_webhook_flow(
+        trace_id,
+        f"Received request: trigger={request.trigger} activity_id={request.activity_id}",
     )
 
-    session = await session_service.create_session(
-        app_name="perfride_webhook",
-        user_id="perfride_user",
-    )
-    _webhook_sessions["latest"] = session.id
+    try:
+        agent = build_agent(
+            mode=RECOMMEND_MODE,
+            use_personal_data=True,
+            trigger="webhook",
+        )
+        _log_webhook_flow(trace_id, "Agent built")
 
-    runner = Runner(
-        agent=agent,
-        app_name="perfride_webhook",
-        session_service=session_service,
-    )
+        session = await session_service.create_session(
+            app_name="perfride_webhook",
+            user_id="perfride_user",
+        )
+        _webhook_sessions["latest"] = session.id
+        _log_webhook_flow(trace_id, f"Session created: session_id={session.id}")
 
-    content = types.Content(
-        role="user",
-        parts=[types.Part.from_text(text=(
-            f"アクティビティが完了しました。\n"
-            f"Activity ID: {request.activity_id}\n"
-            f"次回セッションを判断し、必要に応じてZwiftに登録してください。"
-        ))],
-    )
+        runner = Runner(
+            agent=agent,
+            app_name="perfride_webhook",
+            session_service=session_service,
+        )
 
-    final_response = ""
-    async for event in runner.run_async(
-        user_id="perfride_user",
-        session_id=session.id,
-        new_message=content,
-    ):
-        if event.is_final_response() and event.content and event.content.parts:
-            final_response = event.content.parts[0].text
+        content = types.Content(
+            role="user",
+            parts=[types.Part.from_text(text=(
+                f"アクティビティが完了しました。\n"
+                f"Activity ID: {request.activity_id}\n"
+                f"Trace ID: {trace_id}\n"
+                f"次回セッションを判断し、必要に応じてワークアウトプラットフォームに登録してください。"
+            ))],
+        )
 
-    _save_ambient_state(session.id, "webhook")
+        final_response = ""
+        _log_webhook_flow(trace_id, "Runner started")
+        async for event in runner.run_async(
+            user_id="perfride_user",
+            session_id=session.id,
+            new_message=content,
+        ):
+            if event.is_final_response() and event.content and event.content.parts:
+                final_response = event.content.parts[0].text
 
-    return {
-        "status": "ok",
-        "session_id": session.id,
-        "response": final_response,
-    }
+        _save_ambient_state(session.id, "webhook")
+        _log_webhook_flow(
+            trace_id,
+            f"Runner completed: session_id={session.id} response_chars={len(final_response)}",
+        )
+
+        return {
+            "status": "ok",
+            "session_id": session.id,
+            "response": final_response,
+            "trace_id": trace_id,
+        }
+    except Exception as e:
+        _log_webhook_flow(trace_id, f"Flow failed: {e}")
+        raise
+    finally:
+        webhook_trace_id_var.reset(trace_token)
 
 
 @app.post("/recommend/respond")

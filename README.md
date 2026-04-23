@@ -125,6 +125,26 @@ The deploy script will:
 2. Push to Google Artifact Registry
 3. Deploy to Cloud Run with environment variables
 
+## Strava Webhook (Local Development)
+
+Use `strava-webhook.sh` to manage Strava webhook subscriptions via ngrok:
+
+```bash
+# Start ngrok tunnel
+ngrok http 3000
+
+# List current subscriptions
+./strava-webhook.sh list
+
+# Create subscription with ngrok URL
+./strava-webhook.sh create https://xxxx.ngrok-free.app/api/strava/webhook
+
+# Delete subscription
+./strava-webhook.sh delete
+```
+
+Credentials are read from `web/.env.local` automatically.
+
 ## Tech Stack
 
 | Category           | Technology                                                                         |
