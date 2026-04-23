@@ -228,17 +228,13 @@ function ChatView({ sessionId }: { sessionId: string }) {
       <div style={styles.title}>メニューを変更</div>
 
       <div ref={listRef} style={styles.messageList}>
-        {messages.length === 0 && (
-          <div style={styles.agentBubble}>どのように変更しますか？</div>
-        )}
+        {messages.length === 0 && <div style={styles.agentBubble}>どのように変更しますか？</div>}
         {messages.map((msg, i) => (
           <div key={i} style={msg.role === 'agent' ? styles.agentBubble : styles.userBubble}>
             {msg.text}
           </div>
         ))}
-        {loading && (
-          <div style={{ ...styles.agentBubble, opacity: 0.6 }}>考え中...</div>
-        )}
+        {loading && <div style={{ ...styles.agentBubble, opacity: 0.6 }}>考え中...</div>}
       </div>
 
       {awaitingDecision && !loading && (
@@ -254,9 +250,7 @@ function ChatView({ sessionId }: { sessionId: string }) {
 
       {!awaitingDecision && !loading && (
         <>
-          {freeTextOnly && (
-            <div style={styles.freeTextHint}>直接ご希望を教えてください</div>
-          )}
+          {freeTextOnly && <div style={styles.freeTextHint}>直接ご希望を教えてください</div>}
           {!freeTextOnly && (
             <div style={styles.quickButtons}>
               {QUICK_OPTIONS.map((opt) => (
@@ -324,7 +318,13 @@ function useDirectAction(sessionId: string, action: 'approve' | 'rest') {
   return { status, errorMsg };
 }
 
-function DirectActionView({ sessionId, action }: { sessionId: string; action: 'approve' | 'rest' }) {
+function DirectActionView({
+  sessionId,
+  action,
+}: {
+  sessionId: string;
+  action: 'approve' | 'rest';
+}) {
   const { status, errorMsg } = useDirectAction(sessionId, action);
 
   if (status === 'loading') {
@@ -333,7 +333,10 @@ function DirectActionView({ sessionId, action }: { sessionId: string; action: 'a
   if (status === 'error') {
     return <ConfirmationView message={errorMsg} />;
   }
-  const msg = action === 'approve' ? '了解しました！頑張りましょう！' : '了解しました。ゆっくり休んでください。';
+  const msg =
+    action === 'approve'
+      ? '了解しました！頑張りましょう！'
+      : '了解しました。ゆっくり休んでください。';
   return <ConfirmationView message={msg} />;
 }
 

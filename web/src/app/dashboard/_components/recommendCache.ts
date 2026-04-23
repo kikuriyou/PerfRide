@@ -24,7 +24,11 @@ export interface CachedRecommendationEntry extends Recommendation {
   _ftp: number;
 }
 
-export function shouldReadCache(asOf: string | null, forceRefresh: boolean, hasConstraint: boolean): boolean {
+export function shouldReadCache(
+  asOf: string | null,
+  forceRefresh: boolean,
+  hasConstraint: boolean,
+): boolean {
   return !forceRefresh && !hasConstraint && !asOf;
 }
 

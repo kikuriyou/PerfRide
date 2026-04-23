@@ -649,17 +649,16 @@ function RecommendCardInner() {
                 </div>
               )}
 
-              {recommendation.workout_intervals &&
-                recommendation.workout_intervals.length > 0 && (
-                  <div style={{ marginTop: '0.75rem' }}>
-                    <WorkoutChart
-                      intervals={recommendation.workout_intervals}
-                      totalDurationMin={recommendation.totalDurationMin || 60}
-                      title={recommendation.workoutName || 'Workout'}
-                      showZoneLegend={false}
-                    />
-                  </div>
-                )}
+              {recommendation.workout_intervals && recommendation.workout_intervals.length > 0 && (
+                <div style={{ marginTop: '0.75rem' }}>
+                  <WorkoutChart
+                    intervals={recommendation.workout_intervals}
+                    totalDurationMin={recommendation.totalDurationMin || 60}
+                    title={recommendation.workoutName || 'Workout'}
+                    showZoneLegend={false}
+                  />
+                </div>
+              )}
 
               <div
                 style={{

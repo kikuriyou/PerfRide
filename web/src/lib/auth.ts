@@ -28,7 +28,11 @@ async function persistStravaTokens(
     updated_at: new Date().toISOString(),
   };
   settings.strava_owner_id = ownerId;
-  settings.strava_auth = { access_token: accessToken, refresh_token: refreshToken, expires_at: expiresAt };
+  settings.strava_auth = {
+    access_token: accessToken,
+    refresh_token: refreshToken,
+    expires_at: expiresAt,
+  };
   settings.updated_at = new Date().toISOString();
   await writeUserSettings(settings);
 }

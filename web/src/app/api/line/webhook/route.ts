@@ -29,9 +29,7 @@ export async function POST(request: NextRequest) {
   try {
     const body: LineWebhookBody = await request.json();
 
-    const postbackEvents = body.events.filter(
-      (e) => e.type === 'postback' && e.postback?.data,
-    );
+    const postbackEvents = body.events.filter((e) => e.type === 'postback' && e.postback?.data);
 
     for (const event of postbackEvents) {
       const params = parsePostbackData(event.postback!.data);

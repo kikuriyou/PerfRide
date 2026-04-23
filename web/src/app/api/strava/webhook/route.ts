@@ -79,9 +79,7 @@ export async function POST(request: NextRequest) {
   return NextResponse.json({ ok: true }, { status: 200 });
 }
 
-async function refreshStravaTokens(
-  settings: GCSUserSettings,
-): Promise<GCSUserSettings> {
+async function refreshStravaTokens(settings: GCSUserSettings): Promise<GCSUserSettings> {
   const res = await fetch('https://www.strava.com/oauth/token', {
     method: 'POST',
     headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
@@ -122,10 +120,7 @@ async function getValidAccessToken(
   return { token: settings.strava_auth.access_token, settings };
 }
 
-function processActivity(
-  raw: StravaActivityResponse,
-  ftp: number,
-): ProcessedActivity {
+function processActivity(raw: StravaActivityResponse, ftp: number): ProcessedActivity {
   const userFTP = ftp || 200;
   const hours = raw.moving_time / 3600;
 
@@ -192,10 +187,9 @@ async function processWebhookEvent(event: StravaWebhookEvent, traceId: string): 
   const { token } = await getValidAccessToken(settings);
   console.log(`${prefix} Access token ready`);
 
-  const activityRes = await fetch(
-    `https://www.strava.com/api/v3/activities/${event.object_id}`,
-    { headers: { Authorization: `Bearer ${token}` } },
-  );
+  const activityRes = await fetch(`https://www.strava.com/api/v3/activities/${event.object_id}`, {
+    headers: { Authorization: `Bearer ${token}` },
+  });
 
   if (!activityRes.ok) {
     console.error(`${prefix} Failed to fetch activity ${event.object_id}: ${activityRes.status}`);
@@ -230,8 +224,7 @@ async function processWebhookEvent(event: StravaWebhookEvent, traceId: string): 
 
   activities.push(processed);
   activities.sort(
-    (a, b) =>
-      new Date(a.start_date_local).getTime() - new Date(b.start_date_local).getTime(),
+    (a, b) => new Date(a.start_date_local).getTime() - new Date(b.start_date_local).getTime(),
   );
 
   const updated = recomputeFitnessFromProcessed(activities, new Date());

@@ -114,10 +114,8 @@ describe('computeFitnessMetrics', () => {
     ];
     const asOf = new Date('2026-04-15T23:59:00+09:00');
     const result = computeFitnessMetrics(activities, 200, asOf);
-    const id2Tss =
-      result.activities.find((a) => a.id === 2)?.tss_estimated ?? 0;
-    const id3Tss =
-      result.activities.find((a) => a.id === 3)?.tss_estimated ?? 0;
+    const id2Tss = result.activities.find((a) => a.id === 2)?.tss_estimated ?? 0;
+    const id3Tss = result.activities.find((a) => a.id === 3)?.tss_estimated ?? 0;
     expect(result.fitness_metrics.weekly_tss).toBe(id2Tss + id3Tss);
   });
 

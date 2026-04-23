@@ -14,11 +14,7 @@ interface NotifyResult {
   status: 'sent' | 'partial' | 'failed';
 }
 
-function buildFlexMessage(
-  title: string,
-  body: string,
-  actions: { id: string; label: string }[],
-) {
+function buildFlexMessage(title: string, body: string, actions: { id: string; label: string }[]) {
   return {
     type: 'flex',
     altText: title,
@@ -51,7 +47,12 @@ function buildFlexMessage(
 
 async function sendWebPush(
   subscription: NonNullable<GCSUserSettings['notification']['web_push_subscription']>,
-  payload: { title: string; body: string; actions?: NotifyRequest['actions']; data?: Record<string, unknown> },
+  payload: {
+    title: string;
+    body: string;
+    actions?: NotifyRequest['actions'];
+    data?: Record<string, unknown>;
+  },
 ): Promise<boolean> {
   try {
     // eslint-disable-next-line @typescript-eslint/no-require-imports, @typescript-eslint/no-var-requires
@@ -118,7 +119,12 @@ export async function POST(request: NextRequest) {
     }
 
     const channels = settings.notification.channels;
-    console.log('[notify] channels:', channels, 'has_sub:', !!settings.notification.web_push_subscription);
+    console.log(
+      '[notify] channels:',
+      channels,
+      'has_sub:',
+      !!settings.notification.web_push_subscription,
+    );
     if (channels.length === 0) {
       console.log('[notify] No channels configured');
       return NextResponse.json({ channels_sent: [], status: 'failed' } satisfies NotifyResult);

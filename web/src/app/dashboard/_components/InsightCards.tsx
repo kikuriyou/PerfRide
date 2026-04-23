@@ -103,7 +103,9 @@ export default function InsightCards() {
 
         const fetched: InsightItem[] = data.items || [];
         const priorityOrder: Record<string, number> = { high: 0, medium: 1, low: 2 };
-        fetched.sort((a, b) => (priorityOrder[a.priority] ?? 99) - (priorityOrder[b.priority] ?? 99));
+        fetched.sort(
+          (a, b) => (priorityOrder[a.priority] ?? 99) - (priorityOrder[b.priority] ?? 99),
+        );
 
         const finalItems = settings.asOf ? fetched : filterDedup(fetched);
         setItems(finalItems.slice(0, MAX_CARDS));
@@ -115,8 +117,17 @@ export default function InsightCards() {
     }
 
     fetchInsights();
-    return () => { cancelled = true; };
-  }, [settings.goal, settings.ftp, settings.goalCustom, settings.usePersonalData, settings.coachAutonomy, settings.asOf]);
+    return () => {
+      cancelled = true;
+    };
+  }, [
+    settings.goal,
+    settings.ftp,
+    settings.goalCustom,
+    settings.usePersonalData,
+    settings.coachAutonomy,
+    settings.asOf,
+  ]);
 
   if (loading || items.length === 0) return null;
 
@@ -185,9 +196,7 @@ export default function InsightCards() {
                   </p>
                 )}
                 {item.based_on && (
-                  <p style={{ margin: 0, opacity: 0.5, fontSize: '0.8rem' }}>
-                    {item.based_on}
-                  </p>
+                  <p style={{ margin: 0, opacity: 0.5, fontSize: '0.8rem' }}>{item.based_on}</p>
                 )}
               </div>
             )}

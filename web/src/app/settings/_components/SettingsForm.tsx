@@ -290,7 +290,9 @@ export default function SettingsForm() {
                 borderRadius: 'var(--radius-md)',
                 border: `1px solid ${localCoachAutonomy === opt.value ? 'var(--primary)' : 'var(--border)'}`,
                 background:
-                  localCoachAutonomy === opt.value ? 'color-mix(in srgb, var(--primary) 8%, transparent)' : 'transparent',
+                  localCoachAutonomy === opt.value
+                    ? 'color-mix(in srgb, var(--primary) 8%, transparent)'
+                    : 'transparent',
                 transition: 'border-color 0.15s, background 0.15s',
               }}
             >
@@ -352,7 +354,8 @@ export default function SettingsForm() {
       <div style={cardStyle}>
         <h3 style={{ marginTop: 0, marginBottom: '1rem' }}>📊 パーソナルデータ</h3>
         <p style={{ fontSize: '0.9rem', opacity: 0.7, marginBottom: '1rem' }}>
-          Strava のアクティビティデータを使って個人に合った推薦を生成します。OFFにすると汎用的なサイクリング推薦になります。
+          Strava
+          のアクティビティデータを使って個人に合った推薦を生成します。OFFにすると汎用的なサイクリング推薦になります。
         </p>
         <label
           style={{

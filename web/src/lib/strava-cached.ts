@@ -61,9 +61,7 @@ export async function getCachedStarredSegments<T = Awaited<ReturnType<typeof get
   userId: string,
   accessToken: string,
 ): Promise<T> {
-  return unstable_cache(
-    () => getStarredSegments(accessToken),
-    [`strava-segments-${userId}`],
-    { revalidate: 21600 },
-  )() as Promise<T>;
+  return unstable_cache(() => getStarredSegments(accessToken), [`strava-segments-${userId}`], {
+    revalidate: 21600,
+  })() as Promise<T>;
 }
