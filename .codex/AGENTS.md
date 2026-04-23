@@ -63,6 +63,13 @@ Codex handles planning, design, code review, root-cause analysis, and complex im
 - Keep failures observable instead of swallowing exceptions.
 - Preserve or improve testability.
 
+## Repo Taskflow
+
+- `.taskflow/workflow.md` is the shared workflow contract for Claude and Codex.
+- Before resuming a task, read `tasks/<task-id>/state.json` or run `uv run --no-project python3 .taskflow/scripts/taskflow.py resume --task-id <task-id>`.
+- Source edits in `agent/` and `web/src/` require a current `approval.json` whose `spec_hash` matches `What`, `Acceptance`, and `Non-functional`.
+- Keep `state.json.next_action` current whenever you stop or change phase.
+
 ---
 
 Cycling performance app: Strava integration, segment analysis, ride simulation, pace optimization.
@@ -96,38 +103,139 @@ docker compose up
 - Frontend imports use `@/*` alias (maps to `web/src/*`)
 - `web/next.config.ts` keeps `output: "standalone"` for Docker
 - Agent env uses `GOOGLE_GENAI_USE_VERTEXAI=true` (see `.claude/context/local-env.md` for project ID)
-- Claude hooks run Python via `uv run --no-project python`
+- Claude hooks run Python via `uv run --no-project python3`
 - Frontend tests use Vitest and live in `__tests__/` directories
 
 ## Workflow
 
+Use `.taskflow/workflow.md` as the shared workflow contract for Claude and Codex.
+Keep `tasks/<task-id>/state.json` current and always end a phase with a concrete `next_action`.
+
 ### Task Lifecycle
 
-For non-trivial tasks: plan in `tasks/YYYYMMDD/todo.md` → verify with user → track progress → document results → update `tasks/lessons.md` after corrections.
+1. Initialize or resume a task with `.taskflow/scripts/taskflow.py`.
+2. Write `plan.md` with `What`, `Acceptance`, `Non-functional`, `How`, and `Risks`.
+3. Record explicit approval before editing source files.
+4. Advance through `implement` → `test` → `review` → `done`.
+5. Record results and lessons after the task closes.
 
-Use `/dev <task>` to automate the full cycle (plan → review → implement → test → review).
+### Claude Adapters
 
-### Automated by Hooks
+These adapters sit on top of `.taskflow/`:
 
-These phases are enforced automatically — no need to remember manually:
+| Adapter | Role |
+|-------|------|
+| `/dev` | Move one phase forward and update task state |
+| `/plan` | Draft the spec-driven `plan.md` |
+| `enforce-plan-review.py` | Blocks source edits without a valid approved task |
+| `lint-on-save.py` | Format, lint, and type-check changed Python files |
+| `auto-test-after-impl.py` | Run tests after larger source changes |
 
-| Phase | Hook | Behavior |
-|-------|------|----------|
-| Lint | `lint-on-save.py` | Python files auto-formatted on save |
-| Plan review gate | `enforce-plan-review.py` | Warns if implementation starts without plan approval |
-| Test execution | `auto-test-after-impl.py` | Runs tests after 3+ files or 100+ lines changed |
+### Recovery
 
-### Recovery Protocol
+- If the current phase is unclear, run `taskflow.py status` or `resume`.
+- If approval is stale, update the spec sections and run `approve` again.
+- If blocked, set `status=blocked` and write the unblock step in `next_action`.
+- If root cause is unclear, delegate to `codex-debugger`.
 
-When blocked, STOP — do not retry blindly.
+## Taskflow
 
-| Situation             | Action                                   |
-| --------------------- | ---------------------------------------- |
-| Clear error           | Fix directly                             |
-| Unclear root cause    | Delegate to `codex-debugger`             |
-| Wrong approach        | Re-enter plan mode, propose alternatives |
-| Missing information   | Ask user with specific options (A/B/C)   |
-| External dependency   | Document blocker, suggest workaround     |
+`.taskflow/` is the shared workflow contract for Claude and Codex.
+
+### Source Of Truth
+
+Each task lives in `tasks/<task-id>/` and uses these artifacts:
+
+- `plan.md`: spec-driven task plan
+- `state.json`: current phase, runner, and `next_action`
+- `approval.json`: explicit approval for `What`, `Acceptance`, and `Non-functional`
+- `result.md` or `reviews/`: output artifacts after implementation
+
+### Plan Contract
+
+`plan.md` must contain these sections:
+
+- `What`
+- `Acceptance`
+- `Non-functional`
+- `How`
+- `Risks`
+
+Approval covers only `What`, `Acceptance`, and `Non-functional`.
+`How` may change during implementation if `state.json` is updated with the new `next_action` and a short note.
+
+Use `.taskflow/plan-template.md` when creating a new task.
+
+### State Machine
+
+Allowed phases:
+
+- `plan`
+- `approval`
+- `implement`
+- `test`
+- `review`
+- `done`
+
+Allowed statuses:
+
+- `pending`
+- `in_progress`
+- `blocked`
+- `completed`
+
+`next_action` must always describe the next concrete step.
+
+### Commands
+
+Initialize or resume a task:
+
+```bash
+uv run --no-project python3 .taskflow/scripts/taskflow.py init --task-id <task-id> --title "<title>"
+uv run --no-project python3 .taskflow/scripts/taskflow.py resume --task-id <task-id>
+```
+
+Advance the phase or update `next_action`:
+
+```bash
+uv run --no-project python3 .taskflow/scripts/taskflow.py advance --task-id <task-id> --phase implement --next-action "Run tests for the approved change"
+```
+
+Record a short note when `How` changes after approval:
+
+```bash
+uv run --no-project python3 .taskflow/scripts/taskflow.py advance --task-id <task-id> --note "Adjusted How: narrowed the change to the shared hook wrapper"
+```
+
+Record approval after explicit user approval:
+
+```bash
+uv run --no-project python3 .taskflow/scripts/taskflow.py approve --task-id <task-id> --approved-by user
+```
+
+Check whether source edits are allowed:
+
+```bash
+uv run --no-project python3 .taskflow/scripts/check_plan_gate.py --file-path agent/src/example.py
+```
+
+### Gate Rules
+
+Source edits in `agent/` and `web/src/` are blocked unless all of these are true:
+
+- an active or explicit task exists
+- `approval.json` exists
+- the stored `spec_hash` matches the current `What`, `Acceptance`, and `Non-functional`
+- `state.json.phase` is `implement`, `test`, `review`, or `done`
+
+Docs, task artifacts, `.claude/`, `.codex/`, and `.taskflow/` are outside this gate.
+
+### Claude And Codex
+
+- Claude reads `CLAUDE.md`, then uses `.claude/skills/*` and `.claude/hooks/*` as adapters to `.taskflow/`
+- Codex reads `.codex/AGENTS.md`, then uses `.taskflow/scripts/*.py` directly when needed
+- Both must update `state.json` before ending a phase
+- Both should append a short `state.json.notes` entry when `How` changes after approval
 
 ## Self-Improvement
 
