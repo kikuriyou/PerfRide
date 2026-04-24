@@ -519,10 +519,7 @@ const PHASE_TEMPLATES: Record<string, Omit<TrainingPhase, 'weekCount'>> = {
   },
 };
 
-export function generateTrainingPlan(
-  targetDate: Date,
-  currentFitnessLevel: 'beginner' | 'intermediate' | 'advanced' = 'intermediate',
-): TrainingPlan {
+export function generateTrainingPlan(targetDate: Date): TrainingPlan {
   const today = new Date();
   today.setHours(0, 0, 0, 0);
 
@@ -570,7 +567,7 @@ export function generateTrainingPlan(
   }
 
   const weeklySchedule: WeekSchedule[] = [];
-  let currentDate = new Date(today);
+  const currentDate = new Date(today);
   let weekNumber = 1;
 
   for (const phase of phases) {

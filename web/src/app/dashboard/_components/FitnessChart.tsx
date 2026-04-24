@@ -1,13 +1,11 @@
 'use client';
 
 import {
-  LineChart,
   Line,
   XAxis,
   YAxis,
   Tooltip,
   ResponsiveContainer,
-  Area,
   ComposedChart,
   Bar,
 } from 'recharts';
@@ -155,7 +153,7 @@ function processActivitiesForChart(activities: StravaActivity[], ftp: number): W
   const CTL_DECAY = 42;
   const ATL_DECAY = 7;
 
-  const result: WeeklyData[] = weeks.map(([weekKey, data]) => {
+  const result: WeeklyData[] = weeks.map(([, data]) => {
     const dailyTSS = data.tss / 7;
 
     for (let i = 0; i < 7; i++) {

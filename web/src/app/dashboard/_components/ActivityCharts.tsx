@@ -8,7 +8,6 @@ import {
   YAxis,
   Tooltip,
   ResponsiveContainer,
-  AreaChart,
   Area,
   ComposedChart,
   ReferenceArea,
@@ -61,10 +60,6 @@ function getHRZone(hr: number, maxHR: number): number {
   return 5;
 }
 
-function getZoneColor(zone: number): string {
-  return HR_ZONES[zone - 1]?.color || '#9E9E9E';
-}
-
 // Downsample data for performance (keep every nth point)
 function downsampleData<T>(data: T[], maxPoints: number = 200): T[] {
   if (data.length <= maxPoints) return data;
@@ -72,21 +67,7 @@ function downsampleData<T>(data: T[], maxPoints: number = 200): T[] {
   return data.filter((_, i) => i % step === 0);
 }
 
-// Format helpers
-function formatDistance(meters: number): string {
-  return (meters / 1000).toFixed(1) + ' km';
-}
-
-function formatDuration(seconds: number): string {
-  const hours = Math.floor(seconds / 3600);
-  const minutes = Math.floor((seconds % 3600) / 60);
-  if (hours > 0) {
-    return `${hours}h ${minutes}m`;
-  }
-  return `${minutes}m`;
-}
-
-export default function ActivityCharts({ activityId, stats }: ActivityChartsProps) {
+export default function ActivityCharts({ activityId }: ActivityChartsProps) {
   const [streams, setStreams] = useState<ActivityStream | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -100,7 +81,7 @@ export default function ActivityCharts({ activityId, stats }: ActivityChartsProp
         if (!res.ok) throw new Error('Failed to fetch streams');
         const data = await res.json();
         setStreams(data);
-      } catch (e) {
+      } catch {
         setError('データを読み込めませんでした');
       } finally {
         setLoading(false);
@@ -470,7 +451,7 @@ export default function ActivityCharts({ activityId, stats }: ActivityChartsProp
                         borderRadius: 'var(--radius-sm)',
                         fontSize: '0.8rem',
                       }}
-                      formatter={(value: number, name: string, props: any) => {
+                      formatter={(value: number, name: string, props: { payload: ChartDataPoint }) => {
                         const zone = props.payload.zone;
                         const zoneInfo = HR_ZONES[zone - 1];
                         return [

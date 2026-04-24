@@ -24,7 +24,7 @@ export async function GET(request: NextRequest) {
 
     const data = await res.json();
 
-    const results = data.map((item: any) => ({
+    const results = data.map((item: Record<string, string>) => ({
       name: item.display_name,
       lat: parseFloat(item.lat),
       lng: parseFloat(item.lon),

@@ -19,47 +19,42 @@ interface SavedPlannerState {
   selectedWorkoutName: string | null;
 }
 
-export default function PlannerForm() {
-  const [targetDate, setTargetDate] = useState('');
-  const [plan, setPlan] = useState<TrainingPlan | null>(null);
-  const [selectedWeek, setSelectedWeek] = useState<WeekSchedule | null>(null);
-  const [selectedWorkout, setSelectedWorkout] = useState<Workout | null>(null);
-  const [isLoaded, setIsLoaded] = useState(false);
-
-  useEffect(() => {
-    const saved = localStorage.getItem(STORAGE_KEY);
-    if (saved) {
-      try {
-        const state: SavedPlannerState = JSON.parse(saved);
-        if (state.targetDate) {
-          setTargetDate(state.targetDate);
-          const date = new Date(state.targetDate);
-          if (date > new Date()) {
-            const generated = generateTrainingPlan(date);
-            setPlan(generated);
-
-            if (state.selectedWeekNumber) {
-              const week = generated.weeklySchedule.find(
-                (w) => w.weekNumber === state.selectedWeekNumber,
-              );
-              if (week) {
-                setSelectedWeek(week);
-                if (state.selectedWorkoutName) {
-                  const workout = week.phase.weeklyWorkouts.find(
-                    (w) => w.name === state.selectedWorkoutName,
-                  );
-                  if (workout) setSelectedWorkout(workout);
-                }
-              }
-            }
-          }
-        }
-      } catch (e) {
-        console.error('Failed to restore planner state', e);
+function loadPlannerState(): {
+  targetDate: string;
+  plan: TrainingPlan | null;
+  selectedWeek: WeekSchedule | null;
+  selectedWorkout: Workout | null;
+} {
+  if (typeof window === 'undefined') return { targetDate: '', plan: null, selectedWeek: null, selectedWorkout: null };
+  const saved = localStorage.getItem(STORAGE_KEY);
+  if (!saved) return { targetDate: '', plan: null, selectedWeek: null, selectedWorkout: null };
+  try {
+    const state: SavedPlannerState = JSON.parse(saved);
+    if (!state.targetDate) return { targetDate: '', plan: null, selectedWeek: null, selectedWorkout: null };
+    const date = new Date(state.targetDate);
+    if (date <= new Date()) return { targetDate: state.targetDate, plan: null, selectedWeek: null, selectedWorkout: null };
+    const generated = generateTrainingPlan(date);
+    let week: WeekSchedule | null = null;
+    let workout: Workout | null = null;
+    if (state.selectedWeekNumber) {
+      week = generated.weeklySchedule.find((w) => w.weekNumber === state.selectedWeekNumber) ?? null;
+      if (week && state.selectedWorkoutName) {
+        workout = week.phase.weeklyWorkouts.find((w) => w.name === state.selectedWorkoutName) ?? null;
       }
     }
-    setIsLoaded(true);
-  }, []);
+    return { targetDate: state.targetDate, plan: generated, selectedWeek: week, selectedWorkout: workout };
+  } catch {
+    return { targetDate: '', plan: null, selectedWeek: null, selectedWorkout: null };
+  }
+}
+
+export default function PlannerForm() {
+  const [initial] = useState(loadPlannerState);
+  const [targetDate, setTargetDate] = useState(initial.targetDate);
+  const [plan, setPlan] = useState<TrainingPlan | null>(initial.plan);
+  const [selectedWeek, setSelectedWeek] = useState<WeekSchedule | null>(initial.selectedWeek);
+  const [selectedWorkout, setSelectedWorkout] = useState<Workout | null>(initial.selectedWorkout);
+  const isLoaded = true;
 
   useEffect(() => {
     if (isLoaded && targetDate) {

@@ -41,24 +41,25 @@ function syncFtpCookie(ftp: number) {
   document.cookie = `perfride_ftp=${ftp}; path=/; max-age=31536000; SameSite=Lax`;
 }
 
+function loadSettings(): UserSettings {
+  if (typeof window === 'undefined') return defaultSettings;
+  const saved = localStorage.getItem('userSettings');
+  if (!saved) return defaultSettings;
+  try {
+    return { ...defaultSettings, ...JSON.parse(saved) } as UserSettings;
+  } catch {
+    return defaultSettings;
+  }
+}
+
 export function SettingsProvider({ children }: { children: ReactNode }) {
-  const [settings, setSettings] = useState<UserSettings>(defaultSettings);
-  const [isLoaded, setIsLoaded] = useState(false);
+  const [settings, setSettings] = useState<UserSettings>(loadSettings);
+  const isLoaded = true;
   const initialLoadDone = useRef(false);
 
   useEffect(() => {
-    const saved = localStorage.getItem('userSettings');
-    if (saved) {
-      try {
-        const parsed = { ...defaultSettings, ...JSON.parse(saved) } as UserSettings;
-        setSettings(parsed);
-        syncFtpCookie(parsed.ftp);
-      } catch (e) {
-        console.error('Failed to parse settings', e);
-      }
-    }
-    setIsLoaded(true);
-  }, []);
+    syncFtpCookie(settings.ftp);
+  }, [settings.ftp]);
 
   useEffect(() => {
     if (isLoaded) {

@@ -4,24 +4,25 @@ import { useState, useEffect } from 'react';
 
 type Theme = 'system' | 'light' | 'dark';
 
+function applyTheme(t: Theme) {
+  if (t === 'system') {
+    document.documentElement.removeAttribute('data-theme');
+  } else {
+    document.documentElement.setAttribute('data-theme', t);
+  }
+}
+
+function loadTheme(): Theme {
+  if (typeof window === 'undefined') return 'system';
+  return (localStorage.getItem('perfride-theme') as Theme | null) ?? 'system';
+}
+
 export default function ThemeToggle() {
-  const [theme, setTheme] = useState<Theme>('system');
+  const [theme, setTheme] = useState<Theme>(loadTheme);
 
   useEffect(() => {
-    const saved = localStorage.getItem('perfride-theme') as Theme | null;
-    if (saved) {
-      setTheme(saved);
-      applyTheme(saved);
-    }
-  }, []);
-
-  const applyTheme = (t: Theme) => {
-    if (t === 'system') {
-      document.documentElement.removeAttribute('data-theme');
-    } else {
-      document.documentElement.setAttribute('data-theme', t);
-    }
-  };
+    applyTheme(theme);
+  }, [theme]);
 
   const cycleTheme = () => {
     const order: Theme[] = ['system', 'light', 'dark'];

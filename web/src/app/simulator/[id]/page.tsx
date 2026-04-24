@@ -1,6 +1,6 @@
 import { getServerSession } from 'next-auth/next';
 import { authOptions } from '@/lib/auth';
-import { getSegmentDetails } from '@/lib/strava';
+import { getSegmentDetails, StravaSegment } from '@/lib/strava';
 import { redirect } from 'next/navigation';
 import Link from 'next/link';
 import SimulatorForm from '../_components/SimulatorForm';
@@ -17,7 +17,7 @@ export default async function SegmentSimulatorPage({ params }: Props) {
     redirect('/simulator');
   }
 
-  let segment: any = null;
+  let segment: StravaSegment | null = null;
   try {
     segment = await getSegmentDetails(session.accessToken, parseInt(id, 10));
   } catch (e) {

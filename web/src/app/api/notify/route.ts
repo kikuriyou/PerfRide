@@ -55,7 +55,7 @@ async function sendWebPush(
   },
 ): Promise<boolean> {
   try {
-    // eslint-disable-next-line @typescript-eslint/no-require-imports, @typescript-eslint/no-var-requires
+    // eslint-disable-next-line @typescript-eslint/no-require-imports
     const webpush = require('web-push');
     webpush.setVapidDetails(
       'mailto:' + (process.env.VAPID_CONTACT_EMAIL || 'noreply@example.com'),

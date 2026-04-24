@@ -2,7 +2,7 @@
 
 import { useSettings } from '@/lib/settings';
 import type { RecommendMode, CoachAutonomy } from '@/lib/settings';
-import { useState, useEffect } from 'react';
+import { useState } from 'react';
 import NotificationSettings from '@/app/dashboard/_components/NotificationSettings';
 
 const COACH_AUTONOMY_OPTIONS: { value: CoachAutonomy; label: string; description: string }[] = [
@@ -59,7 +59,9 @@ export default function SettingsForm() {
   const [saved, setSaved] = useState(false);
   const isDev = process.env.NODE_ENV === 'development';
 
-  useEffect(() => {
+  const [prevSettings, setPrevSettings] = useState(settings);
+  if (prevSettings !== settings) {
+    setPrevSettings(settings);
     setLocalFtp(settings.ftp);
     setLocalWeight(settings.weight);
     setLocalMaxHR(settings.maxHR);
@@ -69,7 +71,7 @@ export default function SettingsForm() {
     setLocalUsePersonalData(settings.usePersonalData);
     setLocalCoachAutonomy(settings.coachAutonomy);
     setLocalAsOf(settings.asOf ?? '');
-  }, [settings]);
+  }
 
   const normalizeAsOf = (raw: string): string | null => {
     const trimmed = raw.trim();

@@ -4,11 +4,6 @@ import { useState, useEffect, type CSSProperties } from 'react';
 
 type PushState = 'default' | 'granted' | 'denied' | 'unsupported' | 'subscribed';
 
-const cardStyle: CSSProperties = {
-  padding: '1.25rem',
-  marginBottom: '0.75rem',
-};
-
 const rowStyle: CSSProperties = {
   display: 'flex',
   alignItems: 'center',

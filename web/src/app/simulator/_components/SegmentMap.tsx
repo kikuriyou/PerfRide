@@ -2,7 +2,6 @@
 
 import { useEffect, useRef, useState, useMemo } from 'react';
 import { MapContainer, TileLayer, Polyline, useMap, useMapEvents } from 'react-leaflet';
-import L from 'leaflet';
 import polyline from '@mapbox/polyline';
 import { ExploreSegment, getClimbCategoryLabel } from '@/lib/strava';
 import 'leaflet/dist/leaflet.css';
@@ -101,7 +100,7 @@ export default function SegmentMap({ onSegmentSelect }: SegmentMapProps) {
   const [loading, setLoading] = useState(false);
   const [center, setCenter] = useState<[number, number]>([35.3606, 138.7274]); // Mt. Fuji default
   const [searchQuery, setSearchQuery] = useState('');
-  const [mapReady, setMapReady] = useState(false);
+  const [, setMapReady] = useState(false);
   const [zoomLevel, setZoomLevel] = useState(12);
   const debounceRef = useRef<NodeJS.Timeout | null>(null);
 
