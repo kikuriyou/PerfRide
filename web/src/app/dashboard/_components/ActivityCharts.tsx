@@ -454,9 +454,9 @@ export default function ActivityCharts({ activityId }: ActivityChartsProps) {
                       formatter={(
                         value: number,
                         name: string,
-                        props: { payload: ChartDataPoint },
+                        props: { payload?: ChartDataPoint },
                       ) => {
-                        const zone = props.payload.zone;
+                        const zone = props.payload?.zone ?? 1;
                         const zoneInfo = HR_ZONES[zone - 1];
                         return [
                           <span key="hr" style={{ color: zoneInfo?.color }}>

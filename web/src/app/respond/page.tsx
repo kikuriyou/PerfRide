@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useRef, useEffect } from 'react';
+import { useState, useRef, useEffect, Suspense } from 'react';
 import { useSearchParams } from 'next/navigation';
 import type { CSSProperties } from 'react';
 
@@ -340,7 +340,7 @@ function DirectActionView({
   return <ConfirmationView message={msg} />;
 }
 
-export default function RespondPage() {
+function RespondPageInner() {
   const searchParams = useSearchParams();
   const action = (searchParams.get('action') || 'modify') as Action;
   const sessionId = searchParams.get('session_id') || '';
@@ -354,4 +354,12 @@ export default function RespondPage() {
   }
 
   return <ChatView sessionId={sessionId} />;
+}
+
+export default function RespondPage() {
+  return (
+    <Suspense fallback={<ConfirmationView message="読み込み中..." />}>
+      <RespondPageInner />
+    </Suspense>
+  );
 }
