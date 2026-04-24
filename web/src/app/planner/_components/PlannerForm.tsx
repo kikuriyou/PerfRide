@@ -25,24 +25,39 @@ function loadPlannerState(): {
   selectedWeek: WeekSchedule | null;
   selectedWorkout: Workout | null;
 } {
-  if (typeof window === 'undefined') return { targetDate: '', plan: null, selectedWeek: null, selectedWorkout: null };
+  if (typeof window === 'undefined')
+    return { targetDate: '', plan: null, selectedWeek: null, selectedWorkout: null };
   const saved = localStorage.getItem(STORAGE_KEY);
   if (!saved) return { targetDate: '', plan: null, selectedWeek: null, selectedWorkout: null };
   try {
     const state: SavedPlannerState = JSON.parse(saved);
-    if (!state.targetDate) return { targetDate: '', plan: null, selectedWeek: null, selectedWorkout: null };
+    if (!state.targetDate)
+      return { targetDate: '', plan: null, selectedWeek: null, selectedWorkout: null };
     const date = new Date(state.targetDate);
-    if (date <= new Date()) return { targetDate: state.targetDate, plan: null, selectedWeek: null, selectedWorkout: null };
+    if (date <= new Date())
+      return {
+        targetDate: state.targetDate,
+        plan: null,
+        selectedWeek: null,
+        selectedWorkout: null,
+      };
     const generated = generateTrainingPlan(date);
     let week: WeekSchedule | null = null;
     let workout: Workout | null = null;
     if (state.selectedWeekNumber) {
-      week = generated.weeklySchedule.find((w) => w.weekNumber === state.selectedWeekNumber) ?? null;
+      week =
+        generated.weeklySchedule.find((w) => w.weekNumber === state.selectedWeekNumber) ?? null;
       if (week && state.selectedWorkoutName) {
-        workout = week.phase.weeklyWorkouts.find((w) => w.name === state.selectedWorkoutName) ?? null;
+        workout =
+          week.phase.weeklyWorkouts.find((w) => w.name === state.selectedWorkoutName) ?? null;
       }
     }
-    return { targetDate: state.targetDate, plan: generated, selectedWeek: week, selectedWorkout: workout };
+    return {
+      targetDate: state.targetDate,
+      plan: generated,
+      selectedWeek: week,
+      selectedWorkout: workout,
+    };
   } catch {
     return { targetDate: '', plan: null, selectedWeek: null, selectedWorkout: null };
   }

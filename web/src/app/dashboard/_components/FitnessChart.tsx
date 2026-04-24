@@ -1,14 +1,6 @@
 'use client';
 
-import {
-  Line,
-  XAxis,
-  YAxis,
-  Tooltip,
-  ResponsiveContainer,
-  ComposedChart,
-  Bar,
-} from 'recharts';
+import { Line, XAxis, YAxis, Tooltip, ResponsiveContainer, ComposedChart, Bar } from 'recharts';
 import { StravaActivity } from '@/lib/strava';
 import HelpTooltip from '@/components/HelpTooltip';
 import { useSettings } from '@/lib/settings';

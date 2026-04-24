@@ -451,7 +451,11 @@ export default function ActivityCharts({ activityId }: ActivityChartsProps) {
                         borderRadius: 'var(--radius-sm)',
                         fontSize: '0.8rem',
                       }}
-                      formatter={(value: number, name: string, props: { payload: ChartDataPoint }) => {
+                      formatter={(
+                        value: number,
+                        name: string,
+                        props: { payload: ChartDataPoint },
+                      ) => {
                         const zone = props.payload.zone;
                         const zoneInfo = HR_ZONES[zone - 1];
                         return [
