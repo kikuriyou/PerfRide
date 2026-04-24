@@ -76,12 +76,12 @@ function estimateTSS(activity: StravaActivity, ftp: number): number {
 }
 
 function weekStartMonday(reference: Date): Date {
-  const weekStart = new Date(reference);
-  const dayOfWeek = reference.getDay();
+  const jst = new Date(reference.getTime() + JST_OFFSET_MS);
+  const dayOfWeek = jst.getUTCDay();
   const daysToMonday = dayOfWeek === 0 ? 6 : dayOfWeek - 1;
-  weekStart.setDate(reference.getDate() - daysToMonday);
-  weekStart.setHours(0, 0, 0, 0);
-  return weekStart;
+  jst.setUTCDate(jst.getUTCDate() - daysToMonday);
+  jst.setUTCHours(0, 0, 0, 0);
+  return new Date(jst.getTime() - JST_OFFSET_MS);
 }
 
 function summarizeFromProcessed(
