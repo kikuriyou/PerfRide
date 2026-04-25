@@ -1,0 +1,129 @@
+import { describe, expect, it } from 'vitest';
+
+import type { GCSTrainingPlan, WeeklyPlanReviewStore } from '@/lib/gcs-schema';
+import { buildPlanContextKey, getCurrentPlanContext } from '@/lib/weekly-plan';
+
+const approvedPlan: GCSTrainingPlan = {
+  user_id: 'u1',
+  plan_id: 'plan_2026-04-06',
+  goal_event: 'race',
+  current_phase: 'build1',
+  phases: [],
+  weekly_plan: {
+    week_15: {
+      week_start: '2026-04-06',
+      week_number: 15,
+      phase: 'build1',
+      target_tss: 320,
+      plan_revision: 3,
+      status: 'approved',
+      summary: 'approved week',
+      sessions: [
+        { date: '2026-04-06', type: 'rest', status: 'planned' },
+        {
+          date: '2026-04-07',
+          type: 'tempo',
+          duration_minutes: 75,
+          target_tss: 70,
+          status: 'planned',
+        },
+        {
+          date: '2026-04-08',
+          type: 'recovery',
+          duration_minutes: 45,
+          target_tss: 25,
+          status: 'planned',
+        },
+        {
+          date: '2026-04-09',
+          type: 'sweetspot',
+          duration_minutes: 80,
+          target_tss: 75,
+          status: 'planned',
+        },
+        { date: '2026-04-10', type: 'rest', status: 'planned' },
+        {
+          date: '2026-04-11',
+          type: 'endurance',
+          duration_minutes: 150,
+          target_tss: 80,
+          status: 'planned',
+        },
+        {
+          date: '2026-04-12',
+          type: 'recovery',
+          duration_minutes: 45,
+          target_tss: 20,
+          status: 'planned',
+        },
+      ],
+      updated_at: '2026-04-06T04:00:00+09:00',
+      updated_by: 'weekly_plan_agent',
+    },
+  },
+  updated_at: '2026-04-06T04:00:00+09:00',
+  updated_by: 'weekly_plan_agent',
+};
+
+const pendingReview: WeeklyPlanReviewStore = {
+  reviews: {
+    'weekly_2026-04-06': {
+      review_id: 'weekly_2026-04-06',
+      week_start: '2026-04-06',
+      plan_revision: 4,
+      status: 'pending',
+      draft: {
+        ...approvedPlan.weekly_plan.week_15,
+        plan_revision: 4,
+        status: 'pending',
+        summary: 'pending week',
+      },
+      created_at: '2026-04-06T04:00:00+09:00',
+    },
+  },
+  updated_at: '2026-04-06T04:00:00+09:00',
+};
+
+describe('buildPlanContextKey', () => {
+  it('builds the expected key format', () => {
+    expect(buildPlanContextKey('coach', '2026-04-06', 4, 'pending')).toBe(
+      'coach:2026-04-06:4:pending',
+    );
+  });
+});
+
+describe('getCurrentPlanContext', () => {
+  it('returns suggest when coach mode is off', () => {
+    const result = getCurrentPlanContext(
+      'suggest',
+      approvedPlan,
+      pendingReview,
+      new Date('2026-04-08T00:00:00Z'),
+    );
+    expect(result.source).toBe('suggest');
+    expect(result.planContextKey).toBeNull();
+  });
+
+  it('prefers approved current week over pending draft', () => {
+    const result = getCurrentPlanContext(
+      'coach',
+      approvedPlan,
+      pendingReview,
+      new Date('2026-04-08T00:00:00Z'),
+    );
+    expect(result.source).toBe('approved');
+    expect(result.todaySession?.type).toBe('recovery');
+    expect(result.planContextKey).toBe('coach:2026-04-06:3:approved');
+  });
+
+  it('falls back to pending draft when approved plan is absent', () => {
+    const result = getCurrentPlanContext(
+      'coach',
+      null,
+      pendingReview,
+      new Date('2026-04-08T00:00:00Z'),
+    );
+    expect(result.source).toBe('pending');
+    expect(result.planContextKey).toBe('coach:2026-04-06:4:pending');
+  });
+});
