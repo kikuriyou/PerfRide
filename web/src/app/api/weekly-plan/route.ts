@@ -33,17 +33,17 @@ export async function GET() {
         ? pendingReviewRaw
         : null;
 
-    const todaySessions = currentWeek?.sessions.filter((s) => s.date === today) ?? [];
-    const todaySessionsPayload = todaySessions.map((s) => ({
-      date: today,
-      type: s.type,
-      status: s.status,
-      duration_minutes: s.duration_minutes,
-      target_tss: s.target_tss,
-      origin: s.origin ?? 'baseline',
-    }));
-    // Keep `today_session` (singular) until WeeklyPlanCard switches to today_sessions in Phase 6.
-    const todaySession = todaySessionsPayload[0] ?? null;
+    const todaySessionsPayload =
+      currentWeek?.sessions
+        .filter((s) => s.date === today)
+        .map((s) => ({
+          date: today,
+          type: s.type,
+          status: s.status,
+          duration_minutes: s.duration_minutes,
+          target_tss: s.target_tss,
+          origin: s.origin ?? 'baseline',
+        })) ?? [];
 
     return NextResponse.json({
       coach_autonomy: coachAutonomy,
@@ -66,7 +66,6 @@ export async function GET() {
             draft: pendingReview.draft,
           }
         : null,
-      today_session: todaySession,
       today_sessions: todaySessionsPayload,
     });
   } catch (err) {
@@ -75,7 +74,6 @@ export async function GET() {
       coach_autonomy: 'suggest',
       current_week: null,
       pending_review: null,
-      today_session: null,
       today_sessions: [],
     });
   }
