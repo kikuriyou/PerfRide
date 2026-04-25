@@ -68,6 +68,7 @@ def test_updates_existing_session_in_record_schema(mock_read, mock_write, _mock_
     assert updated_session["type"] == "threshold"
     assert updated_session["status"] == "registered"
     assert updated_session["workout_id"] == "PerfRide_20260425_threshold_abc.zwo"
+    assert updated_session["planned_tss"] == 85
     assert week["target_tss"] == 110
     assert written["updated_by"] == "recommend_agent"
     assert written["updated_at"] == "2026-04-24T12:00:00+09:00"
@@ -99,8 +100,11 @@ def test_creates_record_schema_when_plan_missing(_mock_read, mock_write, _mock_n
             "type": "endurance",
             "duration_minutes": 90,
             "target_tss": 55,
+            "planned_tss": 55,
             "status": "planned",
+            "origin": "baseline",
             "updated_by": "recommend_agent",
             "updated_at": "2026-04-24T12:00:00+09:00",
         }
     ]
+    assert written["weekly_plan"]["week_1"]["plan_revision"] == 1
