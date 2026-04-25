@@ -70,6 +70,10 @@ Claude Code (Opus 4.6, 200K context) is the orchestrator. Codex CLI (/codex plug
 | Agent Teams 削除                                                  | 個人プロジェクトにはトークンコスト3倍以上で過剰。サブエージェントで十分                               | Agent Teams を維持（コスト過大）                         | 2026-04-03 |
 | codex exec → /codex plugin に移行                                 | Claude Code プラグインとして統合され、セッション管理・レビュー機能が充実                             | codex exec 直接呼び出しを維持                            | 2026-04-03 |
 | AGENTS.md にコンテキストをインライン化                             | context-loader スキルの tool call 6回を 0 に削減、発火確実性の問題も解消                              | context-loader スキルを維持                              | 2026-04-03 |
+| 週間計画 UI を `/planner` から `/weekly-plan` に分離               | レースシミュレータと coach mode 週間計画は仕様が異なり、同居させた `PlannerForm` が肥大化していた。`/planner` はローカルシミュレータ専用、`/weekly-plan` は GCS coach plan 専用に切り分け | 統合 UI のまま維持（拡張のたびに分岐が増える）           | 2026-04-25 |
+| 同日複数 session を許容（baseline + appended）                    | 月曜の baseline を上書きせず「次回おすすめ承認 → 同日に追加」を成立させる。week 検証は `set(actual_dates) == set(expected_dates)` に緩和し、`TrainingSession.origin` で出自を区別 | 上書き方式（baseline が壊れる）/ `extra_sessions[]` で配列分離（二重系の維持コスト大） | 2026-04-25 |
+| GCS 楽観ロックは `if_generation_match` precondition で実装         | append と replace が同時走行した際の lost update を防ぐ。`updated_at` 比較は検出にならない。`transactional_update` で read-modify-write を共通化、412 を 3 回 retry → `OptimisticLockError` | `updated_at` 比較で先勝ち / 排他ロックを導入             | 2026-04-25 |
+| append API は `/respond` 流用ではなく `/api/agent/weekly-plan/append` を新設 | `/respond` は ADK session 応答用で、daily approve と weekly review が混ざると意図せぬ書き込みが起きうる。append は構造化リクエスト/レスポンスを持つ専用エンドポイントに | `/respond` で action パラメータ拡張                      | 2026-04-25 |
 
 ## Domain Rules
 

@@ -130,7 +130,9 @@ async def test_weekly_plan_append_rejects_out_of_window_date():
             "recommend_agent.main.update_training_plan",
             return_value={
                 "status": "error",
-                "error_message": "session_date 2026-05-15 is outside the current weekly plan window",
+                "error_message": (
+                    "session_date 2026-05-15 is outside the current weekly plan window"
+                ),
             },
         ),
         pytest.raises(HTTPException) as exc_info,
