@@ -1,4 +1,4 @@
-import type { RecommendMode } from '@/lib/settings';
+import type { CoachAutonomy, RecommendMode } from '@/lib/settings';
 import type { WorkoutInterval } from '@/types/workout';
 
 export const CACHE_KEY = 'perfride_recommendation_cache';
@@ -15,6 +15,7 @@ export interface Recommendation {
   references?: { title: string; url: string | null }[];
   why_now?: string;
   based_on?: string;
+  plan_context_key?: string | null;
 }
 
 export interface CachedRecommendationEntry extends Recommendation {
@@ -22,6 +23,8 @@ export interface CachedRecommendationEntry extends Recommendation {
   _recommendMode: RecommendMode;
   _usePersonalData: boolean;
   _ftp: number;
+  _coachAutonomy: CoachAutonomy;
+  _planContextKey: string | null;
 }
 
 export function shouldReadCache(
@@ -40,6 +43,8 @@ export function loadCachedRecommendation(
   recommendMode: RecommendMode,
   usePersonalData: boolean,
   ftp: number,
+  coachAutonomy: CoachAutonomy,
+  planContextKey: string | null,
 ): Recommendation | null {
   try {
     const raw = localStorage.getItem(CACHE_KEY);
@@ -50,7 +55,9 @@ export function loadCachedRecommendation(
     if (
       cached._recommendMode !== recommendMode ||
       cached._usePersonalData !== usePersonalData ||
-      cached._ftp !== ftp
+      cached._ftp !== ftp ||
+      cached._coachAutonomy !== coachAutonomy ||
+      cached._planContextKey !== planContextKey
     ) {
       return null;
     }
@@ -65,6 +72,8 @@ export function saveCachedRecommendation(
   recommendMode: RecommendMode,
   usePersonalData: boolean,
   ftp: number,
+  coachAutonomy: CoachAutonomy,
+  planContextKey: string | null,
 ): void {
   try {
     const entry: CachedRecommendationEntry = {
@@ -73,6 +82,8 @@ export function saveCachedRecommendation(
       _recommendMode: recommendMode,
       _usePersonalData: usePersonalData,
       _ftp: ftp,
+      _coachAutonomy: coachAutonomy,
+      _planContextKey: planContextKey,
     };
     localStorage.setItem(CACHE_KEY, JSON.stringify(entry));
   } catch {

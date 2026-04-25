@@ -1,12 +1,18 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { readUserSettings, GCSUserSettings } from '@/lib/gcs-settings';
+import {
+  buildLinePostbackData,
+  buildPushPayloadData,
+  type NotificationAction,
+  type NotificationMetadata,
+} from '@/lib/notify';
 
 interface NotifyRequest {
   user_id: string;
   title: string;
   body: string;
-  actions?: { id: string; label: string }[];
-  metadata?: Record<string, unknown>;
+  actions?: NotificationAction[];
+  metadata?: NotificationMetadata;
 }
 
 interface NotifyResult {
@@ -14,7 +20,12 @@ interface NotifyResult {
   status: 'sent' | 'partial' | 'failed';
 }
 
-function buildFlexMessage(title: string, body: string, actions: { id: string; label: string }[]) {
+export function buildFlexMessage(
+  title: string,
+  body: string,
+  actions: NotificationAction[],
+  metadata?: NotificationMetadata,
+) {
   return {
     type: 'flex',
     altText: title,
@@ -37,7 +48,11 @@ function buildFlexMessage(title: string, body: string, actions: { id: string; la
             type: 'button',
             style: 'primary',
             height: 'sm',
-            action: { type: 'postback', label: a.label, data: `action=${a.id}` },
+            action: {
+              type: 'postback',
+              label: a.label,
+              data: buildLinePostbackData(a, metadata),
+            },
           })),
         },
       }),
@@ -51,7 +66,7 @@ async function sendWebPush(
     title: string;
     body: string;
     actions?: NotifyRequest['actions'];
-    data?: Record<string, unknown>;
+    data?: NotificationMetadata;
   },
 ): Promise<boolean> {
   try {
@@ -77,7 +92,8 @@ async function sendLine(
   lineUserId: string,
   title: string,
   body: string,
-  actions: { id: string; label: string }[],
+  actions: NotificationAction[],
+  metadata?: NotificationMetadata,
 ): Promise<boolean> {
   const token = process.env.LINE_CHANNEL_ACCESS_TOKEN;
   if (!token) {
@@ -94,7 +110,7 @@ async function sendLine(
       },
       body: JSON.stringify({
         to: lineUserId,
-        messages: [buildFlexMessage(title, body, actions)],
+        messages: [buildFlexMessage(title, body, actions, metadata)],
       }),
     });
     return res.ok;
@@ -139,14 +155,20 @@ export async function POST(request: NextRequest) {
           title,
           body: messageBody,
           actions,
-          data: metadata,
+          data: buildPushPayloadData(metadata),
         });
         console.log('[notify] Web push result:', ok);
         if (ok) sent.push('web_push');
       }
 
       if (channel === 'line' && settings.notification.line_user_id) {
-        const ok = await sendLine(settings.notification.line_user_id, title, messageBody, actions);
+        const ok = await sendLine(
+          settings.notification.line_user_id,
+          title,
+          messageBody,
+          actions,
+          metadata,
+        );
         if (ok) sent.push('line');
       }
     });

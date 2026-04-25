@@ -71,6 +71,10 @@ Claude Code (Opus 4.6, 200K context) is the orchestrator. Codex CLI (/codex plug
 | codex exec → /codex plugin に移行                                 | Claude Code プラグインとして統合され、セッション管理・レビュー機能が充実                             | codex exec 直接呼び出しを維持                            | 2026-04-03 |
 | AGENTS.md にコンテキストをインライン化                             | context-loader スキルの tool call 6回を 0 に削減、発火確実性の問題も解消                              | context-loader スキルを維持                              | 2026-04-03 |
 
+## Domain Rules
+
+- `web/src/app/planner/_lib/planner.ts` の `PHASE_TEMPLATES` キーと `agent/src/recommend_agent/` の phase 定義を同期すること（`PhaseName` literal union: `base | build1 | build2 | peak | taper | maintenance | custom`）。
+
 ## TODO
 
 - [ ] /dev スキルの end-to-end テスト

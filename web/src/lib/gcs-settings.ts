@@ -1,72 +1,28 @@
-export interface GCSUserSettings {
-  user_id: string;
-  strava_owner_id: number;
-  ftp: number;
-  weight_kg: number;
-  max_hr: number;
-  goal: {
-    type: string;
-    name: string;
-    date: string;
-    priority: string;
-  };
-  training_preference: {
-    mode: 'indoor_preferred' | 'outdoor_possible' | 'outdoor_preferred';
-    location: { lat: number; lon: number };
-    weekly_schedule: Record<
-      string,
-      {
-        available: boolean;
-        max_minutes?: number;
-        time_slot?: string;
-      }
-    >;
-  };
-  strava_auth: {
-    refresh_token: string;
-    access_token: string;
-    expires_at: number;
-  };
-  notification: {
-    channels: ('web_push' | 'line')[];
-    web_push_subscription?: {
-      endpoint: string;
-      keys: { p256dh: string; auth: string };
-    };
-    line_user_id?: string;
-  };
-  zwift_id: string;
-  updated_at: string;
-}
+import type {
+  GCSTrainingPlan,
+  GCSUserSettings,
+  WeeklyPlanReviewStore,
+} from '@/lib/gcs-schema';
+import { resolvePhaseName } from '@/lib/gcs-schema';
 
-export interface TrainingSession {
-  date: string;
-  type: string;
-  duration_minutes?: number;
-  target_tss?: number;
-  status: 'planned' | 'registered' | 'confirmed' | 'completed' | 'skipped' | 'modified';
-  actual_tss?: number;
-  workout_id?: string;
-}
-
-export interface GCSTrainingPlan {
-  user_id: string;
-  plan_id: string;
-  goal_event: string;
-  current_phase: string;
-  phases: { name: string; start: string; end: string }[];
-  weekly_plan: Record<
-    string,
-    {
-      week_number: number;
-      phase: string;
-      target_tss: number;
-      sessions: TrainingSession[];
-    }
-  >;
-  updated_at: string;
-  updated_by: string;
-}
+export type {
+  ApprovedWeekPayload,
+  CoachAutonomy,
+  DayName,
+  GCSTrainingPlan,
+  GCSUserSettings,
+  PhaseName,
+  ReviewStatus,
+  SessionStatus,
+  TrainingSession,
+  WeekStatus,
+  WeeklyPlanReviewPayload,
+  WeeklyPlanReviewStore,
+  WeeklyReviewMetadata,
+  WeeklySchedule,
+  WeeklyScheduleDay,
+} from '@/lib/gcs-schema';
+export { resolvePhaseName } from '@/lib/gcs-schema';
 
 async function getGCSBucket() {
   const { Storage } = await import('@google-cloud/storage');
@@ -121,12 +77,41 @@ export function writeUserSettings(settings: GCSUserSettings): Promise<void> {
   return writeJSON('user_settings.json', settings);
 }
 
-export function readTrainingPlan(): Promise<GCSTrainingPlan | null> {
-  return readJSON<GCSTrainingPlan>('training_plan.json');
+export async function readTrainingPlan(): Promise<GCSTrainingPlan | null> {
+  const raw = await readJSON<GCSTrainingPlan>('training_plan.json');
+  if (!raw) return null;
+  return {
+    ...raw,
+    phases: raw.phases.map((p) => ({ ...p, name: resolvePhaseName(p.name) })),
+    weekly_plan: Object.fromEntries(
+      Object.entries(raw.weekly_plan).map(([k, v]) => [
+        k,
+        { ...v, phase: resolvePhaseName(v.phase) },
+      ]),
+    ),
+  };
 }
 
 export function writeTrainingPlan(plan: GCSTrainingPlan): Promise<void> {
   return writeJSON('training_plan.json', plan);
+}
+
+export async function readWeeklyPlanReview(): Promise<WeeklyPlanReviewStore> {
+  const store = await readJSON<WeeklyPlanReviewStore>('weekly_plan_review.json');
+  if (!store) return { reviews: {}, updated_at: new Date().toISOString() };
+  return {
+    ...store,
+    reviews: Object.fromEntries(
+      Object.entries(store.reviews).map(([k, v]) => [
+        k,
+        { ...v, draft: { ...v.draft, phase: resolvePhaseName(v.draft.phase) } },
+      ]),
+    ),
+  };
+}
+
+export function writeWeeklyPlanReview(store: WeeklyPlanReviewStore): Promise<void> {
+  return writeJSON('weekly_plan_review.json', store);
 }
 
 export function appendRecommendLog(record: Record<string, unknown>): Promise<void> {

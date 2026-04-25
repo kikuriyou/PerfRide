@@ -8,6 +8,7 @@ import FitnessChartWrapper from './_components/FitnessChartWrapper';
 import RideCard from './_components/RideCard';
 import InsightCards from './_components/InsightCards';
 import RecommendCard from './_components/RecommendCard';
+import WeeklyPlanCard from './_components/WeeklyPlanCard';
 import DevAsOfBanner from './_components/DevAsOfBanner';
 import { writeActivityCache } from './_lib/gcs';
 
@@ -91,6 +92,11 @@ export default async function DashboardPage() {
       {/* Today's Recommendation */}
       <section style={{ marginBottom: '1.5rem' }}>
         <RecommendCard />
+      </section>
+
+      {/* Weekly Plan Card */}
+      <section style={{ marginBottom: '1.5rem' }}>
+        <WeeklyPlanCard />
       </section>
 
       {/* Weekly Summary */}

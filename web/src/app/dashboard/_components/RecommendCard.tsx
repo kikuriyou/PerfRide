@@ -161,6 +161,7 @@ function RecommendCardInner() {
   const { settings, updateSettings, isLoaded } = useSettings();
   const [recommendation, setRecommendation] = useState<Recommendation | null>(null);
   const [originalRecommendation, setOriginalRecommendation] = useState<Recommendation | null>(null);
+  const [planContextKey, setPlanContextKey] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [expanded, setExpanded] = useState(false);
@@ -184,9 +185,12 @@ function RecommendCardInner() {
         settings.recommendMode,
         settings.usePersonalData,
         settings.ftp,
+        settings.coachAutonomy,
+        planContextKey,
       );
       if (cached) {
         setRecommendation(cached);
+        setPlanContextKey(cached.plan_context_key ?? null);
         return;
       }
     }
@@ -204,6 +208,7 @@ function RecommendCardInner() {
           goalCustom: overrides?.goalCustom ?? settings.goalCustom,
           recommendMode: settings.recommendMode,
           usePersonalData: settings.usePersonalData,
+          coachAutonomy: settings.coachAutonomy,
           constraint: overrides?.constraint ?? null,
           asOf,
         }),
@@ -217,12 +222,15 @@ function RecommendCardInner() {
 
       const data: Recommendation = await res.json();
       setRecommendation(data);
+      setPlanContextKey(data.plan_context_key ?? null);
       if (shouldWriteCache(asOf, hasConstraint)) {
         saveCachedRecommendation(
           data,
           settings.recommendMode,
           settings.usePersonalData,
           settings.ftp,
+          settings.coachAutonomy,
+          data.plan_context_key ?? null,
         );
       }
     } catch (e) {
@@ -293,7 +301,16 @@ function RecommendCardInner() {
     if (!isLoaded) return;
     if (settings.coachAutonomy === 'observe') return;
     fetchRecommendation();
-  }, [isLoaded, settings.asOf]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [
+    isLoaded,
+    settings.asOf,
+    settings.coachAutonomy,
+    settings.goal,
+    settings.goalCustom,
+    settings.recommendMode,
+    settings.usePersonalData,
+    settings.ftp,
+  ]); // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => {
     const altOpen = openPanels.has('alternatives');

@@ -1,9 +1,23 @@
 'use client';
 
-import { useSettings } from '@/lib/settings';
-import type { RecommendMode, CoachAutonomy } from '@/lib/settings';
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
+
 import NotificationSettings from '@/app/dashboard/_components/NotificationSettings';
+import type { DayName, WeeklySchedule } from '@/lib/gcs-schema';
+import { useSettings } from '@/lib/settings';
+import type { CoachAutonomy, RecommendMode } from '@/lib/settings';
+
+const DAY_LABELS: Record<DayName, string> = {
+  mon: '月',
+  tue: '火',
+  wed: '水',
+  thu: '木',
+  fri: '金',
+  sat: '土',
+  sun: '日',
+};
+
+const DAY_NAMES: DayName[] = ['mon', 'tue', 'wed', 'thu', 'fri', 'sat', 'sun'];
 
 const COACH_AUTONOMY_OPTIONS: { value: CoachAutonomy; label: string; description: string }[] = [
   {
@@ -19,7 +33,7 @@ const COACH_AUTONOMY_OPTIONS: { value: CoachAutonomy; label: string; description
   {
     value: 'coach',
     label: '週間プランまで任せたい',
-    description: '週単位のトレーニングプランを自動生成します（Phase 2で有効化予定）。',
+    description: '毎週の draft plan を作成し、承認後に今週の計画へ反映します。',
   },
 ];
 
@@ -41,13 +55,27 @@ const RECOMMEND_MODE_OPTIONS: { value: RecommendMode; label: string; description
   },
 ];
 
+function normalizeAsOf(raw: string): string | null {
+  const trimmed = raw.trim();
+  if (!trimmed) return null;
+  if (/^\d{4}-\d{2}-\d{2}$/.test(trimmed)) {
+    return `${trimmed}T23:59`;
+  }
+  return trimmed;
+}
+
+function isValidGoalDate(value: string): boolean {
+  return value === '' || /^\d{4}-\d{2}-\d{2}$/.test(value);
+}
+
 export default function SettingsForm() {
   const { settings, updateSettings } = useSettings();
   const [localFtp, setLocalFtp] = useState(settings.ftp);
   const [localWeight, setLocalWeight] = useState(settings.weight);
   const [localMaxHR, setLocalMaxHR] = useState(settings.maxHR);
   const [localGoal, setLocalGoal] = useState(settings.goal);
-  const [localGoalCustom, setLocalGoalCustom] = useState(settings.goalCustom || '');
+  const [localGoalCustom, setLocalGoalCustom] = useState(settings.goalCustom);
+  const [localGoalDate, setLocalGoalDate] = useState(settings.goalDate ?? '');
   const [localRecommendMode, setLocalRecommendMode] = useState<RecommendMode>(
     settings.recommendMode,
   );
@@ -55,43 +83,45 @@ export default function SettingsForm() {
   const [localCoachAutonomy, setLocalCoachAutonomy] = useState<CoachAutonomy>(
     settings.coachAutonomy,
   );
+  const [localWeeklySchedule, setLocalWeeklySchedule] = useState<WeeklySchedule>(
+    settings.weeklySchedule,
+  );
   const [localAsOf, setLocalAsOf] = useState<string>(settings.asOf ?? '');
   const [saved, setSaved] = useState(false);
+  const [goalDateError, setGoalDateError] = useState<string | null>(null);
   const isDev = process.env.NODE_ENV === 'development';
 
-  const [prevSettings, setPrevSettings] = useState(settings);
-  if (prevSettings !== settings) {
-    setPrevSettings(settings);
+  useEffect(() => {
     setLocalFtp(settings.ftp);
     setLocalWeight(settings.weight);
     setLocalMaxHR(settings.maxHR);
     setLocalGoal(settings.goal);
-    setLocalGoalCustom(settings.goalCustom || '');
+    setLocalGoalCustom(settings.goalCustom);
+    setLocalGoalDate(settings.goalDate ?? '');
     setLocalRecommendMode(settings.recommendMode);
     setLocalUsePersonalData(settings.usePersonalData);
     setLocalCoachAutonomy(settings.coachAutonomy);
+    setLocalWeeklySchedule(settings.weeklySchedule);
     setLocalAsOf(settings.asOf ?? '');
-  }
-
-  const normalizeAsOf = (raw: string): string | null => {
-    const trimmed = raw.trim();
-    if (!trimmed) return null;
-    if (/^\d{4}-\d{2}-\d{2}$/.test(trimmed)) {
-      return `${trimmed}T23:59`;
-    }
-    return trimmed;
-  };
+  }, [settings]);
 
   const handleSave = () => {
+    if (!isValidGoalDate(localGoalDate)) {
+      setGoalDateError('goal date は YYYY-MM-DD 形式で入力してください。');
+      return;
+    }
+    setGoalDateError(null);
     updateSettings({
       ftp: localFtp,
       weight: localWeight,
       maxHR: localMaxHR,
       goal: localGoal,
       goalCustom: localGoalCustom,
+      goalDate: localGoalDate || null,
       recommendMode: localRecommendMode,
       usePersonalData: localUsePersonalData,
       coachAutonomy: localCoachAutonomy,
+      weeklySchedule: localWeeklySchedule,
       asOf: normalizeAsOf(localAsOf),
     });
     setSaved(true);
@@ -101,6 +131,16 @@ export default function SettingsForm() {
   const handleResetAsOf = () => {
     setLocalAsOf('');
     updateSettings({ asOf: null });
+  };
+
+  const updateDay = (dayName: DayName, patch: Partial<WeeklySchedule[DayName]>) => {
+    setLocalWeeklySchedule((prev) => ({
+      ...prev,
+      [dayName]: {
+        ...prev[dayName],
+        ...patch,
+      },
+    }));
   };
 
   const estimateAge = 220 - localMaxHR;
@@ -114,12 +154,8 @@ export default function SettingsForm() {
 
   return (
     <div style={{ display: 'grid', gap: '2rem' }}>
-      {/* FTP Setting */}
       <div style={cardStyle}>
-        <h3 style={{ marginTop: 0, marginBottom: '1rem' }}>⚡ FTP (Functional Threshold Power)</h3>
-        <p style={{ fontSize: '0.9rem', opacity: 0.7, marginBottom: '1rem' }}>
-          Your 1-hour max sustainable power. Used to calculate workout power targets.
-        </p>
+        <h3 style={{ marginTop: 0, marginBottom: '1rem' }}>⚡ FTP</h3>
         <div style={{ display: 'flex', gap: '1rem', alignItems: 'center' }}>
           <input
             type="number"
@@ -141,18 +177,10 @@ export default function SettingsForm() {
           />
           <span style={{ fontSize: '1.1rem', opacity: 0.8 }}>watts</span>
         </div>
-
-        <div style={{ marginTop: '1rem', fontSize: '0.85rem', opacity: 0.6 }}>
-          Reference: Beginner ~150W, Intermediate ~200-250W, Advanced ~300W+
-        </div>
       </div>
 
-      {/* Weight Setting */}
       <div style={cardStyle}>
         <h3 style={{ marginTop: 0, marginBottom: '1rem' }}>⚖️ Body Weight</h3>
-        <p style={{ fontSize: '0.9rem', opacity: 0.7, marginBottom: '1rem' }}>
-          Your body weight for W/kg calculations.
-        </p>
         <div style={{ display: 'flex', gap: '1rem', alignItems: 'center' }}>
           <input
             type="number"
@@ -174,7 +202,6 @@ export default function SettingsForm() {
           />
           <span style={{ fontSize: '1.1rem', opacity: 0.8 }}>kg</span>
         </div>
-
         <div
           style={{
             marginTop: '1rem',
@@ -184,19 +211,15 @@ export default function SettingsForm() {
             display: 'inline-block',
           }}
         >
-          <span style={{ opacity: 0.7 }}>Your W/kg: </span>
+          <span style={{ opacity: 0.7 }}>W/kg: </span>
           <strong style={{ color: 'var(--primary)' }}>
             {(localFtp / localWeight).toFixed(2)} W/kg
           </strong>
         </div>
       </div>
 
-      {/* Max HR Setting */}
       <div style={cardStyle}>
         <h3 style={{ marginTop: 0, marginBottom: '1rem' }}>❤️ Max Heart Rate</h3>
-        <p style={{ fontSize: '0.9rem', opacity: 0.7, marginBottom: '1rem' }}>
-          Your maximum heart rate. Used to estimate target HR zones for workouts.
-        </p>
         <div style={{ display: 'flex', gap: '1rem', alignItems: 'center' }}>
           <input
             type="number"
@@ -218,46 +241,39 @@ export default function SettingsForm() {
           />
           <span style={{ fontSize: '1.1rem', opacity: 0.8 }}>bpm</span>
         </div>
-
         <div style={{ marginTop: '1rem', fontSize: '0.85rem', opacity: 0.6 }}>
-          Tip: A common estimate is 220 - age (approx. age {estimateAge > 0 ? estimateAge : '?'})
+          推定年齢: {estimateAge > 0 ? estimateAge : '?'}
         </div>
       </div>
 
-      {/* Training Goal Setting */}
       <div style={cardStyle}>
         <h3 style={{ marginTop: 0, marginBottom: '1rem' }}>🎯 Training Goal</h3>
-        <p style={{ fontSize: '0.9rem', opacity: 0.7, marginBottom: '1rem' }}>
-          Your primary training objective. Used to personalize workout recommendations.
-        </p>
-        <select
-          value={localGoal}
-          onChange={(e) => setLocalGoal(e.target.value as typeof localGoal)}
-          style={{
-            padding: '0.75rem 1rem',
-            borderRadius: 'var(--radius-md)',
-            border: '1px solid var(--border)',
-            background: 'var(--background)',
-            color: 'var(--foreground)',
-            fontSize: '1rem',
-            width: '100%',
-            maxWidth: '400px',
-          }}
-        >
-          <option value="hillclimb_tt">🏔️ レース準備（ヒルクライム / TT）</option>
-          <option value="road_race">🏁 レース準備（ロードレース）</option>
-          <option value="ftp_improvement">⚡ FTP向上</option>
-          <option value="fitness_maintenance">💪 体力維持</option>
-          <option value="other">✏️ その他（自由入力）</option>
-        </select>
-
-        {localGoal === 'other' && (
-          <div style={{ marginTop: '1rem' }}>
+        <div style={{ display: 'grid', gap: '1rem' }}>
+          <select
+            value={localGoal}
+            onChange={(e) => setLocalGoal(e.target.value as typeof localGoal)}
+            style={{
+              padding: '0.75rem 1rem',
+              borderRadius: 'var(--radius-md)',
+              border: '1px solid var(--border)',
+              background: 'var(--background)',
+              color: 'var(--foreground)',
+              fontSize: '1rem',
+              width: '100%',
+            }}
+          >
+            <option value="hillclimb_tt">🏔️ レース準備（ヒルクライム / TT）</option>
+            <option value="road_race">🏁 レース準備（ロードレース）</option>
+            <option value="ftp_improvement">⚡ FTP向上</option>
+            <option value="fitness_maintenance">💪 体力維持</option>
+            <option value="other">✏️ その他</option>
+          </select>
+          {localGoal === 'other' && (
             <input
               type="text"
               value={localGoalCustom}
               onChange={(e) => setLocalGoalCustom(e.target.value)}
-              placeholder="例: トライアスロン準備、グラベルレース..."
+              placeholder="例: トライアスロン準備"
               style={{
                 padding: '0.75rem 1rem',
                 borderRadius: 'var(--radius-md)',
@@ -265,20 +281,46 @@ export default function SettingsForm() {
                 background: 'var(--background)',
                 color: 'var(--foreground)',
                 fontSize: '1rem',
-                width: '100%',
-                maxWidth: '400px',
               }}
             />
+          )}
+          <div>
+            <label
+              htmlFor="goalDate"
+              style={{
+                display: 'block',
+                fontSize: '0.85rem',
+                opacity: 0.7,
+                marginBottom: '0.5rem',
+              }}
+            >
+              Goal Date
+            </label>
+            <input
+              id="goalDate"
+              type="date"
+              value={localGoalDate}
+              onChange={(e) => setLocalGoalDate(e.target.value)}
+              style={{
+                padding: '0.75rem 1rem',
+                borderRadius: 'var(--radius-md)',
+                border: `1px solid ${goalDateError ? '#e74c3c' : 'var(--border)'}`,
+                background: 'var(--background)',
+                color: 'var(--foreground)',
+                fontSize: '1rem',
+              }}
+            />
+            {goalDateError && (
+              <div style={{ marginTop: '0.5rem', color: '#e74c3c', fontSize: '0.8rem' }}>
+                {goalDateError}
+              </div>
+            )}
           </div>
-        )}
+        </div>
       </div>
 
-      {/* Coach Autonomy Setting */}
       <div style={cardStyle}>
         <h3 style={{ marginTop: 0, marginBottom: '1rem' }}>🧠 コーチの自律度</h3>
-        <p style={{ fontSize: '0.9rem', opacity: 0.7, marginBottom: '1rem' }}>
-          AIコーチがどこまで積極的に介入するかを選べます。
-        </p>
         <div style={{ display: 'grid', gap: '0.75rem' }}>
           {COACH_AUTONOMY_OPTIONS.map((opt) => (
             <label
@@ -295,7 +337,6 @@ export default function SettingsForm() {
                   localCoachAutonomy === opt.value
                     ? 'color-mix(in srgb, var(--primary) 8%, transparent)'
                     : 'transparent',
-                transition: 'border-color 0.15s, background 0.15s',
               }}
             >
               <input
@@ -304,11 +345,7 @@ export default function SettingsForm() {
                 value={opt.value}
                 checked={localCoachAutonomy === opt.value}
                 onChange={() => setLocalCoachAutonomy(opt.value)}
-                style={{
-                  marginTop: '0.2rem',
-                  accentColor: 'var(--primary)',
-                  cursor: 'pointer',
-                }}
+                style={{ marginTop: '0.2rem', accentColor: 'var(--primary)' }}
               />
               <div>
                 <div style={{ fontWeight: 600 }}>{opt.label}</div>
@@ -321,12 +358,54 @@ export default function SettingsForm() {
         </div>
       </div>
 
-      {/* Recommend Mode Setting */}
+      <div style={cardStyle}>
+        <h3 style={{ marginTop: 0, marginBottom: '1rem' }}>📅 Weekly Schedule</h3>
+        <div style={{ display: 'grid', gap: '0.75rem' }}>
+          {DAY_NAMES.map((dayName) => (
+            <div
+              key={dayName}
+              style={{
+                display: 'grid',
+                gridTemplateColumns: '72px 100px 1fr',
+                gap: '0.75rem',
+                alignItems: 'center',
+              }}
+            >
+              <strong>{DAY_LABELS[dayName]}</strong>
+              <label style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                <input
+                  type="checkbox"
+                  checked={localWeeklySchedule[dayName].available}
+                  onChange={(e) => updateDay(dayName, { available: e.target.checked })}
+                />
+                <span>available</span>
+              </label>
+              <input
+                type="number"
+                min={0}
+                max={600}
+                value={localWeeklySchedule[dayName].max_minutes ?? 0}
+                onChange={(e) =>
+                  updateDay(dayName, {
+                    max_minutes: Number(e.target.value) || 0,
+                  })
+                }
+                disabled={!localWeeklySchedule[dayName].available}
+                style={{
+                  padding: '0.65rem 0.85rem',
+                  borderRadius: 'var(--radius-md)',
+                  border: '1px solid var(--border)',
+                  background: 'var(--background)',
+                  color: 'var(--foreground)',
+                }}
+              />
+            </div>
+          ))}
+        </div>
+      </div>
+
       <div style={cardStyle}>
         <h3 style={{ marginTop: 0, marginBottom: '1rem' }}>🤖 AI推薦モード</h3>
-        <p style={{ fontSize: '0.9rem', opacity: 0.7, marginBottom: '1rem' }}>
-          トレーニング推薦の生成方法を選択します。グラウンディング（外部情報源の参照）の有無を切り替えられます。
-        </p>
         <select
           value={localRecommendMode}
           onChange={(e) => setLocalRecommendMode(e.target.value as RecommendMode)}
@@ -338,7 +417,6 @@ export default function SettingsForm() {
             color: 'var(--foreground)',
             fontSize: '1rem',
             width: '100%',
-            maxWidth: '400px',
           }}
         >
           {RECOMMEND_MODE_OPTIONS.map((opt) => (
@@ -352,13 +430,8 @@ export default function SettingsForm() {
         </div>
       </div>
 
-      {/* Personal Data Setting */}
       <div style={cardStyle}>
         <h3 style={{ marginTop: 0, marginBottom: '1rem' }}>📊 パーソナルデータ</h3>
-        <p style={{ fontSize: '0.9rem', opacity: 0.7, marginBottom: '1rem' }}>
-          Strava
-          のアクティビティデータを使って個人に合った推薦を生成します。OFFにすると汎用的なサイクリング推薦になります。
-        </p>
         <label
           style={{
             display: 'flex',
@@ -372,12 +445,7 @@ export default function SettingsForm() {
             type="checkbox"
             checked={localUsePersonalData}
             onChange={(e) => setLocalUsePersonalData(e.target.checked)}
-            style={{
-              width: '1.25rem',
-              height: '1.25rem',
-              accentColor: 'var(--primary)',
-              cursor: 'pointer',
-            }}
+            style={{ width: '1.25rem', height: '1.25rem', accentColor: 'var(--primary)' }}
           />
           <span>{localUsePersonalData ? 'ON — Stravaデータを使用' : 'OFF — 汎用推薦'}</span>
         </label>
@@ -392,10 +460,6 @@ export default function SettingsForm() {
           }}
         >
           <h3 style={{ marginTop: 0, marginBottom: '0.5rem' }}>🧪 確認時刻（開発用）</h3>
-          <p style={{ fontSize: '0.85rem', opacity: 0.75, marginBottom: '1rem' }}>
-            この時刻を「今」とみなしてダッシュボードを評価します。設定中はキャッシュをバイパスします。
-            日付のみ入力した場合は JST 23:59 を既定値として扱います。
-          </p>
           <div style={{ display: 'flex', gap: '0.75rem', alignItems: 'center', flexWrap: 'wrap' }}>
             <input
               type="datetime-local"
@@ -430,12 +494,10 @@ export default function SettingsForm() {
         </div>
       )}
 
-      {/* Notifications */}
       <div style={cardStyle}>
         <NotificationSettings />
       </div>
 
-      {/* Save Button */}
       <button onClick={handleSave} className="btn btn-primary" style={{ justifySelf: 'start' }}>
         {saved ? '✓ Saved!' : 'Save Settings'}
       </button>

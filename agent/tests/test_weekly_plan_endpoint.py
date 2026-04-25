@@ -125,13 +125,16 @@ async def test_weekly_plan_append_returns_conflict_payload():
 
 @pytest.mark.asyncio
 async def test_weekly_plan_append_rejects_out_of_window_date():
-    with patch(
-        "recommend_agent.main.update_training_plan",
-        return_value={
-            "status": "error",
-            "error_message": "session_date 2026-05-15 is outside the current weekly plan window",
-        },
-    ), pytest.raises(HTTPException) as exc_info:
+    with (
+        patch(
+            "recommend_agent.main.update_training_plan",
+            return_value={
+                "status": "error",
+                "error_message": "session_date 2026-05-15 is outside the current weekly plan window",
+            },
+        ),
+        pytest.raises(HTTPException) as exc_info,
+    ):
         await weekly_plan_append(
             WeeklyPlanAppendRequest(
                 session_date="2026-05-15",
@@ -147,10 +150,13 @@ async def test_weekly_plan_append_rejects_out_of_window_date():
 
 @pytest.mark.asyncio
 async def test_weekly_plan_append_returns_500_on_unexpected_error():
-    with patch(
-        "recommend_agent.main.update_training_plan",
-        return_value={"status": "error", "error_message": "boom"},
-    ), pytest.raises(HTTPException) as exc_info:
+    with (
+        patch(
+            "recommend_agent.main.update_training_plan",
+            return_value={"status": "error", "error_message": "boom"},
+        ),
+        pytest.raises(HTTPException) as exc_info,
+    ):
         await weekly_plan_append(
             WeeklyPlanAppendRequest(
                 session_date="2026-04-25",

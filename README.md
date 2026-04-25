@@ -145,6 +145,24 @@ ngrok http 3000
 
 Credentials are read from `web/.env.local` automatically.
 
+## Weekly Plan (Local Development)
+
+Once the agent is running on `http://localhost:8000`, you can reproduce any Monday weekly draft locally:
+
+```bash
+curl -X POST http://localhost:8000/api/agent/weekly-plan \
+  -H 'Content-Type: application/json' \
+  -d '{
+    "week_start": "2026-04-27",
+    "as_of": "2026-04-27T04:00:00+09:00",
+    "force": true
+  }'
+```
+
+- Omit `as_of` to use `week_startT04:00:00+09:00`
+- Weekly review actions are handled via `POST /api/agent/weekly-plan/respond`
+- `deploy.sh.example` also includes the Cloud Scheduler job definition for the weekly trigger
+
 ## Tech Stack
 
 | Category           | Technology                                                                         |

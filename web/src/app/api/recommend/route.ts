@@ -5,6 +5,8 @@ import {
   readActivityCache,
   recomputeFitnessFromProcessed,
 } from '@/app/dashboard/_lib/gcs';
+import { readTrainingPlan, readUserSettings, readWeeklyPlanReview } from '@/lib/gcs-settings';
+import { getCurrentPlanContext } from '@/lib/weekly-plan';
 
 interface RecommendBody {
   goal?: string;
@@ -12,6 +14,7 @@ interface RecommendBody {
   goalCustom?: string | null;
   recommendMode?: string | null;
   usePersonalData?: boolean | null;
+  coachAutonomy?: 'observe' | 'suggest' | 'coach' | null;
   constraint?: string | null;
   mode?: string;
   asOf?: string | null;
@@ -36,6 +39,10 @@ async function buildActivityOverride(asOf: Date): Promise<ActivityOverride | nul
   };
 }
 
+function currentJstReference(): Date {
+  return new Date(Date.now() + 9 * 60 * 60 * 1000);
+}
+
 export async function POST(request: Request) {
   try {
     const body: RecommendBody = await request.json();
@@ -52,6 +59,19 @@ export async function POST(request: Request) {
       }
     }
 
+    const userSettings = await readUserSettings();
+    const coachAutonomy = body.coachAutonomy ?? userSettings?.coach_autonomy ?? 'suggest';
+    const [trainingPlan, reviewStore] = await Promise.all([
+      readTrainingPlan(),
+      readWeeklyPlanReview(),
+    ]);
+    const planContext = getCurrentPlanContext(
+      coachAutonomy,
+      trainingPlan,
+      reviewStore,
+      asOfParsed ?? currentJstReference(),
+    );
+
     const response = await fetch(`${agentUrl}/recommend`, {
       method: 'POST',
       headers: {
@@ -63,6 +83,8 @@ export async function POST(request: Request) {
         goal_custom: body.goalCustom || null,
         recommend_mode: body.recommendMode || null,
         use_personal_data: body.usePersonalData ?? null,
+        coach_autonomy: coachAutonomy,
+        plan_context_key: planContext.planContextKey,
         constraint: body.constraint || null,
         mode: body.mode || 'recommend',
         as_of: asOfParsed ? asOfParsed.toISOString() : null,
@@ -75,8 +97,12 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: `Agent API error: ${error}` }, { status: response.status });
     }
 
-    const data = await response.json();
-    return NextResponse.json(data);
+    const data = (await response.json()) as Record<string, unknown>;
+    return NextResponse.json({
+      ...data,
+      coach_autonomy: coachAutonomy,
+      plan_context_key: data.plan_context_key ?? planContext.planContextKey,
+    });
   } catch (error) {
     console.error('Recommend API error:', error);
     return NextResponse.json(

@@ -4,6 +4,7 @@ from datetime import datetime, timedelta
 from zoneinfo import ZoneInfo
 
 from recommend_agent.gcs import read_gcs_json
+from recommend_agent.tools._request_context import as_of_var
 
 JST = ZoneInfo("Asia/Tokyo")
 
@@ -21,7 +22,8 @@ def get_current_fitness(user_id: str = "default") -> dict:
         activities = data.get("activities", [])
         latest_activity = activities[0] if activities else None
 
-        today = datetime.now(JST).date()
+        reference = as_of_var.get() or datetime.now(JST)
+        today = reference.astimezone(JST).date()
         cutoff_7d = today - timedelta(days=7)
         cutoff_14d = today - timedelta(days=14)
 
