@@ -4,16 +4,10 @@ import { authOptions } from '@/lib/auth';
 import { readTrainingPlan, readUserSettings, readWeeklyPlanReview } from '@/lib/gcs-settings';
 import { mondayOfWeek, isoDate } from '@/lib/weekly-plan';
 import type { ApprovedWeekPayload, WeeklyPlanReviewPayload } from '@/lib/gcs-schema';
+import { PendingReviewPanel, type PendingReviewSummary } from './_components/PendingReviewPanel';
 import { WeekView } from './_components/WeekView';
 
 export const dynamic = 'force-dynamic';
-
-interface PendingReviewSummary {
-  review_id: string;
-  week_start: string;
-  plan_revision: number;
-  status: string;
-}
 
 export default async function WeeklyPlanPage() {
   const session = await getServerSession(authOptions);
@@ -75,22 +69,7 @@ export default async function WeeklyPlanPage() {
         </div>
       )}
 
-      {coachAutonomy === 'coach' && pendingSummary && (
-        <div
-          data-testid="pending-review-banner"
-          style={{
-            padding: '0.7rem 1rem',
-            background: 'rgba(255,152,0,0.1)',
-            border: '1px solid rgba(255,152,0,0.4)',
-            borderRadius: 'var(--radius-md)',
-            marginBottom: '1rem',
-            fontSize: '0.85rem',
-          }}
-        >
-          🔔 Pending review for {pendingSummary.week_start} (revision {pendingSummary.plan_revision},{' '}
-          status: {pendingSummary.status}). Approve / modify actions are coming next phase.
-        </div>
-      )}
+      {coachAutonomy === 'coach' && pendingSummary && <PendingReviewPanel review={pendingSummary} />}
 
       {coachAutonomy === 'coach' && !displayWeek && (
         <div
