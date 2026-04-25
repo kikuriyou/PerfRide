@@ -1,9 +1,5 @@
-/**
- * Training periodization logic with weekly workout recommendations
- * Based on classic periodization model: Base -> Build -> Peak -> Taper
- */
-
 import type { WorkoutInterval } from '@/types/workout';
+import type { PhaseName } from '@/lib/gcs-schema';
 
 export interface Workout {
   day: string;
@@ -41,7 +37,7 @@ export interface WeekSchedule {
 }
 
 // Workout templates per phase with interval structures
-const WORKOUT_TEMPLATES: Record<string, Workout[]> = {
+export const WORKOUT_TEMPLATES: Record<PhaseName, Workout[]> = {
   base: [
     {
       day: 'Mon',
@@ -474,9 +470,103 @@ const WORKOUT_TEMPLATES: Record<string, Workout[]> = {
       intervals: [{ startMin: 0, endMin: 60, powerPercent: 45, label: 'Celebration' }],
     },
   ],
+  maintenance: [
+    {
+      day: 'Mon',
+      name: 'Rest',
+      duration: '-',
+      durationMin: 0,
+      description: 'Complete rest or light stretching',
+      intensity: 'recovery',
+      icon: '😴',
+      intervals: [],
+    },
+    {
+      day: 'Tue',
+      name: 'Zone 2 Ride',
+      duration: '1h',
+      durationMin: 60,
+      description: 'Zone 2, steady aerobic maintenance',
+      intensity: 'endurance',
+      icon: '🚴',
+      intervals: [{ startMin: 0, endMin: 60, powerPercent: 65, label: 'Zone 2' }],
+    },
+    {
+      day: 'Wed',
+      name: 'Rest',
+      duration: '-',
+      durationMin: 0,
+      description: 'Rest',
+      intensity: 'recovery',
+      icon: '😴',
+      intervals: [],
+    },
+    {
+      day: 'Thu',
+      name: 'Easy Spin',
+      duration: '45min',
+      durationMin: 45,
+      description: 'Easy pace, high cadence',
+      intensity: 'recovery',
+      icon: '🔄',
+      intervals: [{ startMin: 0, endMin: 45, powerPercent: 55, label: 'Easy' }],
+    },
+    {
+      day: 'Fri',
+      name: 'Rest',
+      duration: '-',
+      durationMin: 0,
+      description: 'Rest',
+      intensity: 'recovery',
+      icon: '😴',
+      intervals: [],
+    },
+    {
+      day: 'Sat',
+      name: 'Long Zone 2',
+      duration: '2h',
+      durationMin: 120,
+      description: 'Long Zone 2 ride, maintain aerobic base',
+      intensity: 'endurance',
+      icon: '🏔️',
+      intervals: [{ startMin: 0, endMin: 120, powerPercent: 63, label: 'Zone 2' }],
+    },
+    {
+      day: 'Sun',
+      name: 'Recovery Spin',
+      duration: '45min',
+      durationMin: 45,
+      description: 'Very easy recovery',
+      intensity: 'recovery',
+      icon: '☀️',
+      intervals: [{ startMin: 0, endMin: 45, powerPercent: 50, label: 'Recovery' }],
+    },
+  ],
+  custom: [
+    {
+      day: 'Mon',
+      name: 'Rest',
+      duration: '-',
+      durationMin: 0,
+      description: 'Rest',
+      intensity: 'recovery',
+      icon: '😴',
+      intervals: [],
+    },
+    {
+      day: 'Sat',
+      name: 'Endurance Ride',
+      duration: '1.5h',
+      durationMin: 90,
+      description: 'Zone 2 endurance ride',
+      intensity: 'endurance',
+      icon: '🚴',
+      intervals: [{ startMin: 0, endMin: 90, powerPercent: 65, label: 'Endurance' }],
+    },
+  ],
 };
 
-const PHASE_TEMPLATES: Record<string, Omit<TrainingPhase, 'weekCount'>> = {
+export const PHASE_TEMPLATES: Record<PhaseName, Omit<TrainingPhase, 'weekCount'>> = {
   base: {
     name: 'Base',
     description: 'Build aerobic foundation with long, steady rides',
@@ -516,6 +606,22 @@ const PHASE_TEMPLATES: Record<string, Omit<TrainingPhase, 'weekCount'>> = {
     focus: 'Recovery & Freshness',
     color: '#2196F3',
     weeklyWorkouts: WORKOUT_TEMPLATES.taper,
+  },
+  maintenance: {
+    name: 'Maintenance',
+    description: 'Maintain aerobic fitness with moderate Zone 2 volume',
+    intensity: 'low',
+    focus: 'Zone 2 & Recovery',
+    color: '#009688',
+    weeklyWorkouts: WORKOUT_TEMPLATES.maintenance,
+  },
+  custom: {
+    name: 'Custom',
+    description: 'Coach-defined custom phase',
+    intensity: 'medium',
+    focus: 'Custom',
+    color: '#9E9E9E',
+    weeklyWorkouts: WORKOUT_TEMPLATES.custom,
   },
 };
 

@@ -6,7 +6,8 @@ export default function PlannerPage() {
       <header style={{ marginBottom: '1.5rem' }}>
         <h1>Training Planner</h1>
         <p style={{ opacity: 0.7, marginTop: '0.25rem', fontSize: '0.9rem' }}>
-          Set your race date and generate a periodized training plan
+          Set your race date and generate a periodized training plan. The coach-mode weekly plan
+          lives at <a href="/weekly-plan">/weekly-plan</a>.
         </p>
       </header>
 
