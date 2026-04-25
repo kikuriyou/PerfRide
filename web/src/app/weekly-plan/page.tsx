@@ -4,6 +4,7 @@ import { authOptions } from '@/lib/auth';
 import { readTrainingPlan, readUserSettings, readWeeklyPlanReview } from '@/lib/gcs-settings';
 import { mondayOfWeek, isoDate } from '@/lib/weekly-plan';
 import type { ApprovedWeekPayload, WeeklyPlanReviewPayload } from '@/lib/gcs-schema';
+import { AddSessionForm } from './_components/AddSessionForm';
 import { PendingReviewPanel, type PendingReviewSummary } from './_components/PendingReviewPanel';
 import { WeekView } from './_components/WeekView';
 
@@ -115,6 +116,11 @@ export default async function WeeklyPlanPage() {
             </span>
           </div>
           <WeekView week={displayWeek} today={today} />
+          <AddSessionForm
+            weekStart={displayWeek.week_start}
+            today={today}
+            planRevision={displayWeek.plan_revision}
+          />
         </section>
       )}
     </main>
