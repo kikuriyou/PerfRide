@@ -1,7 +1,39 @@
 import { describe, expect, it } from 'vitest';
 
 import type { GCSTrainingPlan, WeeklyPlanReviewStore } from '@/lib/gcs-schema';
-import { buildPlanContextKey, getCurrentPlanContext } from '@/lib/weekly-plan';
+import { buildPlanContextKey, getCurrentPlanContext, isoDate, mondayOfWeek } from '@/lib/weekly-plan';
+
+describe('isoDate (JST)', () => {
+  it('returns the JST calendar day even when UTC is still on the previous day', () => {
+    // 2026-04-26T22:30Z is 2026-04-27T07:30 JST.
+    const ref = new Date('2026-04-26T22:30:00Z');
+    expect(isoDate(ref)).toBe('2026-04-27');
+  });
+
+  it('matches UTC when the wall clock is the same day', () => {
+    const ref = new Date('2026-04-26T05:00:00Z'); // 14:00 JST same date
+    expect(isoDate(ref)).toBe('2026-04-26');
+  });
+});
+
+describe('mondayOfWeek (JST)', () => {
+  it('rolls a JST Sunday back to the Monday of that JST week', () => {
+    // 2026-04-26 (Sun JST) → Monday 2026-04-20.
+    const ref = new Date('2026-04-26T00:30:00+09:00');
+    expect(mondayOfWeek(ref)).toBe('2026-04-20');
+  });
+
+  it('returns the same date when called on a JST Monday', () => {
+    const ref = new Date('2026-04-20T08:00:00+09:00');
+    expect(mondayOfWeek(ref)).toBe('2026-04-20');
+  });
+
+  it('uses the JST date even at UTC times that look like the previous day', () => {
+    // 2026-04-26T20:00Z is 2026-04-27T05:00 JST → Monday 2026-04-27.
+    const ref = new Date('2026-04-26T20:00:00Z');
+    expect(mondayOfWeek(ref)).toBe('2026-04-27');
+  });
+});
 
 const approvedPlan: GCSTrainingPlan = {
   user_id: 'u1',
@@ -112,7 +144,7 @@ describe('getCurrentPlanContext', () => {
       new Date('2026-04-08T00:00:00Z'),
     );
     expect(result.source).toBe('approved');
-    expect(result.todaySession?.type).toBe('recovery');
+    expect(result.week?.sessions?.find((s) => s.date === '2026-04-08')?.type).toBe('recovery');
     expect(result.planContextKey).toBe('coach:2026-04-06:3:approved');
   });
 

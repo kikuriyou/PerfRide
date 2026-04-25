@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getServerSession } from 'next-auth/next';
 import { authOptions } from '@/lib/auth';
-import { readWeeklyPlanReview } from '@/lib/gcs-settings';
+import { readUserSettings, readWeeklyPlanReview } from '@/lib/gcs-settings';
 
 interface WeeklyRespondBody {
   review_id: string;
@@ -34,6 +34,13 @@ export async function POST(request: Request) {
   const session = await getServerSession(authOptions);
   if (!session) {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+  }
+  const settings = await readUserSettings();
+  if ((settings?.coach_autonomy ?? 'suggest') !== 'coach') {
+    return NextResponse.json(
+      { error: 'Coach autonomy must be enabled to respond to weekly reviews.' },
+      { status: 403 },
+    );
   }
   try {
     const body: WeeklyRespondBody = await request.json();

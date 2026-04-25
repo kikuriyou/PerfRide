@@ -7,6 +7,7 @@ from recommend_agent.main import (
     _approve_weekly_review,
     weekly_plan_respond,
 )
+from recommend_agent.plan_store import StalePlanRevisionError
 
 
 def _review() -> dict:
@@ -142,3 +143,30 @@ async def test_modify_increments_revision_via_regeneration():
 
     assert response["status"] == "modified"
     assert response["plan_revision"] == 4
+
+
+@pytest.mark.asyncio
+async def test_approve_returns_conflict_when_approved_week_advanced():
+    """draft.plan_revision != current approved.plan_revision must surface as conflict
+    instead of silently overwriting an appended session."""
+    review = _review()
+    with (
+        patch("recommend_agent.main.get_review", return_value=review),
+        patch(
+            "recommend_agent.main.replace_current_week",
+            side_effect=StalePlanRevisionError(current_revision=4, week_start="2026-04-06"),
+        ),
+        patch("recommend_agent.main._require_profile", return_value={"user_id": "u1", "ftp": 200}),
+        patch("recommend_agent.main._profile_goal_label", return_value="race"),
+        patch("recommend_agent.main.update_review_status") as mock_update_status,
+    ):
+        response = await _approve_weekly_review(
+            review_id="weekly_2026-04-06",
+            expected_plan_revision=3,
+        )
+
+    assert response.status == "conflict"
+    assert response.plan_revision == 4
+    assert response.review_id == "weekly_2026-04-06"
+    # Stale apply must NOT mark the review as applied.
+    mock_update_status.assert_not_called()

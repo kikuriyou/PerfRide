@@ -2,7 +2,6 @@ import type {
   ApprovedWeekPayload,
   CoachAutonomy,
   GCSTrainingPlan,
-  TrainingSession,
   WeeklyPlanReviewStore,
 } from '@/lib/gcs-schema';
 
@@ -12,20 +11,63 @@ export interface CurrentPlanContext {
   planRevision: number | null;
   planStatus: string;
   week: ApprovedWeekPayload | null;
-  todaySession: TrainingSession | null;
   planContextKey: string | null;
 }
 
+// All week-boundary math in this app is JST-based: agent generates plans on Monday JST,
+// and users open the dashboard at JST hours where UTC would still be on the previous day.
+const JST_PARTS_FORMATTER = new Intl.DateTimeFormat('en-CA', {
+  timeZone: 'Asia/Tokyo',
+  year: 'numeric',
+  month: '2-digit',
+  day: '2-digit',
+  weekday: 'short',
+});
+
+interface JstParts {
+  date: string; // YYYY-MM-DD
+  year: number;
+  month: number; // 1-12
+  day: number; // 1-31
+  weekdayMon0: number; // 0=Mon ... 6=Sun
+}
+
+const WEEKDAY_INDEX: Record<string, number> = {
+  Mon: 0,
+  Tue: 1,
+  Wed: 2,
+  Thu: 3,
+  Fri: 4,
+  Sat: 5,
+  Sun: 6,
+};
+
+function jstParts(reference: Date): JstParts {
+  const parts = JST_PARTS_FORMATTER.formatToParts(reference);
+  const lookup: Record<string, string> = {};
+  for (const part of parts) lookup[part.type] = part.value;
+  const year = Number(lookup.year);
+  const month = Number(lookup.month);
+  const day = Number(lookup.day);
+  return {
+    date: `${lookup.year}-${lookup.month}-${lookup.day}`,
+    year,
+    month,
+    day,
+    weekdayMon0: WEEKDAY_INDEX[lookup.weekday] ?? 0,
+  };
+}
+
 export function isoDate(date: Date): string {
-  return date.toISOString().slice(0, 10);
+  return jstParts(date).date;
 }
 
 export function mondayOfWeek(referenceDate: Date): string {
-  const copy = new Date(referenceDate);
-  const day = copy.getUTCDay();
-  const daysToMonday = day === 0 ? 6 : day - 1;
-  copy.setUTCDate(copy.getUTCDate() - daysToMonday);
-  return isoDate(copy);
+  const parts = jstParts(referenceDate);
+  // Build a UTC midnight date for the JST calendar day, then walk back to Monday.
+  const baseUtc = new Date(Date.UTC(parts.year, parts.month - 1, parts.day));
+  baseUtc.setUTCDate(baseUtc.getUTCDate() - parts.weekdayMon0);
+  return baseUtc.toISOString().slice(0, 10);
 }
 
 export function buildPlanContextKey(
@@ -35,10 +77,6 @@ export function buildPlanContextKey(
   planStatus: string,
 ): string {
   return `${coachAutonomy}:${weekStart}:${planRevision}:${planStatus}`;
-}
-
-function sessionForDate(week: ApprovedWeekPayload, targetDate: string): TrainingSession | null {
-  return week.sessions.find((session) => session.date === targetDate) ?? null;
 }
 
 function approvedWeekForDate(
@@ -77,7 +115,6 @@ export function getCurrentPlanContext(
       planRevision: null,
       planStatus: 'suggest',
       week: null,
-      todaySession: null,
       planContextKey: null,
     };
   }
@@ -92,7 +129,6 @@ export function getCurrentPlanContext(
       planRevision: approvedWeek.plan_revision,
       planStatus: approvedWeek.status,
       week: approvedWeek,
-      todaySession: sessionForDate(approvedWeek, targetDate),
       planContextKey: buildPlanContextKey(
         coachAutonomy,
         approvedWeek.week_start,
@@ -110,7 +146,6 @@ export function getCurrentPlanContext(
       planRevision: pendingWeek.plan_revision,
       planStatus: pendingWeek.status,
       week: pendingWeek,
-      todaySession: sessionForDate(pendingWeek, targetDate),
       planContextKey: buildPlanContextKey(
         coachAutonomy,
         pendingWeek.week_start,
@@ -126,7 +161,6 @@ export function getCurrentPlanContext(
     planRevision: null,
     planStatus: 'suggest',
     week: null,
-    todaySession: null,
     planContextKey: null,
   };
 }

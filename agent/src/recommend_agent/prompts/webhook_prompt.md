@@ -27,7 +27,7 @@ get_current_fitness と get_training_plan を呼び、以下を確認:
 1. build_and_register_workout でワークアウト生成 + プラットフォーム登録
 2. build_and_register_workout の返り値が `status="error"` または `platform_status="failed"` の場合、登録済み扱いにしない
 3. 登録に成功した場合のみ update_training_plan を呼び、`status="registered"` を設定する
-   - 既存の baseline session を上書きする操作なので、必ず `mode="replace"` を指定する（append は別経路の専用ツールが扱う）
+   - 既存の baseline session を上書きする操作なので、必ず `mode="replace"` と `target_origin="baseline"` を指定する（append は別経路の専用ツールが扱う）
 4. build_and_register_workout が `workout_id` を返した場合は、それを update_training_plan に渡す
 5. build_and_register_workout の `session_type` は以下の canonical 値を優先して使う:
    `vo2max`, `threshold`, `sweetspot`, `endurance`, `recovery`, `over_under`, `tempo`, `sprint`, `race_simulation`

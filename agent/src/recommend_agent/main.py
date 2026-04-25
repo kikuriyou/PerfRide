@@ -18,6 +18,7 @@ from pydantic import BaseModel
 from recommend_agent.agent import build_agent, build_insight_agent
 from recommend_agent.constants import RECOMMEND_MODE, USE_PERSONAL_DATA
 from recommend_agent.plan_store import (
+    StalePlanRevisionError,
     WeekPayload,
     get_review,
     replace_current_week,
@@ -1038,12 +1039,27 @@ async def _approve_weekly_review(
         raise HTTPException(status_code=500, detail="Weekly review draft is invalid")
 
     profile = _require_profile()
-    replace_current_week(
-        draft,
-        user_id=str(profile.get("user_id", "default")),
-        goal_event=_profile_goal_label(profile),
-        current_phase=str(draft.get("phase", "maintenance")),
-    )
+    draft_revision = draft.get("plan_revision")
+    expected_current_revision = int(draft_revision) if isinstance(draft_revision, int) else None
+    try:
+        replace_current_week(
+            draft,
+            user_id=str(profile.get("user_id", "default")),
+            goal_event=_profile_goal_label(profile),
+            current_phase=str(draft.get("phase", "maintenance")),
+            expected_current_revision=expected_current_revision,
+        )
+    except StalePlanRevisionError as exc:
+        # The draft was generated against a now-stale approved week; an
+        # appended session may have been added in the meantime. Surface the
+        # conflict so the client can re-fetch and re-decide.
+        return WeeklyPlanResponse(
+            status="conflict",
+            week_start=str(review.get("week_start", "")),
+            review_id=review_id,
+            plan_revision=exc.current_revision,
+            message="approved week has advanced since the draft was generated",
+        )
 
     from recommend_agent.tools.build_and_register_workout import build_and_register_workout
 
@@ -1074,6 +1090,7 @@ async def _approve_weekly_review(
                 str(built["workout_id"]) if isinstance(built.get("workout_id"), str) else None
             ),
             mode="replace",
+            target_origin="baseline",
             preserve_plan_revision=True,
         )
         sessions_registered += 1

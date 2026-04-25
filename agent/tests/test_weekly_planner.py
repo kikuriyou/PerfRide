@@ -84,17 +84,34 @@ def test_has_valid_sequence_accepts_seven_distinct_days():
     assert _has_valid_sequence(week, week_start) is True
 
 
-def test_has_valid_sequence_accepts_same_date_duplicates():
-    """Appended sessions sit alongside baseline sessions; duplicates must not invalidate."""
+def test_has_valid_sequence_accepts_baseline_plus_appended_on_same_date():
+    """Appended sessions sit alongside baseline sessions; that pair must not invalidate."""
     week_start = date(2026, 4, 6)
     sessions = _make_sessions(week_start, 7)
     sessions.append(
         {
-            "date": (week_start).isoformat(),
+            "date": week_start.isoformat(),
             "type": "endurance",
+            "origin": "appended",
         }
     )
     assert _has_valid_sequence({"sessions": sessions}, week_start) is True
+
+
+def test_has_valid_sequence_rejects_multiple_baselines_on_same_date():
+    """Two baseline-origin sessions on the same date corrupt the plan and must fail."""
+    week_start = date(2026, 4, 6)
+    sessions = _make_sessions(week_start, 7)
+    sessions.append(
+        {
+            "date": week_start.isoformat(),
+            "type": "endurance",
+            # default origin is "baseline" via normalize_session_payload, but here we
+            # exercise the validator directly so we encode the intent explicitly.
+            "origin": "baseline",
+        }
+    )
+    assert _has_valid_sequence({"sessions": sessions}, week_start) is False
 
 
 def test_has_valid_sequence_rejects_missing_day():

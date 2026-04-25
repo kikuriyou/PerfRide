@@ -80,6 +80,7 @@ def update_training_plan(
     preserve_plan_revision: bool = False,
     mode: UpdateMode = "replace",
     expected_plan_revision: int | None = None,
+    target_origin: SessionOrigin | None = None,
 ) -> dict:
     """Update or append a training session in the GCS-backed weekly plan.
 
@@ -89,6 +90,13 @@ def update_training_plan(
       use this.
     - ``append``: always add a new session at ``session_date``. The target
       week must already contain ``session_date`` (no new weeks are created).
+
+    Identification:
+    - When same-date sessions exist (baseline + appended), pass
+      ``target_origin`` to disambiguate which one ``replace`` updates.
+      Without it the first date-match is taken (baseline-first ordering),
+      which is the long-standing behavior for webhook flows that only
+      touch the baseline session.
 
     Optimistic locking: when ``expected_plan_revision`` is provided, the
     write proceeds only if the target week's current ``plan_revision``
@@ -177,6 +185,11 @@ def update_training_plan(
                 continue
             for index, existing in enumerate(sessions):
                 if not (isinstance(existing, dict) and existing.get("date") == session_date):
+                    continue
+                if (
+                    target_origin is not None
+                    and existing.get("origin", "baseline") != target_origin
+                ):
                     continue
                 if (
                     expected_plan_revision is not None

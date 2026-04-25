@@ -209,3 +209,94 @@ def test_replace_preserves_session_origin(mock_read_gen, mock_write, _mock_now):
         s for s in written["weekly_plan"]["week_1"]["sessions"] if s["date"] == "2026-04-25"
     )
     assert updated["origin"] == "appended"
+
+
+@patch(
+    "recommend_agent.tools.update_training_plan.now_jst_iso",
+    return_value="2026-04-24T12:00:00+09:00",
+)
+@patch("recommend_agent.plan_store.write_gcs_json")
+@patch("recommend_agent.plan_store.read_gcs_json_with_generation")
+def test_replace_with_target_origin_picks_appended_session(mock_read_gen, mock_write, _mock_now):
+    """When same-date baseline + appended sessions coexist, target_origin selects which to update."""
+    plan = _make_plan()
+    plan["weekly_plan"]["week_1"]["sessions"].append(
+        {
+            "date": "2026-04-25",
+            "type": "endurance",
+            "duration_minutes": 60,
+            "target_tss": 40,
+            "status": "planned",
+            "origin": "appended",
+        }
+    )
+    mock_read_gen.return_value = (plan, 1)
+
+    update_training_plan(
+        session_date="2026-04-25",
+        session_type="endurance",
+        duration_minutes=70,
+        target_tss=45,
+        status="registered",
+        workout_id="appended_workout.zwo",
+        target_origin="appended",
+    )
+
+    written = mock_write.call_args.args[1]
+    same_date = [
+        s for s in written["weekly_plan"]["week_1"]["sessions"] if s["date"] == "2026-04-25"
+    ]
+    assert len(same_date) == 2
+
+    appended = next(s for s in same_date if s["origin"] == "appended")
+    baseline = next(s for s in same_date if s["origin"] == "baseline")
+    assert appended["status"] == "registered"
+    assert appended["workout_id"] == "appended_workout.zwo"
+    assert baseline["type"] == "tempo"
+    assert baseline.get("workout_id") is None
+    assert baseline["status"] == "planned"
+
+
+@patch(
+    "recommend_agent.tools.update_training_plan.now_jst_iso",
+    return_value="2026-04-24T12:00:00+09:00",
+)
+@patch("recommend_agent.plan_store.write_gcs_json")
+@patch("recommend_agent.plan_store.read_gcs_json_with_generation")
+def test_replace_with_target_origin_baseline_skips_appended(mock_read_gen, mock_write, _mock_now):
+    """target_origin='baseline' must update the baseline session even if appended comes first."""
+    plan = _make_plan()
+    plan["weekly_plan"]["week_1"]["sessions"].insert(
+        1,
+        {
+            "date": "2026-04-25",
+            "type": "endurance",
+            "duration_minutes": 60,
+            "target_tss": 40,
+            "status": "planned",
+            "origin": "appended",
+        },
+    )
+    mock_read_gen.return_value = (plan, 1)
+
+    update_training_plan(
+        session_date="2026-04-25",
+        session_type="threshold",
+        duration_minutes=75,
+        target_tss=85,
+        status="registered",
+        workout_id="baseline_workout.zwo",
+        target_origin="baseline",
+    )
+
+    written = mock_write.call_args.args[1]
+    same_date = [
+        s for s in written["weekly_plan"]["week_1"]["sessions"] if s["date"] == "2026-04-25"
+    ]
+    baseline = next(s for s in same_date if s["origin"] == "baseline")
+    appended = next(s for s in same_date if s["origin"] == "appended")
+    assert baseline["status"] == "registered"
+    assert baseline["workout_id"] == "baseline_workout.zwo"
+    assert baseline["type"] == "threshold"
+    assert appended["status"] == "planned"
+    assert appended.get("workout_id") is None

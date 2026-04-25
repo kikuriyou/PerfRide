@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import random
+import time
 from collections.abc import Callable
 from copy import deepcopy
 from datetime import date, timedelta
@@ -16,6 +18,10 @@ from recommend_agent.gcs import (
 PLAN_FILE = "training_plan.json"
 REVIEW_FILE = "weekly_plan_review.json"
 DEFAULT_MAX_RETRIES = 3
+# Exponential backoff with jitter — keeps two near-simultaneous append calls
+# from re-colliding on the same retry slot.
+RETRY_BASE_DELAY_SEC = 0.05
+RETRY_MAX_DELAY_SEC = 0.5
 
 SessionStatus = Literal[
     "planned",
@@ -288,7 +294,7 @@ def transactional_update(
     mutate freely.
     """
     last_error: OptimisticLockError | None = None
-    for _attempt in range(max_retries):
+    for attempt in range(max_retries):
         current, generation = read_gcs_json_with_generation(filename)
         snapshot = deepcopy(current) if isinstance(current, dict) else None
         new_data = mutator(snapshot)
@@ -297,9 +303,17 @@ def transactional_update(
             return new_data
         except OptimisticLockError as exc:
             last_error = exc
+            if attempt < max_retries - 1:
+                _sleep_with_jitter(attempt)
             continue
     assert last_error is not None
     raise last_error
+
+
+def _sleep_with_jitter(attempt: int) -> None:
+    """Exponential backoff with full jitter, capped to keep retries snappy."""
+    cap = min(RETRY_MAX_DELAY_SEC, RETRY_BASE_DELAY_SEC * (2**attempt))
+    time.sleep(random.uniform(0, cap))
 
 
 def _normalize_review_store(data: dict | None) -> WeeklyPlanReviewStore:
@@ -411,6 +425,18 @@ def resolve_week_key(
     return f"week_{next_week_number}", next_week_number
 
 
+class StalePlanRevisionError(Exception):
+    """Raised by `replace_current_week` when the caller's expected_current_revision
+    no longer matches the GCS-stored approved week. Distinct from
+    `OptimisticLockError` (which signals concurrent writes); this is for
+    semantic lost-update prevention when applying an older draft."""
+
+    def __init__(self, current_revision: int | None, week_start: str | None):
+        super().__init__(f"stale plan revision (current={current_revision})")
+        self.current_revision = current_revision
+        self.week_start = week_start
+
+
 def replace_current_week(
     week: WeekPayload | dict,
     *,
@@ -418,7 +444,16 @@ def replace_current_week(
     user_id: str | None = None,
     goal_event: str | None = None,
     current_phase: str | None = None,
+    expected_current_revision: int | None = None,
 ) -> dict:
+    """Atomically replace the approved week in `training_plan.json`.
+
+    Pass `expected_current_revision` to assert the existing approved week's
+    `plan_revision` matches before writing — this catches the case where
+    a draft was generated against revision N but revision N+1 has been
+    written since (e.g. an appended session). The check happens inside the
+    transaction so it composes with the GCS generation precondition.
+    """
     source_revision = week.get("plan_revision") if isinstance(week, dict) else None
     approved_week = normalize_week_payload(
         week,
@@ -430,6 +465,21 @@ def replace_current_week(
     def _mutator(current: dict | None) -> dict:
         data = _normalize_training_plan(current)
         weekly_plan = normalize_weekly_plan(data.get("weekly_plan"))
+        if expected_current_revision is not None:
+            existing = next(
+                (
+                    w
+                    for w in weekly_plan.values()
+                    if w.get("week_start") == approved_week["week_start"]
+                ),
+                None,
+            )
+            current_rev = existing.get("plan_revision") if isinstance(existing, dict) else None
+            if current_rev != expected_current_revision:
+                raise StalePlanRevisionError(
+                    current_revision=current_rev if isinstance(current_rev, int) else None,
+                    week_start=approved_week["week_start"],
+                )
         week_key, resolved_week_number = resolve_week_key(
             weekly_plan,
             approved_week["week_start"],

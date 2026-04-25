@@ -121,8 +121,11 @@ def _parse_agent_json(raw_response: str) -> dict[str, Any] | None:
 def _has_valid_sequence(week: WeekPayload, week_start_date: date) -> bool:
     """Validate that sessions cover all 7 days of the week.
 
-    Same-date duplicates are allowed (an "appended" session may sit alongside
-    the baseline). Sessions outside the 7-day window are rejected.
+    Approved/active weeks may carry a same-date pair (one ``baseline`` plus
+    one or more ``appended`` sessions added through the daily-approve flow).
+    Drafts coming straight out of the weekly planner LLM, however, must
+    contain exactly one baseline session per day — multiple baselines on
+    the same date would silently fall through and corrupt the plan.
     """
     sessions = week.get("sessions", [])
     expected_dates = {
@@ -131,7 +134,18 @@ def _has_valid_sequence(week: WeekPayload, week_start_date: date) -> bool:
     actual_dates = {
         session.get("date") for session in sessions if isinstance(session.get("date"), str)
     }
-    return actual_dates == expected_dates
+    if actual_dates != expected_dates:
+        return False
+    baseline_counts: dict[str, int] = {}
+    for session in sessions:
+        if not isinstance(session, dict):
+            continue
+        if session.get("origin", "baseline") != "baseline":
+            continue
+        date_value = session.get("date")
+        if isinstance(date_value, str):
+            baseline_counts[date_value] = baseline_counts.get(date_value, 0) + 1
+    return all(count == 1 for count in baseline_counts.values())
 
 
 def coerce_weekly_draft(
