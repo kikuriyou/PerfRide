@@ -127,3 +127,57 @@ def test_reference_date_keeps_output_deterministic():
     )
 
     assert first["weekly_plan"]["week_15"]["phase"] == second["weekly_plan"]["week_15"]["phase"]
+
+
+def test_current_session_context_returns_array_of_same_date_sessions():
+    from datetime import date as _date
+    from unittest.mock import patch
+
+    from recommend_agent.weekly_logic import current_session_context
+
+    week = {
+        "week_start": "2026-04-20",
+        "phase": "build1",
+        "plan_revision": 5,
+        "sessions": [
+            {"date": "2026-04-25", "type": "tempo", "origin": "baseline"},
+            {"date": "2026-04-25", "type": "endurance", "origin": "appended"},
+            {"date": "2026-04-26", "type": "rest", "origin": "baseline"},
+        ],
+    }
+    with patch(
+        "recommend_agent.weekly_logic.current_plan_context",
+        return_value={"source": "approved", "week": week, "review": None},
+    ):
+        result = current_session_context(_date(2026, 4, 25))
+
+    assert result is not None
+    assert result["source"] == "approved"
+    assert isinstance(result["sessions"], list)
+    assert len(result["sessions"]) == 2
+    types = sorted(s["type"] for s in result["sessions"])
+    assert types == ["endurance", "tempo"]
+
+
+def test_current_session_context_returns_empty_array_when_no_sessions_today():
+    from datetime import date as _date
+    from unittest.mock import patch
+
+    from recommend_agent.weekly_logic import current_session_context
+
+    week = {
+        "week_start": "2026-04-20",
+        "phase": "build1",
+        "plan_revision": 5,
+        "sessions": [
+            {"date": "2026-04-26", "type": "rest", "origin": "baseline"},
+        ],
+    }
+    with patch(
+        "recommend_agent.weekly_logic.current_plan_context",
+        return_value={"source": "approved", "week": week, "review": None},
+    ):
+        result = current_session_context(_date(2026, 4, 25))
+
+    assert result is not None
+    assert result["sessions"] == []

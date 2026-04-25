@@ -129,9 +129,7 @@ def _has_valid_sequence(week: WeekPayload, week_start_date: date) -> bool:
         (week_start_date + timedelta(days=offset)).isoformat() for offset in DAY_OFFSETS
     }
     actual_dates = {
-        session.get("date")
-        for session in sessions
-        if isinstance(session.get("date"), str)
+        session.get("date") for session in sessions if isinstance(session.get("date"), str)
     }
     return actual_dates == expected_dates
 
@@ -150,9 +148,15 @@ def coerce_weekly_draft(
         "week_start": week_start_date.isoformat(),
         "week_number": baseline_week["week_number"],
         "phase": parsed.get("phase") if isinstance(parsed, dict) else baseline_week["phase"],
-        "summary": parsed.get("summary") if isinstance(parsed, dict) else baseline_week.get("summary"),
-        "target_tss": parsed.get("target_tss") if isinstance(parsed, dict) else baseline_week["target_tss"],
-        "sessions": parsed.get("sessions") if isinstance(parsed, dict) else baseline_week["sessions"],
+        "summary": parsed.get("summary")
+        if isinstance(parsed, dict)
+        else baseline_week.get("summary"),
+        "target_tss": parsed.get("target_tss")
+        if isinstance(parsed, dict)
+        else baseline_week["target_tss"],
+        "sessions": parsed.get("sessions")
+        if isinstance(parsed, dict)
+        else baseline_week["sessions"],
     }
     candidate = normalize_week_payload(
         candidate_source,
@@ -199,24 +203,28 @@ def current_plan_context(reference_date: date) -> dict[str, object] | None:
 
 
 def current_session_context(reference_date: date) -> dict[str, object] | None:
+    """Return the week + all sessions scheduled for ``reference_date``.
+
+    The ``sessions`` list contains every session whose ``date`` matches the
+    reference date — possibly empty (rest day) or multiple entries (one
+    baseline plus one or more appended sessions).
+    """
     context = current_plan_context(reference_date)
     if context is None:
         return None
     week = context.get("week")
     if not isinstance(week, dict):
         return None
-    for session in week.get("sessions", []):
-        if isinstance(session, dict) and session.get("date") == reference_date.isoformat():
-            return {
-                "source": context["source"],
-                "week": week,
-                "session": session,
-                "review": context.get("review"),
-            }
+    target = reference_date.isoformat()
+    sessions = [
+        session
+        for session in week.get("sessions", [])
+        if isinstance(session, dict) and session.get("date") == target
+    ]
     return {
         "source": context["source"],
         "week": week,
-        "session": None,
+        "sessions": sessions,
         "review": context.get("review"),
     }
 

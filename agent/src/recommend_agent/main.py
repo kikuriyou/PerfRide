@@ -372,9 +372,9 @@ def _coach_plan_message(now_jst: datetime) -> str:
     if context is None:
         return ""
     week = context.get("week")
-    session = context.get("session")
     if not isinstance(week, dict):
         return ""
+    sessions = context.get("sessions") or []
     source = context.get("source", "approved")
     phase = week.get("phase", "maintenance")
     revision = week.get("plan_revision", 1)
@@ -386,23 +386,19 @@ def _coach_plan_message(now_jst: datetime) -> str:
         f"- phase: {phase}",
         f"- plan_revision: {revision}",
     ]
-    if isinstance(session, dict):
-        lines.extend(
-            [
-                "- today_session:",
-                (
-                    f"  {session.get('type', 'rest')} / "
-                    f"{session.get('duration_minutes', 0)}min / "
-                    f"TSS {session.get('target_tss', 0)}"
-                ),
-            ]
-        )
+    if sessions:
+        lines.append("- today_sessions:")
+        for session in sessions:
+            if not isinstance(session, dict):
+                continue
+            origin = session.get("origin", "baseline")
+            lines.append(
+                f"  ({origin}) {session.get('type', 'rest')} / "
+                f"{session.get('duration_minutes', 0)}min / "
+                f"TSS {session.get('target_tss', 0)}"
+            )
     else:
-        lines.extend(
-            [
-                "- today_session: rest",
-            ]
-        )
+        lines.append("- today_sessions: rest")
     return "\n".join(lines)
 
 
