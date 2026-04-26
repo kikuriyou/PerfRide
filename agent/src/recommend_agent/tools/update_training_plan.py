@@ -43,7 +43,31 @@ def _week_sort_key(item: tuple[str, dict]) -> tuple[int, str]:
 
 
 def _find_target_week_key(weekly_plan: dict[str, dict], session_date: date) -> str | None:
+    """Locate which week-bucket should host ``session_date``.
+
+    Primary key is the week's declared ``week_start`` plus the canonical
+    7-day window (Mon–Sun). Falling back to the session-date min/max range
+    used to be the only check, but a partially-populated week (e.g. one
+    leftover session from a stale dataset) shrunk that window and made
+    legitimate same-week appends fail with "outside the current weekly
+    plan window". The 7-day window is robust against missing sessions.
+    """
+    target_iso = session_date.isoformat()
     for key, week in weekly_plan.items():
+        week_start_str = week.get("week_start")
+        if not isinstance(week_start_str, str):
+            continue
+        week_start = parse_iso_date(week_start_str)
+        if week_start is None:
+            continue
+        week_end = week_start + timedelta(days=6)
+        if week_start.isoformat() <= target_iso <= week_end.isoformat():
+            return key
+    # Fallback: legacy weeks that lack a usable `week_start` string still
+    # need to be discoverable via their session dates.
+    for key, week in weekly_plan.items():
+        if isinstance(week.get("week_start"), str):
+            continue
         dates = _session_dates(week)
         if dates and min(dates) <= session_date <= max(dates):
             return key

@@ -218,7 +218,7 @@ def test_replace_preserves_session_origin(mock_read_gen, mock_write, _mock_now):
 @patch("recommend_agent.plan_store.write_gcs_json")
 @patch("recommend_agent.plan_store.read_gcs_json_with_generation")
 def test_replace_with_target_origin_picks_appended_session(mock_read_gen, mock_write, _mock_now):
-    """When same-date baseline + appended sessions coexist, target_origin selects which to update."""
+    """target_origin disambiguates which same-date session is updated."""
     plan = _make_plan()
     plan["weekly_plan"]["week_1"]["sessions"].append(
         {
@@ -300,3 +300,111 @@ def test_replace_with_target_origin_baseline_skips_appended(mock_read_gen, mock_
     assert baseline["type"] == "threshold"
     assert appended["status"] == "planned"
     assert appended.get("workout_id") is None
+
+
+@patch(
+    "recommend_agent.tools.update_training_plan.now_jst_iso",
+    return_value="2026-04-26T12:00:00+09:00",
+)
+@patch("recommend_agent.plan_store.write_gcs_json")
+@patch("recommend_agent.plan_store.read_gcs_json_with_generation")
+def test_append_works_when_target_week_has_only_partial_sessions(
+    mock_read_gen, mock_write, _mock_now
+):
+    """A week-bucket that only carries one stale session must still accept
+    an append for any other day inside its 7-day Monday-Sunday window.
+    Regression: the old `_find_target_week_key` used min/max session dates,
+    so a single leftover session collapsed the window and rejected legit
+    same-week appends with 'outside the current weekly plan window'."""
+    plan = {
+        "user_id": "u1",
+        "plan_id": "plan_2026-04-20",
+        "goal_event": "race",
+        "current_phase": "build1",
+        "phases": [],
+        "weekly_plan": {
+            "week_1": {
+                "week_number": 1,
+                "week_start": "2026-04-20",
+                "phase": "build1",
+                "target_tss": 100,
+                "plan_revision": 3,
+                "status": "approved",
+                "sessions": [
+                    {
+                        "date": "2026-04-25",
+                        "type": "tempo",
+                        "duration_minutes": 90,
+                        "target_tss": 100,
+                        "status": "planned",
+                        "origin": "baseline",
+                    },
+                ],
+            }
+        },
+        "updated_at": "2026-04-20T00:00:00+09:00",
+        "updated_by": "planner",
+    }
+    mock_read_gen.return_value = (plan, 1)
+
+    # Append on Sunday 2026-04-26 — same week as week_1 (mon 2026-04-20).
+    result = update_training_plan(
+        session_date="2026-04-26",
+        session_type="endurance",
+        duration_minutes=60,
+        target_tss=40,
+        mode="append",
+    )
+
+    assert result["status"] == "success"
+    assert result["week_start"] == "2026-04-20"
+
+    written = mock_write.call_args.args[1]
+    sessions = written["weekly_plan"]["week_1"]["sessions"]
+    appended = [s for s in sessions if s["date"] == "2026-04-26"]
+    assert len(appended) == 1
+    assert appended[0]["origin"] == "appended"
+
+
+@patch(
+    "recommend_agent.tools.update_training_plan.now_jst_iso",
+    return_value="2026-04-26T12:00:00+09:00",
+)
+@patch("recommend_agent.plan_store.write_gcs_json")
+@patch("recommend_agent.plan_store.read_gcs_json_with_generation")
+def test_append_still_rejects_truly_out_of_range_dates(mock_read_gen, mock_write, _mock_now):
+    """The 7-day window must still reject dates that fall outside Mon–Sun."""
+    plan = {
+        "weekly_plan": {
+            "week_1": {
+                "week_number": 1,
+                "week_start": "2026-04-20",
+                "phase": "build1",
+                "target_tss": 100,
+                "plan_revision": 3,
+                "status": "approved",
+                "sessions": [
+                    {
+                        "date": "2026-04-20",
+                        "type": "rest",
+                        "duration_minutes": 0,
+                        "target_tss": 0,
+                        "status": "planned",
+                        "origin": "baseline",
+                    },
+                ],
+            }
+        },
+    }
+    mock_read_gen.return_value = (plan, 1)
+
+    result = update_training_plan(
+        session_date="2026-04-27",  # Monday of the *next* week, no bucket exists.
+        session_type="endurance",
+        duration_minutes=60,
+        target_tss=40,
+        mode="append",
+    )
+
+    assert result["status"] == "error"
+    assert "outside" in result["error_message"]

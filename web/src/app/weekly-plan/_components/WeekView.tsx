@@ -15,7 +15,10 @@ export function WeekView({ week, today }: WeekViewProps) {
     <div
       style={{
         display: 'grid',
-        gridTemplateColumns: 'repeat(7, minmax(0, 1fr))',
+        // Mon–Sun read top-to-bottom on phone, then flow into 2-3 columns on
+        // tablet, and reach a single 7-column row only when there's enough
+        // width for each session card to actually breathe (~210px each).
+        gridTemplateColumns: 'repeat(auto-fit, minmax(210px, 1fr))',
         gap: '0.5rem',
       }}
     >
