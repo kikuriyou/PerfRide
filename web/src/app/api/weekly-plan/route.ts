@@ -1,11 +1,24 @@
 import { NextResponse } from 'next/server';
 import { getServerSession } from 'next-auth/next';
+import { cookies } from 'next/headers';
 import { authOptions } from '@/lib/auth';
 import { readTrainingPlan, readUserSettings, readWeeklyPlanReview } from '@/lib/gcs-settings';
 import { mondayOfWeek, isoDate } from '@/lib/weekly-plan';
+import { decodeAsOfCookie, resolveWeeklyPlanReference } from '@/lib/weekly-plan-reference';
 import type { ApprovedWeekPayload, WeeklyPlanReviewPayload } from '@/lib/gcs-schema';
 
-export async function GET() {
+async function referenceDateFromRequest(request: Request): Promise<{
+  reference: Date;
+  asOf: string | null;
+}> {
+  const url = new URL(request.url);
+  const queryAsOf = url.searchParams.get('asOf');
+  const cookieStore = await cookies();
+  const cookieAsOf = decodeAsOfCookie(cookieStore.get('perfride_as_of')?.value);
+  return resolveWeeklyPlanReference(queryAsOf || cookieAsOf);
+}
+
+export async function GET(request: Request) {
   const session = await getServerSession(authOptions);
   if (!session) {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
@@ -19,9 +32,9 @@ export async function GET() {
     ]);
 
     const coachAutonomy = settings?.coach_autonomy ?? 'suggest';
-    const now = new Date();
-    const today = isoDate(now);
-    const weekStart = mondayOfWeek(now);
+    const { reference, asOf } = await referenceDateFromRequest(request);
+    const today = isoDate(reference);
+    const weekStart = mondayOfWeek(reference);
 
     const currentWeek: ApprovedWeekPayload | null = plan
       ? (Object.values(plan.weekly_plan).find((w) => w.week_start === weekStart) ?? null)
@@ -37,6 +50,7 @@ export async function GET() {
       currentWeek?.sessions
         .filter((s) => s.date === today)
         .map((s) => ({
+          session_id: s.session_id,
           date: today,
           type: s.type,
           status: s.status,
@@ -47,6 +61,9 @@ export async function GET() {
 
     return NextResponse.json({
       coach_autonomy: coachAutonomy,
+      reference_date: today,
+      week_start: weekStart,
+      as_of: asOf,
       current_week: currentWeek
         ? {
             week_start: currentWeek.week_start,
@@ -54,6 +71,7 @@ export async function GET() {
             target_tss: currentWeek.target_tss,
             plan_revision: currentWeek.plan_revision,
             status: currentWeek.status,
+            updated_at: currentWeek.updated_at,
             sessions: currentWeek.sessions,
           }
         : null,
@@ -72,6 +90,9 @@ export async function GET() {
     console.error('[GET /api/weekly-plan] error:', err);
     return NextResponse.json({
       coach_autonomy: 'suggest',
+      reference_date: isoDate(new Date()),
+      week_start: mondayOfWeek(new Date()),
+      as_of: null,
       current_week: null,
       pending_review: null,
       today_sessions: [],

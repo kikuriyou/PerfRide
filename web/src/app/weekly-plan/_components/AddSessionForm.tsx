@@ -37,14 +37,15 @@ export function AddSessionForm({ weekStart, today, planRevision }: AddSessionFor
           style={{
             padding: '0.45rem 0.95rem',
             borderRadius: 'var(--radius-sm)',
-            border: '1px dashed var(--border)',
+            border: '1px solid var(--border)',
             background: 'transparent',
             color: 'var(--foreground)',
-            fontSize: '0.85rem',
+            fontSize: '0.78rem',
             cursor: 'pointer',
+            opacity: 0.72,
           }}
         >
-          + Add session to this week
+          手動で session を追加
         </button>
       </div>
     );

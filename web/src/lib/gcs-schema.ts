@@ -87,6 +87,7 @@ export interface GCSUserSettings {
 }
 
 export interface TrainingSession {
+  session_id?: string;
   date: string;
   type: string;
   duration_minutes?: number;
@@ -99,6 +100,47 @@ export interface TrainingSession {
   updated_by?: string;
   updated_at?: string;
   notes?: string;
+}
+
+export interface ProposedSession {
+  session_date?: string | null;
+  session_type?: string | null;
+  duration_minutes?: number | null;
+  target_tss?: number | null;
+  notes?: string | null;
+  reason?: string | null;
+  is_rest?: boolean;
+  source?: string | null;
+  activity_id?: number | null;
+  workout_id?: string | null;
+  registered?: boolean;
+}
+
+export type CoachDecisionSource = 'webhook' | 'weekly_plan' | 'generated';
+
+export interface CoachDecisionRecord {
+  source: CoachDecisionSource;
+  source_label: string;
+  summary: string;
+  detail?: string | null;
+  why_now?: string | null;
+  proposed_session?: ProposedSession | null;
+  activity_id?: number | null;
+  session_id?: string | null;
+  trace_id?: string | null;
+  created_at: string;
+  valid_for_date: string;
+  plan_context_key?: string | null;
+}
+
+export interface NotificationLogRecord {
+  title: string;
+  body: string;
+  actions?: { id: string; label: string }[];
+  metadata?: Record<string, unknown>;
+  created_at: string;
+  channels_sent: string[];
+  status: 'sent' | 'partial' | 'failed';
 }
 
 export interface ApprovedWeekPayload {

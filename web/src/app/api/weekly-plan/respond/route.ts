@@ -10,6 +10,31 @@ interface WeeklyRespondBody {
   expected_plan_revision: number;
 }
 
+export function unwrapAgentPayload(
+  status: number,
+  payload: unknown,
+): { status: number; payload: unknown } {
+  if (status === 409) {
+    const detail =
+      payload && typeof payload === 'object' && 'detail' in payload
+        ? (payload as { detail: unknown }).detail
+        : payload;
+    return {
+      status,
+      payload:
+        detail && typeof detail === 'object'
+          ? detail
+          : { status: 'conflict', message: 'Plan was updated elsewhere.' },
+    };
+  }
+  if (status >= 200 && status < 300) return { status: 200, payload: payload ?? {} };
+  const errorMessage =
+    payload && typeof payload === 'object' && 'detail' in payload
+      ? String((payload as { detail: unknown }).detail)
+      : `Agent returned ${status}`;
+  return { status, payload: { error: errorMessage } };
+}
+
 export async function GET(request: NextRequest) {
   const session = await getServerSession(authOptions);
   if (!session) {
@@ -51,13 +76,9 @@ export async function POST(request: Request) {
       body: JSON.stringify(body),
     });
 
-    if (!resp.ok) {
-      const error = await resp.text();
-      return NextResponse.json({ error: `Agent API error: ${error}` }, { status: resp.status });
-    }
-
-    const data = await resp.json();
-    return NextResponse.json(data);
+    const payload = await resp.json().catch(() => null);
+    const outcome = unwrapAgentPayload(resp.status, payload);
+    return NextResponse.json(outcome.payload, { status: outcome.status });
   } catch (error) {
     console.error('Weekly respond API error:', error);
     return NextResponse.json(

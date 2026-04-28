@@ -7,6 +7,8 @@ from recommend_agent.gcs import now_jst_iso
 from recommend_agent.plan_store import (
     PLAN_FILE,
     SessionOrigin,
+    appended_session_id,
+    baseline_session_id,
     normalize_weekly_plan,
     parse_iso_date,
     recalculate_week_target_tss,
@@ -43,15 +45,7 @@ def _week_sort_key(item: tuple[str, dict]) -> tuple[int, str]:
 
 
 def _find_target_week_key(weekly_plan: dict[str, dict], session_date: date) -> str | None:
-    """Locate which week-bucket should host ``session_date``.
-
-    Primary key is the week's declared ``week_start`` plus the canonical
-    7-day window (Mon–Sun). Falling back to the session-date min/max range
-    used to be the only check, but a partially-populated week (e.g. one
-    leftover session from a stale dataset) shrunk that window and made
-    legitimate same-week appends fail with "outside the current weekly
-    plan window". The 7-day window is robust against missing sessions.
-    """
+    """Locate the week bucket for ``session_date``."""
     target_iso = session_date.isoformat()
     for key, week in weekly_plan.items():
         week_start_str = week.get("week_start")
@@ -63,8 +57,7 @@ def _find_target_week_key(weekly_plan: dict[str, dict], session_date: date) -> s
         week_end = week_start + timedelta(days=6)
         if week_start.isoformat() <= target_iso <= week_end.isoformat():
             return key
-    # Fallback: legacy weeks that lack a usable `week_start` string still
-    # need to be discoverable via their session dates.
+    # Fallback for legacy weeks without a usable `week_start`.
     for key, week in weekly_plan.items():
         if isinstance(week.get("week_start"), str):
             continue
@@ -105,28 +98,9 @@ def update_training_plan(
     mode: UpdateMode = "replace",
     expected_plan_revision: int | None = None,
     target_origin: SessionOrigin | None = None,
+    target_session_id: str | None = None,
 ) -> dict:
-    """Update or append a training session in the GCS-backed weekly plan.
-
-    Modes:
-    - ``replace`` (default): match by ``session_date``; update an existing
-      session in place, or create one if none exists. Existing webhook flows
-      use this.
-    - ``append``: always add a new session at ``session_date``. The target
-      week must already contain ``session_date`` (no new weeks are created).
-
-    Identification:
-    - When same-date sessions exist (baseline + appended), pass
-      ``target_origin`` to disambiguate which one ``replace`` updates.
-      Without it the first date-match is taken (baseline-first ordering),
-      which is the long-standing behavior for webhook flows that only
-      touch the baseline session.
-
-    Optimistic locking: when ``expected_plan_revision`` is provided, the
-    write proceeds only if the target week's current ``plan_revision``
-    matches. On mismatch, the response status is ``"conflict"`` with the
-    current revision and sessions returned for the caller to reconcile.
-    """
+    """Update or append a training session in the GCS-backed weekly plan."""
     parsed_session_date = parse_iso_date(session_date)
     if parsed_session_date is None:
         return {
@@ -139,8 +113,19 @@ def update_training_plan(
     def _mutator(current: dict | None) -> dict:
         data = current if isinstance(current, dict) else {"weekly_plan": {}}
         weekly_plan = normalize_weekly_plan(data.get("weekly_plan"))
+        target_week_key = _find_target_week_key(weekly_plan, parsed_session_date)
 
         new_session_origin: SessionOrigin = "appended" if mode == "append" else "baseline"
+        new_session_id = (
+            appended_session_id(
+                weekly_plan[target_week_key]["week_start"],
+                session_date,
+            )
+            if mode == "append"
+            and target_week_key is not None
+            and isinstance(weekly_plan[target_week_key].get("week_start"), str)
+            else None
+        )
         session_entry: dict[str, Any] = {
             "date": session_date,
             "type": session_type,
@@ -152,14 +137,14 @@ def update_training_plan(
             "updated_by": "recommend_agent",
             "updated_at": now_jst_iso(),
         }
+        if new_session_id is not None:
+            session_entry["session_id"] = new_session_id
         if workout_id is not None:
             session_entry["workout_id"] = workout_id
         if actual_tss is not None:
             session_entry["actual_tss"] = actual_tss
         if notes is not None and notes.strip():
             session_entry["notes"] = notes.strip()
-
-        target_week_key = _find_target_week_key(weekly_plan, parsed_session_date)
 
         if mode == "append":
             if target_week_key is None:
@@ -208,10 +193,16 @@ def update_training_plan(
             if not isinstance(sessions, list):
                 continue
             for index, existing in enumerate(sessions):
-                if not (isinstance(existing, dict) and existing.get("date") == session_date):
+                if not isinstance(existing, dict):
+                    continue
+                if target_session_id is not None:
+                    if existing.get("session_id") != target_session_id:
+                        continue
+                elif existing.get("date") != session_date:
                     continue
                 if (
-                    target_origin is not None
+                    target_session_id is None
+                    and target_origin is not None
                     and existing.get("origin", "baseline") != target_origin
                 ):
                     continue
@@ -230,7 +221,13 @@ def update_training_plan(
                     )
                 # Preserve the existing session's origin on replace.
                 preserved_origin = existing.get("origin", "baseline")
-                merged = {**existing, **session_entry, "origin": preserved_origin}
+                preserved_session_id = existing.get("session_id")
+                merged = {
+                    **existing,
+                    **session_entry,
+                    "origin": preserved_origin,
+                    "session_id": preserved_session_id,
+                }
                 before = dict(existing)
                 sessions[index] = merged
                 recalculate_week_target_tss(week)
@@ -252,6 +249,14 @@ def update_training_plan(
                     "week_start": week.get("week_start"),
                 }
                 return data
+
+        if target_session_id is not None:
+            raise _UpdateAbortedError(
+                {
+                    "status": "error",
+                    "error_message": f"target_session_id {target_session_id} not found",
+                }
+            )
 
         # No matching session found in any week. Create or attach to a target week.
         created_new_week = False
@@ -289,6 +294,9 @@ def update_training_plan(
                     }
                 )
 
+        week_start_value = target_week.get("week_start")
+        if isinstance(week_start_value, str) and "session_id" not in session_entry:
+            session_entry["session_id"] = baseline_session_id(week_start_value, session_date)
         target_week.setdefault("sessions", []).append(session_entry)
         recalculate_week_target_tss(target_week)
         if (

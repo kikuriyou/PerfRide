@@ -304,6 +304,50 @@ def test_replace_with_target_origin_baseline_skips_appended(mock_read_gen, mock_
 
 @patch(
     "recommend_agent.tools.update_training_plan.now_jst_iso",
+    return_value="2026-04-24T12:00:00+09:00",
+)
+@patch("recommend_agent.plan_store.write_gcs_json")
+@patch("recommend_agent.plan_store.read_gcs_json_with_generation")
+def test_replace_with_target_session_id_is_not_order_dependent(
+    mock_read_gen, mock_write, _mock_now
+):
+    plan = _make_plan()
+    plan["weekly_plan"]["week_1"]["sessions"][1]["session_id"] = "baseline:2026-04-20:2026-04-25"
+    plan["weekly_plan"]["week_1"]["sessions"].insert(
+        1,
+        {
+            "session_id": "appended:2026-04-20:2026-04-25:abc",
+            "date": "2026-04-25",
+            "type": "endurance",
+            "duration_minutes": 60,
+            "target_tss": 40,
+            "status": "planned",
+            "origin": "appended",
+        },
+    )
+    mock_read_gen.return_value = (plan, 1)
+
+    result = update_training_plan(
+        session_date="2026-04-25",
+        session_type="threshold",
+        duration_minutes=75,
+        target_tss=85,
+        status="registered",
+        target_session_id="baseline:2026-04-20:2026-04-25",
+    )
+
+    assert result["updated_session"]["session_id"] == "baseline:2026-04-20:2026-04-25"
+    written = mock_write.call_args.args[1]
+    sessions = written["weekly_plan"]["week_1"]["sessions"]
+    same_date = [s for s in sessions if s["date"] == "2026-04-25"]
+    appended = next(s for s in same_date if s["session_id"].startswith("appended:"))
+    baseline = next(s for s in same_date if s["session_id"].startswith("baseline:"))
+    assert appended["type"] == "endurance"
+    assert baseline["type"] == "threshold"
+
+
+@patch(
+    "recommend_agent.tools.update_training_plan.now_jst_iso",
     return_value="2026-04-26T12:00:00+09:00",
 )
 @patch("recommend_agent.plan_store.write_gcs_json")

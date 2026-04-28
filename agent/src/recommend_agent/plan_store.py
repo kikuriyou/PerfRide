@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import random
 import time
+import uuid
 from collections.abc import Callable
 from copy import deepcopy
 from datetime import date, timedelta
@@ -18,8 +19,7 @@ from recommend_agent.gcs import (
 PLAN_FILE = "training_plan.json"
 REVIEW_FILE = "weekly_plan_review.json"
 DEFAULT_MAX_RETRIES = 3
-# Exponential backoff with jitter — keeps two near-simultaneous append calls
-# from re-colliding on the same retry slot.
+# Jitter keeps near-simultaneous updates from re-colliding.
 RETRY_BASE_DELAY_SEC = 0.05
 RETRY_MAX_DELAY_SEC = 0.5
 
@@ -37,6 +37,7 @@ ReviewStatus = Literal["pending", "modified", "approved", "applied", "dismissed"
 
 
 class TrainingSessionPayload(TypedDict, total=False):
+    session_id: str
     date: str
     type: str
     duration_minutes: int
@@ -115,6 +116,18 @@ def week_start_from_sessions(sessions: list[TrainingSessionPayload]) -> str | No
     return monday_of_week(min(valid_dates)).isoformat()
 
 
+def baseline_session_id(week_start: str, session_date: str) -> str:
+    return f"baseline:{week_start}:{session_date}"
+
+
+def appended_session_id(week_start: str, session_date: str) -> str:
+    return f"appended:{week_start}:{session_date}:{uuid.uuid4().hex[:12]}"
+
+
+def _legacy_appended_session_id(week_start: str, session_date: str, index: int) -> str:
+    return f"appended:{week_start}:{session_date}:legacy-{index}"
+
+
 def _week_sort_key(item: tuple[str, WeekPayload]) -> tuple[int, str]:
     key, week = item
     week_number = week.get("week_number")
@@ -168,6 +181,8 @@ def normalize_session_payload(
             else updated_at or now_jst_iso()
         ),
     }
+    if isinstance(session.get("session_id"), str) and session["session_id"].strip():
+        payload["session_id"] = session["session_id"].strip()
     if isinstance(session.get("workout_id"), str):
         payload["workout_id"] = session["workout_id"]
     if isinstance(session.get("actual_tss"), (int, float)):
@@ -175,6 +190,23 @@ def normalize_session_payload(
     if isinstance(session.get("notes"), str) and session["notes"].strip():
         payload["notes"] = session["notes"].strip()
     return payload
+
+
+def ensure_session_ids(
+    sessions: list[TrainingSessionPayload],
+    week_start: str,
+) -> list[TrainingSessionPayload]:
+    ensured: list[TrainingSessionPayload] = []
+    for index, session in enumerate(sessions):
+        copy = dict(session)
+        if not copy.get("session_id"):
+            session_date = copy.get("date", week_start)
+            if copy.get("origin", "baseline") == "baseline":
+                copy["session_id"] = baseline_session_id(week_start, session_date)
+            else:
+                copy["session_id"] = _legacy_appended_session_id(week_start, session_date, index)
+        ensured.append(copy)
+    return ensured
 
 
 def recalculate_week_target_tss(week: WeekPayload) -> None:
@@ -187,7 +219,10 @@ def recalculate_week_target_tss(week: WeekPayload) -> None:
             continue
         normalized_sessions.append(normalized)
         total += int(normalized.get("target_tss", 0))
-    week["sessions"] = normalized_sessions
+    week_start = week.get("week_start")
+    if not isinstance(week_start, str):
+        week_start = week_start_from_sessions(normalized_sessions) or now_jst_iso()[:10]
+    week["sessions"] = ensure_session_ids(normalized_sessions, week_start)
     week["target_tss"] = total
 
 
@@ -218,6 +253,7 @@ def normalize_week_payload(
         week_start = week_start_from_sessions(sessions) or now_iso[:10]
 
     week_start_date = parse_iso_date(week_start) or date.fromisoformat(now_iso[:10])
+    sessions = ensure_session_ids(sessions, week_start_date.isoformat())
     week_number = source.get("week_number")
     if not isinstance(week_number, int):
         week_number = week_start_date.isocalendar().week
@@ -527,6 +563,12 @@ def get_current_week(
 ) -> WeekPayload | None:
     target_str = target_date.isoformat()
     for _key, week in sorted(weekly_plan.items(), key=_week_sort_key):
+        week_start = parse_iso_date(week.get("week_start"))
+        if week_start is not None:
+            week_end = week_start + timedelta(days=6)
+            if week_start.isoformat() <= target_str <= week_end.isoformat():
+                return deepcopy(week)
+            continue
         sessions = week.get("sessions", [])
         dates = [
             session.get("date") for session in sessions if isinstance(session.get("date"), str)

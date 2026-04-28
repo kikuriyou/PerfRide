@@ -50,6 +50,32 @@ send_notification でユーザーに判断結果を伝える。
 
 通知はinsightやコメントではなく、「なぜこのセッションなのか」の判断プロセスを見せることに特化する。
 
+## Final response JSON
+最後の応答は JSON object にし、UI が読める `proposed_session` を必ず含める。
+
+```json
+{
+  "summary": "次回セッションの短い要約",
+  "why_now": "判断理由",
+  "detail": "ユーザー向けの説明",
+  "proposed_session": {
+    "session_date": "YYYY-MM-DD",
+    "session_type": "endurance",
+    "duration_minutes": 60,
+    "target_tss": 45,
+    "notes": "補足",
+    "reason": "置き換え判断の理由",
+    "is_rest": false,
+    "source": "webhook",
+    "activity_id": 123,
+    "workout_id": "登録した場合のみ",
+    "registered": true
+  }
+}
+```
+
+休養提案の場合は `is_rest: true` とし、`session_type` は `rest` にする。
+
 # Constraints
 - 週間 TSS が計画の 120% を超える調整は行わない
 - 同じ強度帯のセッションを3日連続にしない（リカバリー除く）

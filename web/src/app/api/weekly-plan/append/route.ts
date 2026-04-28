@@ -12,6 +12,29 @@ export interface AppendRequestBody {
   expected_plan_revision: number;
 }
 
+function normalizeAgentPayload(status: number, payload: unknown): AppendProxyOutcome {
+  if (status !== 409) {
+    if (status >= 200 && status < 300) return { status: 200, payload: payload ?? {} };
+    const errorMessage =
+      payload && typeof payload === 'object' && 'detail' in payload
+        ? String((payload as { detail: unknown }).detail)
+        : `Agent returned ${status}`;
+    return { status, payload: { error: errorMessage } };
+  }
+
+  const detail =
+    payload && typeof payload === 'object' && 'detail' in payload
+      ? (payload as { detail: unknown }).detail
+      : payload;
+  return {
+    status: 409,
+    payload:
+      detail && typeof detail === 'object'
+        ? detail
+        : { status: 'conflict', message: 'Plan was updated elsewhere.' },
+  };
+}
+
 export function isAppendRequestBody(value: unknown): value is AppendRequestBody {
   if (!value || typeof value !== 'object') return false;
   const v = value as Record<string, unknown>;
@@ -56,15 +79,7 @@ export async function forwardAppendToAgent(
     payload = null;
   }
 
-  if (!agentResponse.ok) {
-    const errorMessage =
-      payload && typeof payload === 'object' && 'detail' in payload
-        ? String((payload as { detail: unknown }).detail)
-        : `Agent returned ${agentResponse.status}`;
-    return { status: agentResponse.status, payload: { error: errorMessage } };
-  }
-
-  return { status: 200, payload: payload ?? {} };
+  return normalizeAgentPayload(agentResponse.status, payload);
 }
 
 export async function POST(request: Request) {

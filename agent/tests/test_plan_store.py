@@ -7,6 +7,7 @@ from recommend_agent.gcs import OptimisticLockError
 from recommend_agent.plan_store import (
     get_review,
     normalize_session_payload,
+    normalize_week_payload,
     replace_current_week,
     update_review_status,
     upsert_review,
@@ -143,6 +144,19 @@ def test_normalize_session_payload_defaults_origin_to_baseline():
     normalized = normalize_session_payload(raw)
     assert normalized is not None
     assert normalized["origin"] == "baseline"
+
+
+def test_normalize_week_payload_assigns_session_ids():
+    week = normalize_week_payload(
+        _draft_week(),
+        status="approved",
+        plan_revision=1,
+        updated_by="test",
+        updated_at="2026-04-06T04:00:00+09:00",
+    )
+
+    assert week["sessions"][0]["session_id"] == "baseline:2026-04-06:2026-04-06"
+    assert week["sessions"][1]["session_id"] == "baseline:2026-04-06:2026-04-07"
 
 
 @patch("recommend_agent.plan_store.now_jst_iso", return_value="2026-04-06T04:00:00+09:00")

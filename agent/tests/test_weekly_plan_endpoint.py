@@ -1,3 +1,4 @@
+import json
 from unittest.mock import AsyncMock, patch
 
 import pytest
@@ -117,10 +118,11 @@ async def test_weekly_plan_append_returns_conflict_payload():
             )
         )
 
-    assert response.status == "conflict"
-    assert response.current_plan_revision == 5
-    assert response.appended_session is None
-    assert response.message == "stale plan revision"
+    assert response.status_code == 409
+    payload = json.loads(response.body)
+    assert payload["status"] == "conflict"
+    assert payload["current_plan_revision"] == 5
+    assert payload["message"] == "stale plan revision"
 
 
 @pytest.mark.asyncio

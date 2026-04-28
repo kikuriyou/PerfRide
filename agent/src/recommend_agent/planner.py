@@ -39,6 +39,7 @@ HIGH_INTENSITY_TYPES = {"threshold", "vo2max", "race_simulation", "sprint"}
 
 @dataclass
 class TrainingSession:
+    session_id: str
     date: str
     type: str
     duration_minutes: int = 0
@@ -108,6 +109,7 @@ def _make_session(
         duration = max_minutes
         tss = round(tss * ratio)
     return TrainingSession(
+        session_id=f"baseline:{_week_start(session_date).isoformat()}:{session_date.isoformat()}",
         date=session_date.isoformat(),
         type=session_type,
         duration_minutes=duration,
@@ -152,7 +154,9 @@ def _build_week(
     for offset, default_type in enumerate(template):
         session_date = week_start + timedelta(days=offset)
         day_name = DAY_NAMES[offset]
-        available, max_minutes = _day_available(available_days.get(day_name) if available_days else None)
+        available, max_minutes = _day_available(
+            available_days.get(day_name) if available_days else None
+        )
         session_type = default_type
         if not available:
             session_type = "rest"
@@ -211,6 +215,7 @@ def generate_training_plan(
                 "status": week.status,
                 "sessions": [
                     {
+                        "session_id": session.session_id,
                         "date": session.date,
                         "type": session.type,
                         "duration_minutes": session.duration_minutes,

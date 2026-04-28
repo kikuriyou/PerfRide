@@ -5,8 +5,8 @@ from datetime import date, timedelta
 from typing import Any
 
 from recommend_agent.plan_store import (
-    WeekPayload,
     WeeklyPlanReviewPayload,
+    WeekPayload,
     get_current_week,
     get_review,
     load_training_plan,

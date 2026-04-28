@@ -1,4 +1,5 @@
 import type { CoachAutonomy, RecommendMode } from '@/lib/settings';
+import type { ProposedSession } from '@/lib/gcs-schema';
 import type { WorkoutInterval } from '@/types/workout';
 
 export const CACHE_KEY = 'perfride_recommendation_cache';
@@ -16,6 +17,9 @@ export interface Recommendation {
   why_now?: string;
   based_on?: string;
   plan_context_key?: string | null;
+  proposed_session?: ProposedSession | null;
+  source?: 'webhook' | 'weekly_plan' | 'generated' | string;
+  source_label?: string;
 }
 
 export interface CachedRecommendationEntry extends Recommendation {
@@ -25,6 +29,7 @@ export interface CachedRecommendationEntry extends Recommendation {
   _ftp: number;
   _coachAutonomy: CoachAutonomy;
   _planContextKey: string | null;
+  _cacheDate: string;
 }
 
 export function shouldReadCache(
@@ -52,6 +57,8 @@ export function loadCachedRecommendation(
     const cached = JSON.parse(raw) as Partial<CachedRecommendationEntry>;
     const age = Date.now() - (cached._cachedAt || 0);
     if (age > CACHE_TTL_MS) return null;
+    const today = new Date().toLocaleDateString('en-CA', { timeZone: 'Asia/Tokyo' });
+    if (cached._cacheDate !== today) return null;
     if (
       cached._recommendMode !== recommendMode ||
       cached._usePersonalData !== usePersonalData ||
@@ -84,6 +91,7 @@ export function saveCachedRecommendation(
       _ftp: ftp,
       _coachAutonomy: coachAutonomy,
       _planContextKey: planContextKey,
+      _cacheDate: new Date().toLocaleDateString('en-CA', { timeZone: 'Asia/Tokyo' }),
     };
     localStorage.setItem(CACHE_KEY, JSON.stringify(entry));
   } catch {

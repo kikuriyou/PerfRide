@@ -41,22 +41,24 @@ export async function submitAppend(
     raw = null;
   }
 
+  if (response.status === 409 || (raw as { status?: string } | null)?.status === 'conflict') {
+    const current = (raw as { current_plan_revision?: number } | null)?.current_plan_revision;
+    return {
+      status: 'conflict',
+      message:
+        (raw as { message?: string } | null)?.message ??
+        'プランが更新されています。再読み込みしてからもう一度選んでください。',
+      currentPlanRevision: typeof current === 'number' ? current : undefined,
+      raw,
+    };
+  }
+
   if (!response.ok) {
     const message =
       typeof raw === 'object' && raw && 'error' in raw
         ? String((raw as { error: unknown }).error)
         : `HTTP ${response.status}`;
     return { status: 'error', message, raw };
-  }
-
-  if (raw && typeof raw === 'object' && (raw as { status?: string }).status === 'conflict') {
-    const current = (raw as { current_plan_revision?: number }).current_plan_revision;
-    return {
-      status: 'conflict',
-      message: (raw as { message?: string }).message ?? 'plan revision conflict',
-      currentPlanRevision: typeof current === 'number' ? current : undefined,
-      raw,
-    };
   }
 
   const newRevision = (raw as { plan_revision?: number } | null)?.plan_revision;

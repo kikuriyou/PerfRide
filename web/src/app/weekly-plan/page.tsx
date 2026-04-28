@@ -1,8 +1,10 @@
 import { redirect } from 'next/navigation';
 import { getServerSession } from 'next-auth/next';
+import { cookies } from 'next/headers';
 import { authOptions } from '@/lib/auth';
 import { readTrainingPlan, readUserSettings, readWeeklyPlanReview } from '@/lib/gcs-settings';
 import { mondayOfWeek, isoDate } from '@/lib/weekly-plan';
+import { decodeAsOfCookie, resolveWeeklyPlanReference } from '@/lib/weekly-plan-reference';
 import type { ApprovedWeekPayload, WeeklyPlanReviewPayload } from '@/lib/gcs-schema';
 import { AddSessionForm } from './_components/AddSessionForm';
 import { PendingReviewPanel, type PendingReviewSummary } from './_components/PendingReviewPanel';
@@ -10,11 +12,29 @@ import { WeekView } from './_components/WeekView';
 
 export const dynamic = 'force-dynamic';
 
-export default async function WeeklyPlanPage() {
+interface WeeklyPlanPageProps {
+  searchParams?: Promise<{ asOf?: string }> | { asOf?: string };
+}
+
+function statusLabel(status: string): string {
+  if (status === 'approved') return '現在のプラン';
+  if (status === 'pending' || status === 'modified') return '確認待ちのプラン案';
+  if (status === 'draft') return '下書き';
+  return status;
+}
+
+export default async function WeeklyPlanPage({ searchParams }: WeeklyPlanPageProps) {
   const session = await getServerSession(authOptions);
   if (!session) {
     redirect('/api/auth/signin');
   }
+
+  const resolvedSearchParams = await Promise.resolve(searchParams ?? {});
+  const cookieStore = await cookies();
+  const asOf =
+    resolvedSearchParams.asOf || decodeAsOfCookie(cookieStore.get('perfride_as_of')?.value);
+  const referenceState = resolveWeeklyPlanReference(asOf);
+  const reference = referenceState.reference;
 
   const [settings, plan, reviewStore] = await Promise.all([
     readUserSettings(),
@@ -23,9 +43,8 @@ export default async function WeeklyPlanPage() {
   ]);
 
   const coachAutonomy = settings?.coach_autonomy ?? 'suggest';
-  const now = new Date();
-  const today = isoDate(now);
-  const weekStart = mondayOfWeek(now);
+  const today = isoDate(reference);
+  const weekStart = mondayOfWeek(reference);
 
   const currentWeek: ApprovedWeekPayload | null = plan
     ? (Object.values(plan.weekly_plan).find((w) => w.week_start === weekStart) ?? null)
@@ -52,7 +71,7 @@ export default async function WeeklyPlanPage() {
       <header style={{ marginBottom: '1.25rem' }}>
         <h1 style={{ margin: 0, fontSize: '1.4rem', fontWeight: 700 }}>📅 Weekly Plan</h1>
         <p style={{ margin: '0.3rem 0 0', opacity: 0.7, fontSize: '0.85rem' }}>
-          Week of {weekStart} · today {today}
+          Week of {weekStart} · {referenceState.asOf ? '確認日' : 'today'} {today}
         </p>
       </header>
 
@@ -112,8 +131,22 @@ export default async function WeeklyPlanPage() {
             </span>
             <span style={{ fontSize: '0.78rem', opacity: 0.75 }}>
               Target TSS {displayWeek.target_tss} · revision {displayWeek.plan_revision} ·{' '}
-              status {displayWeek.status}
+              {statusLabel(displayWeek.status)}
             </span>
+          </div>
+          <div
+            style={{
+              marginBottom: '0.75rem',
+              padding: '0.45rem 0.65rem',
+              border: '1px solid rgba(0,150,136,0.25)',
+              borderRadius: 'var(--radius-sm)',
+              background: 'rgba(0,150,136,0.06)',
+              fontSize: '0.78rem',
+              color: '#00796b',
+            }}
+          >
+            Weekly Plan updated · revision {displayWeek.plan_revision} ·{' '}
+            {displayWeek.updated_at}
           </div>
           <WeekView week={displayWeek} today={today} />
           <AddSessionForm

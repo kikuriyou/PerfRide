@@ -72,6 +72,24 @@ describe('submitWeeklyResponse', () => {
     expect(result.message).toBe('stale plan revision');
   });
 
+  it('flags HTTP 409 as conflict', async () => {
+    const fetchMock = vi.fn().mockResolvedValue(
+      makeResponse({
+        ok: false,
+        status: 409,
+        body: { status: 'conflict', message: 'stale plan revision' },
+      }),
+    );
+
+    const result = await submitWeeklyResponse(
+      buildRespondBody('weekly_2026-04-20', 3, 'approve'),
+      fetchMock,
+    );
+
+    expect(result.status).toBe('conflict');
+    expect(result.message).toBe('stale plan revision');
+  });
+
   it('returns error with the API-provided message on non-2xx', async () => {
     const fetchMock = vi.fn().mockResolvedValue(
       makeResponse({ ok: false, status: 500, body: { error: 'agent down' } }),

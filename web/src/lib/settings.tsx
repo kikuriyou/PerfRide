@@ -62,6 +62,16 @@ function syncFtpCookie(ftp: number) {
   document.cookie = `perfride_ftp=${ftp}; path=/; max-age=31536000; SameSite=Lax`;
 }
 
+function syncAsOfCookie(asOf: string | null) {
+  if (!asOf) {
+    document.cookie = 'perfride_as_of=; path=/; max-age=0; SameSite=Lax';
+    return;
+  }
+  document.cookie = `perfride_as_of=${encodeURIComponent(
+    asOf,
+  )}; path=/; max-age=31536000; SameSite=Lax`;
+}
+
 function normalizeWeeklySchedule(input?: Partial<WeeklySchedule> | null): WeeklySchedule {
   return DAY_NAMES.reduce<WeeklySchedule>((acc, dayName) => {
     const source = input?.[dayName];
@@ -134,6 +144,10 @@ export function SettingsProvider({ children }: { children: ReactNode }) {
   useEffect(() => {
     syncFtpCookie(settings.ftp);
   }, [settings.ftp]);
+
+  useEffect(() => {
+    syncAsOfCookie(settings.asOf);
+  }, [settings.asOf]);
 
   useEffect(() => {
     let cancelled = false;

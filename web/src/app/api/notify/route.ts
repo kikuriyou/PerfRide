@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { readUserSettings, GCSUserSettings } from '@/lib/gcs-settings';
+import { appendNotificationLog, readUserSettings, GCSUserSettings } from '@/lib/gcs-settings';
+import type { NotificationLogRecord } from '@/lib/gcs-schema';
 import {
   buildLinePostbackData,
   buildPushPayloadData,
@@ -18,6 +19,22 @@ interface NotifyRequest {
 interface NotifyResult {
   channels_sent: string[];
   status: 'sent' | 'partial' | 'failed';
+}
+
+export function buildNotificationLogRecord(
+  body: Pick<NotifyRequest, 'title' | 'body' | 'actions' | 'metadata'>,
+  result: NotifyResult,
+  createdAt = new Date().toISOString(),
+): NotificationLogRecord {
+  return {
+    title: body.title,
+    body: body.body,
+    actions: body.actions ?? [],
+    metadata: body.metadata,
+    created_at: createdAt,
+    channels_sent: result.channels_sent,
+    status: result.status,
+  };
 }
 
 export function buildFlexMessage(
@@ -177,6 +194,13 @@ export async function POST(request: NextRequest) {
 
     const status: NotifyResult['status'] =
       sent.length === 0 ? 'failed' : sent.length === channels.length ? 'sent' : 'partial';
+
+    await appendNotificationLog(
+      buildNotificationLogRecord(
+        { title, body: messageBody, actions, metadata },
+        { channels_sent: sent, status },
+      ),
+    );
 
     return NextResponse.json({ channels_sent: sent, status } satisfies NotifyResult);
   } catch (error) {

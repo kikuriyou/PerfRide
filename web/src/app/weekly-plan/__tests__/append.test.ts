@@ -53,6 +53,24 @@ describe('submitAppend', () => {
     expect(result.message).toBe('stale plan revision');
   });
 
+  it('flags HTTP 409 as conflict', async () => {
+    const fetchMock = vi.fn().mockResolvedValue(
+      makeResponse({
+        ok: false,
+        status: 409,
+        body: {
+          status: 'conflict',
+          message: 'stale plan revision',
+          current_plan_revision: 5,
+        },
+      }),
+    );
+
+    const result = await submitAppend(baseBody, fetchMock);
+    expect(result.status).toBe('conflict');
+    expect(result.currentPlanRevision).toBe(5);
+  });
+
   it('returns error with API-provided message on non-2xx', async () => {
     const fetchMock = vi.fn().mockResolvedValue(
       makeResponse({

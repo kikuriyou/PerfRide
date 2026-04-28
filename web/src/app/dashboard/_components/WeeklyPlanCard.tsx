@@ -2,9 +2,11 @@
 
 import { useState, useEffect } from 'react';
 import Link from 'next/link';
+import { useSettings } from '@/lib/settings';
 import { plannedSessionCount, shouldRenderWeeklyPlanCard } from './weekly-plan-card-helpers';
 
 interface TodaySession {
+  session_id?: string;
   date: string;
   type: string;
   status: string;
@@ -19,6 +21,7 @@ interface CurrentWeek {
   target_tss: number;
   plan_revision: number;
   status: string;
+  updated_at?: string;
   sessions: { date: string; type: string; status: string }[];
 }
 
@@ -31,24 +34,35 @@ interface PendingReview {
 
 interface WeeklyPlanData {
   coach_autonomy: string;
+  reference_date?: string;
+  week_start?: string;
+  as_of?: string | null;
   current_week: CurrentWeek | null;
   pending_review: PendingReview | null;
   today_sessions: TodaySession[];
 }
 
 export default function WeeklyPlanCard() {
+  const { settings, isLoaded } = useSettings();
   const [data, setData] = useState<WeeklyPlanData | null>(null);
   const [loading, setLoading] = useState(true);
+  const weeklyPlanHref = settings.asOf
+    ? `/weekly-plan?asOf=${encodeURIComponent(settings.asOf)}`
+    : '/weekly-plan';
+  const weeklyPlanApiPath = settings.asOf
+    ? `/api/weekly-plan?asOf=${encodeURIComponent(settings.asOf)}`
+    : '/api/weekly-plan';
 
   useEffect(() => {
-    fetch('/api/weekly-plan')
+    if (!isLoaded) return;
+    fetch(weeklyPlanApiPath)
       .then((r) => (r.ok ? r.json() : null))
       .then((d) => {
         setData(d);
         setLoading(false);
       })
       .catch(() => setLoading(false));
-  }, []);
+  }, [isLoaded, weeklyPlanApiPath]);
 
   if (loading) {
     return (
@@ -113,29 +127,60 @@ export default function WeeklyPlanCard() {
       </div>
 
       {current_week && (
-        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0.5rem', marginBottom: '0.75rem' }}>
+        <div
+          style={{
+            display: 'flex',
+            flexWrap: 'wrap',
+            gap: '0.45rem',
+            marginBottom: '0.75rem',
+            alignItems: 'center',
+          }}
+        >
           <div
             style={{
               background: 'var(--surface)',
               borderRadius: 'var(--radius-md)',
-              padding: '0.5rem 0.75rem',
+              padding: '0.42rem 0.65rem',
+              minWidth: '110px',
             }}
           >
-            <div style={{ fontSize: '1.25rem', fontWeight: 700, color: '#009688' }}>{plannedCount}</div>
-            <div style={{ fontSize: '0.72rem', opacity: 0.7 }}>Sessions</div>
+            <span style={{ fontSize: '1rem', fontWeight: 700, color: '#009688' }}>
+              {plannedCount}
+            </span>{' '}
+            <span style={{ fontSize: '0.72rem', opacity: 0.7 }}>sessions</span>
           </div>
           <div
             style={{
               background: 'var(--surface)',
               borderRadius: 'var(--radius-md)',
-              padding: '0.5rem 0.75rem',
+              padding: '0.42rem 0.65rem',
+              minWidth: '130px',
             }}
           >
-            <div style={{ fontSize: '1.25rem', fontWeight: 700, color: '#009688' }}>
+            <span style={{ fontSize: '1rem', fontWeight: 700, color: '#009688' }}>
               {current_week.target_tss}
-            </div>
-            <div style={{ fontSize: '0.72rem', opacity: 0.7 }}>Target TSS</div>
+            </span>{' '}
+            <span style={{ fontSize: '0.72rem', opacity: 0.7 }}>target TSS</span>
           </div>
+          <div
+            style={{
+              background: 'var(--surface)',
+              borderRadius: 'var(--radius-md)',
+              padding: '0.42rem 0.65rem',
+              textTransform: 'capitalize',
+              fontSize: '0.78rem',
+              opacity: 0.85,
+            }}
+          >
+            {current_week.phase}
+          </div>
+        </div>
+      )}
+
+      {current_week?.updated_at && (
+        <div style={{ fontSize: '0.74rem', opacity: 0.62, marginBottom: '0.75rem' }}>
+          Weekly Plan updated · revision {current_week.plan_revision}
+          {data?.as_of ? ` · 確認日 ${data.reference_date}` : ''}
         </div>
       )}
 
@@ -152,10 +197,12 @@ export default function WeeklyPlanCard() {
             gap: '0.25rem',
           }}
         >
-          <span style={{ opacity: 0.6, fontSize: '0.75rem' }}>Today</span>
+          <span style={{ opacity: 0.6, fontSize: '0.75rem' }}>
+            {data?.as_of ? '確認日の予定' : 'Today'}
+          </span>
           {todayList.map((session, idx) => (
             <div
-              key={`${session.date}-${session.origin ?? 'baseline'}-${idx}`}
+              key={session.session_id ?? `${session.date}-${session.origin ?? 'baseline'}-${idx}`}
               style={{ display: 'flex', alignItems: 'baseline', gap: '0.4rem' }}
             >
               <span style={{ fontWeight: 600, textTransform: 'capitalize' }}>{session.type}</span>
@@ -195,7 +242,7 @@ export default function WeeklyPlanCard() {
 
       <div style={{ display: 'flex', gap: '0.5rem', flexWrap: 'wrap' }}>
         <Link
-          href="/weekly-plan"
+          href={weeklyPlanHref}
           style={{
             padding: '0.4rem 0.9rem',
             borderRadius: 'var(--radius-sm)',
@@ -210,7 +257,7 @@ export default function WeeklyPlanCard() {
         </Link>
         {pending_review && (
           <Link
-            href="/weekly-plan"
+            href={weeklyPlanHref}
             style={{
               padding: '0.4rem 0.9rem',
               borderRadius: 'var(--radius-sm)',

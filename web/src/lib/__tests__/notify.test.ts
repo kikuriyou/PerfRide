@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import { buildFlexMessage } from '@/app/api/notify/route';
+import { buildFlexMessage, buildNotificationLogRecord } from '@/app/api/notify/route';
 import { buildLinePostbackData, buildPushPayloadData } from '@/lib/notify';
 
 describe('notify helpers', () => {
@@ -53,5 +53,28 @@ describe('notify helpers', () => {
     const button = footer.contents[0];
     expect(button.action.data).toContain('kind=weekly_review');
     expect(button.action.data).toContain('review_id=weekly_2026-04-06');
+  });
+
+  it('builds notification log records for UI reuse', () => {
+    expect(
+      buildNotificationLogRecord(
+        {
+          title: 'Weekly review',
+          body: 'Plan is ready',
+          actions: [{ id: 'approve', label: '承認' }],
+          metadata: { kind: 'weekly_review' },
+        },
+        { channels_sent: ['web_push'], status: 'sent' },
+        '2026-04-27T00:00:00Z',
+      ),
+    ).toEqual({
+      title: 'Weekly review',
+      body: 'Plan is ready',
+      actions: [{ id: 'approve', label: '承認' }],
+      metadata: { kind: 'weekly_review' },
+      created_at: '2026-04-27T00:00:00Z',
+      channels_sent: ['web_push'],
+      status: 'sent',
+    });
   });
 });

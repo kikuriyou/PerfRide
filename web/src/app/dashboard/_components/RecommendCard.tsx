@@ -14,6 +14,15 @@ import {
   shouldWriteCache,
   type Recommendation,
 } from './recommendCache';
+import type { TrainingSession } from '@/lib/gcs-schema';
+import {
+  buildReplaceConflictMessage,
+  buildReplacePreview,
+  buildReplaceSuccessMessage,
+  displaySourceLabel,
+  proposedSessionHeading,
+} from './recommendation-display';
+import { formatSessionBrief } from '@/lib/training-session-display';
 
 const ReactMarkdown = dynamic(() => import('react-markdown'), { ssr: false });
 
@@ -37,6 +46,16 @@ interface DurationOption {
   label: string;
   minutes: number;
 }
+
+interface WeeklyPlanSnapshot {
+  current_week: {
+    week_start: string;
+    plan_revision: number;
+    sessions: TrainingSession[];
+  } | null;
+}
+
+type ReplaceCandidate = TrainingSession & { session_id: string };
 
 const ALTERNATIVE_OPTIONS: AlternativeOption[] = [
   { label: '軽め', constraint: '強度をひとつ下げた軽めのメニューに変更してください' },
@@ -161,6 +180,9 @@ function RecommendCardInner() {
   const { settings, updateSettings, isLoaded } = useSettings();
   const [recommendation, setRecommendation] = useState<Recommendation | null>(null);
   const [originalRecommendation, setOriginalRecommendation] = useState<Recommendation | null>(null);
+  const [weeklyPlan, setWeeklyPlan] = useState<WeeklyPlanSnapshot | null>(null);
+  const [replaceTargetId, setReplaceTargetId] = useState<string>('');
+  const [decisionMessage, setDecisionMessage] = useState<string | null>(null);
   const [planContextKey, setPlanContextKey] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -174,13 +196,19 @@ function RecommendCardInner() {
   const [editGoal, setEditGoal] = useState<GoalKey>(settings.goal);
   const [editGoalCustom, setEditGoalCustom] = useState(settings.goalCustom || '');
 
+  const weeklyPlanPath = () =>
+    settings.asOf
+      ? `/api/weekly-plan?asOf=${encodeURIComponent(settings.asOf)}`
+      : '/api/weekly-plan';
+
   const fetchRecommendation = async (
     forceRefresh = false,
     overrides?: { goal?: GoalKey; goalCustom?: string; constraint?: string },
   ) => {
     const asOf = settings.asOf ?? null;
     const hasConstraint = !!overrides?.constraint;
-    if (shouldReadCache(asOf, forceRefresh, hasConstraint)) {
+    const allowLocalCache = settings.coachAutonomy !== 'coach';
+    if (allowLocalCache && shouldReadCache(asOf, forceRefresh, hasConstraint)) {
       const cached = loadCachedRecommendation(
         settings.recommendMode,
         settings.usePersonalData,
@@ -223,7 +251,21 @@ function RecommendCardInner() {
       const data: Recommendation = await res.json();
       setRecommendation(data);
       setPlanContextKey(data.plan_context_key ?? null);
-      if (shouldWriteCache(asOf, hasConstraint)) {
+      if (settings.coachAutonomy === 'coach') {
+        fetch(weeklyPlanPath())
+          .then((weeklyRes) => (weeklyRes.ok ? weeklyRes.json() : null))
+          .then((snapshot: WeeklyPlanSnapshot | null) => {
+            setWeeklyPlan(snapshot);
+            const proposedDate = data.proposed_session?.session_date;
+            const first = snapshot?.current_week?.sessions.find(
+              (session) =>
+                session.date === proposedDate && session.type !== 'rest' && session.session_id,
+            );
+            setReplaceTargetId(first?.session_id ?? '');
+          })
+          .catch(() => setWeeklyPlan(null));
+      }
+      if (allowLocalCache && shouldWriteCache(asOf, hasConstraint)) {
         saveCachedRecommendation(
           data,
           settings.recommendMode,
@@ -301,6 +343,7 @@ function RecommendCardInner() {
     if (!isLoaded) return;
     if (settings.coachAutonomy === 'observe') return;
     fetchRecommendation();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [
     isLoaded,
     settings.asOf,
@@ -310,7 +353,7 @@ function RecommendCardInner() {
     settings.recommendMode,
     settings.usePersonalData,
     settings.ftp,
-  ]); // eslint-disable-line react-hooks/exhaustive-deps
+  ]);
 
   useEffect(() => {
     const altOpen = openPanels.has('alternatives');
@@ -380,6 +423,59 @@ function RecommendCardInner() {
   const alternativeOptions = ALTERNATIVE_OPTIONS.filter(
     (opt) => opt.label !== '完全休養' || isLowIntensityRec,
   );
+  const proposed = recommendation?.proposed_session;
+  const replaceCandidates =
+    proposed?.session_date && weeklyPlan?.current_week
+      ? weeklyPlan.current_week.sessions.filter(
+          (session): session is ReplaceCandidate =>
+            session.date === proposed.session_date &&
+            session.type !== 'rest' &&
+            !!session.session_id,
+        )
+      : [];
+  const selectedReplaceSession =
+    replaceCandidates.find((session) => session.session_id === replaceTargetId) ?? null;
+  const replacePreview = buildReplacePreview(selectedReplaceSession, proposed);
+  const canReplace =
+    recommendation?.source === 'webhook' &&
+    !!proposed &&
+    !proposed.is_rest &&
+    !!proposed.session_type &&
+    !!selectedReplaceSession &&
+    !!replaceTargetId;
+
+  const replaceWeeklySession = async () => {
+    if (!proposed || !weeklyPlan?.current_week || !replaceTargetId) return;
+    setDecisionMessage(null);
+    const res = await fetch('/api/weekly-plan/replace', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        target_session_id: replaceTargetId,
+        session_date: proposed.session_date,
+        session_type: proposed.session_type,
+        duration_minutes: proposed.duration_minutes ?? 0,
+        target_tss: proposed.target_tss ?? 0,
+        notes: proposed.notes ?? proposed.reason ?? undefined,
+        workout_id: proposed.workout_id ?? undefined,
+        status: proposed.registered ? 'registered' : 'planned',
+        expected_plan_revision: weeklyPlan.current_week.plan_revision,
+      }),
+    });
+    if (res.status === 409) {
+      setDecisionMessage(buildReplaceConflictMessage(proposed));
+      return;
+    }
+    if (!res.ok) {
+      setDecisionMessage('置き換えに失敗しました。');
+      return;
+    }
+    setDecisionMessage(buildReplaceSuccessMessage(proposed));
+    const snapshot = await fetch(weeklyPlanPath()).then((weeklyRes) =>
+      weeklyRes.ok ? weeklyRes.json() : null,
+    );
+    setWeeklyPlan(snapshot);
+  };
 
   return (
     <div
@@ -409,8 +505,24 @@ function RecommendCardInner() {
             gap: '0.5rem',
           }}
         >
-          🏋️ Today&apos;s Recommendation
+          🏋️ 次のおすすめ
         </h3>
+        {recommendation?.source_label && (
+          <span
+            style={{
+              marginLeft: 'auto',
+              marginRight: '0.5rem',
+              padding: '0.15rem 0.5rem',
+              borderRadius: 'var(--radius-full)',
+              background: 'var(--surface)',
+              border: '1px solid var(--border)',
+              fontSize: '0.7rem',
+              opacity: 0.75,
+            }}
+          >
+            {displaySourceLabel(recommendation.source, recommendation.source_label)}
+          </span>
+        )}
         {recommendation && !loading && (
           <button
             onClick={() => {
@@ -650,6 +762,95 @@ function RecommendCardInner() {
               <span>{expanded ? '▲ 閉じる' : '▼ 詳しく見る'}</span>
             </div>
           </div>
+
+          {recommendation.source === 'webhook' && proposed && (
+            <div
+              style={{
+                marginTop: '0.65rem',
+                padding: '0.65rem 0.75rem',
+                border: '1px solid var(--border)',
+                borderRadius: 'var(--radius-md)',
+                background: 'var(--surface)',
+                fontSize: '0.82rem',
+              }}
+            >
+              <div style={{ fontWeight: 600, marginBottom: '0.35rem' }}>
+                {proposedSessionHeading(proposed)}
+              </div>
+              {proposed.reason && (
+                <div style={{ opacity: 0.72, marginBottom: '0.45rem' }}>{proposed.reason}</div>
+              )}
+              {decisionMessage && (
+                <div style={{ marginBottom: '0.45rem', color: 'var(--primary)' }}>
+                  {decisionMessage}
+                </div>
+              )}
+              {!proposed.is_rest && (
+                <>
+                  {replacePreview ? (
+                    <div
+                      style={{
+                        marginBottom: '0.5rem',
+                        padding: '0.45rem 0.55rem',
+                        borderRadius: 'var(--radius-sm)',
+                        background: 'rgba(255,152,0,0.08)',
+                        border: '1px solid rgba(255,152,0,0.22)',
+                        lineHeight: 1.5,
+                      }}
+                    >
+                      {replacePreview}
+                    </div>
+                  ) : (
+                    <div style={{ marginBottom: '0.5rem', opacity: 0.7 }}>
+                      置き換え対象の weekly plan session が見つかりません。
+                    </div>
+                  )}
+                  <div style={{ display: 'flex', gap: '0.5rem', flexWrap: 'wrap' }}>
+                    <button
+                      type="button"
+                      onClick={() => setDecisionMessage('Weekly Plan は変更しません。')}
+                      style={chipStyle}
+                    >
+                      変更なし
+                    </button>
+                    {replaceCandidates.length > 1 && (
+                      <select
+                        value={replaceTargetId}
+                        onChange={(e) => setReplaceTargetId(e.target.value)}
+                        style={{
+                          border: '1px solid var(--border)',
+                          borderRadius: 'var(--radius-sm)',
+                          background: 'var(--background)',
+                          color: 'var(--foreground)',
+                          padding: '0.3rem 0.5rem',
+                          fontSize: '0.78rem',
+                        }}
+                      >
+                        {replaceCandidates.map((session) => (
+                          <option key={session.session_id} value={session.session_id}>
+                            {formatSessionBrief(session)}
+                          </option>
+                        ))}
+                      </select>
+                    )}
+                    <button
+                      type="button"
+                      disabled={!canReplace}
+                      onClick={replaceWeeklySession}
+                      style={{
+                        ...chipStyle,
+                        borderColor: canReplace ? 'var(--primary)' : 'var(--border)',
+                        opacity: canReplace ? 1 : 0.45,
+                        cursor: canReplace ? 'pointer' : 'not-allowed',
+                      }}
+                    >
+                      置き換える
+                    </button>
+                  </div>
+                </>
+              )}
+            </div>
+          )}
 
           {expanded && (
             <>

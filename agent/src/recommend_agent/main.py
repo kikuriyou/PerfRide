@@ -10,6 +10,7 @@ from zoneinfo import ZoneInfo
 
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import JSONResponse
 from google.adk.runners import Runner
 from google.adk.sessions import InMemorySessionService
 from google.genai import types
@@ -105,6 +106,20 @@ class InsightResponse(BaseModel):
     items: list[InsightItem]
 
 
+class ProposedSession(BaseModel):
+    session_date: str | None = None
+    session_type: str | None = None
+    duration_minutes: int | None = None
+    target_tss: int | None = None
+    notes: str | None = None
+    reason: str | None = None
+    is_rest: bool = False
+    source: str | None = None
+    activity_id: int | None = None
+    workout_id: str | None = None
+    registered: bool = False
+
+
 class RecommendResponse(BaseModel):
     summary: str
     detail: str
@@ -117,6 +132,7 @@ class RecommendResponse(BaseModel):
     why_now: str | None = None
     based_on: str | None = None
     plan_context_key: str | None = None
+    proposed_session: ProposedSession | None = None
 
 
 class WeeklyPlanRequest(BaseModel):
@@ -153,6 +169,18 @@ class WeeklyPlanAppendRequest(BaseModel):
     expected_plan_revision: int
 
 
+class WeeklyPlanReplaceRequest(BaseModel):
+    target_session_id: str
+    session_date: str
+    session_type: str
+    duration_minutes: int = 0
+    target_tss: int = 0
+    notes: str | None = None
+    workout_id: str | None = None
+    status: str = "planned"
+    expected_plan_revision: int
+
+
 class WeeklyPlanAppendResponse(BaseModel):
     status: str
     week_start: str | None = None
@@ -161,6 +189,29 @@ class WeeklyPlanAppendResponse(BaseModel):
     current_plan_revision: int | None = None
     current_sessions: list[dict[str, Any]] | None = None
     message: str | None = None
+
+
+class WeeklyPlanReplaceResponse(BaseModel):
+    status: str
+    week_start: str | None = None
+    plan_revision: int | None = None
+    updated_session: dict[str, Any] | None = None
+    current_plan_revision: int | None = None
+    current_sessions: list[dict[str, Any]] | None = None
+    message: str | None = None
+
+
+def _conflict_response(payload: dict[str, Any]) -> JSONResponse:
+    current_revision = payload.get("current_plan_revision") or payload.get("plan_revision")
+    body = {
+        "status": "conflict",
+        "message": payload.get("message") or payload.get("error_message") or "stale plan revision",
+        "current_plan_revision": current_revision,
+        "week_start": payload.get("week_start"),
+    }
+    if isinstance(payload.get("current_sessions"), list):
+        body["current_sessions"] = payload["current_sessions"]
+    return JSONResponse(status_code=409, content=body)
 
 
 def _load_cache() -> dict[str, object] | None:
@@ -355,6 +406,23 @@ def _parse_agent_json_response(raw_response: str) -> dict[str, Any] | None:
     except json.JSONDecodeError:
         return None
     return parsed if isinstance(parsed, dict) else None
+
+
+def _proposed_session_from(value: object, activity_id: int | None = None) -> ProposedSession | None:
+    if not isinstance(value, dict):
+        return None
+    data = dict(value)
+    if activity_id is not None and not isinstance(data.get("activity_id"), int):
+        data["activity_id"] = activity_id
+    try:
+        proposed = ProposedSession.model_validate(data)
+    except Exception:
+        return None
+    if proposed.is_rest:
+        return proposed
+    if not proposed.session_date or not proposed.session_type:
+        return None
+    return proposed
 
 
 def _goal_text(goal: str, goal_custom: str | None) -> str:
@@ -600,6 +668,7 @@ async def recommend_training(request: RecommendRequest) -> InsightResponse | Rec
             why_now=cache.get("why_now"),  # type: ignore[arg-type]
             based_on=cache.get("based_on"),  # type: ignore[arg-type]
             plan_context_key=cache.get("plan_context_key"),  # type: ignore[arg-type]
+            proposed_session=_proposed_session_from(cache.get("proposed_session")),
         )
 
     goal_text = _goal_text(request.goal, request.goal_custom)
@@ -710,6 +779,7 @@ async def recommend_training(request: RecommendRequest) -> InsightResponse | Rec
             "references": parsed.get("references"),
             "why_now": parsed.get("why_now"),
             "based_on": parsed.get("based_on"),
+            "proposed_session": parsed.get("proposed_session"),
         }
         if not bypass_cache:
             _save_cache(cache_data)
@@ -729,6 +799,7 @@ async def recommend_training(request: RecommendRequest) -> InsightResponse | Rec
             why_now=parsed.get("why_now"),
             based_on=parsed.get("based_on"),
             plan_context_key=request.plan_context_key,
+            proposed_session=_proposed_session_from(parsed.get("proposed_session")),
         )
 
     except Exception as e:
@@ -1090,6 +1161,9 @@ async def _approve_weekly_review(
                 str(built["workout_id"]) if isinstance(built.get("workout_id"), str) else None
             ),
             mode="replace",
+            target_session_id=(
+                str(session["session_id"]) if isinstance(session.get("session_id"), str) else None
+            ),
             target_origin="baseline",
             preserve_plan_revision=True,
         )
@@ -1175,12 +1249,18 @@ async def recommend_webhook(request: WebhookRecommendRequest):
             trace_id,
             f"Runner completed: session_id={session.id} response_chars={len(final_response)}",
         )
+        parsed = _parse_agent_json_response(final_response) or {}
+        proposed = _proposed_session_from(parsed.get("proposed_session"), request.activity_id)
 
         return {
             "status": "ok",
             "session_id": session.id,
             "response": final_response,
             "trace_id": trace_id,
+            "summary": parsed.get("summary"),
+            "detail": parsed.get("detail"),
+            "why_now": parsed.get("why_now"),
+            "proposed_session": proposed.model_dump() if proposed is not None else None,
         }
     except Exception as e:
         _log_webhook_flow(trace_id, f"Flow failed: {e}")
@@ -1250,28 +1330,33 @@ async def weekly_plan(request: WeeklyPlanRequest) -> WeeklyPlanResponse:
     )
 
 
-@app.post("/api/agent/weekly-plan/respond")
-async def weekly_plan_respond(request: WeeklyPlanRespondRequest) -> WeeklyPlanResponse:
+@app.post("/api/agent/weekly-plan/respond", response_model=None)
+async def weekly_plan_respond(
+    request: WeeklyPlanRespondRequest,
+) -> WeeklyPlanResponse | JSONResponse:
     review = get_review(request.review_id)
     if review is None:
         raise HTTPException(status_code=404, detail="Weekly review not found")
 
     if review.get("plan_revision") != request.expected_plan_revision:
-        return WeeklyPlanResponse(
-            status="conflict",
-            week_start=str(review.get("week_start", "")),
-            review_id=request.review_id,
-            plan_revision=(
-                review["plan_revision"] if isinstance(review.get("plan_revision"), int) else None
-            ),
-            message="stale plan revision",
+        return _conflict_response(
+            {
+                "week_start": str(review.get("week_start", "")),
+                "plan_revision": review["plan_revision"]
+                if isinstance(review.get("plan_revision"), int)
+                else None,
+                "message": "stale plan revision",
+            }
         )
 
     if request.action == "approve":
-        return await _approve_weekly_review(
+        response = await _approve_weekly_review(
             request.review_id,
             expected_plan_revision=request.expected_plan_revision,
         )
+        if response.status == "conflict":
+            return _conflict_response(response.model_dump())
+        return response
     if request.action == "modify":
         week_start_value = review.get("week_start")
         if not isinstance(week_start_value, str):
@@ -1303,8 +1388,10 @@ async def weekly_plan_respond(request: WeeklyPlanRespondRequest) -> WeeklyPlanRe
     raise HTTPException(status_code=400, detail=f"Unknown weekly action: {request.action}")
 
 
-@app.post("/api/agent/weekly-plan/append")
-async def weekly_plan_append(request: WeeklyPlanAppendRequest) -> WeeklyPlanAppendResponse:
+@app.post("/api/agent/weekly-plan/append", response_model=None)
+async def weekly_plan_append(
+    request: WeeklyPlanAppendRequest,
+) -> WeeklyPlanAppendResponse | JSONResponse:
     """Append a session to the existing weekly plan (does not overwrite)."""
     result = update_training_plan(
         session_date=request.session_date,
@@ -1325,17 +1412,44 @@ async def weekly_plan_append(request: WeeklyPlanAppendRequest) -> WeeklyPlanAppe
             appended_session=result.get("updated_session"),
         )
     if status == "conflict":
-        return WeeklyPlanAppendResponse(
-            status="conflict",
-            week_start=result.get("week_start"),
-            current_plan_revision=result.get("current_plan_revision"),
-            current_sessions=result.get("current_sessions"),
-            message=result.get("error_message", "stale plan revision"),
-        )
+        return _conflict_response(result)
 
     error_message = result.get("error_message", "append failed")
     if "outside" in error_message or "Invalid session_date" in error_message:
         raise HTTPException(status_code=400, detail=error_message)
+    raise HTTPException(status_code=500, detail=error_message)
+
+
+@app.post("/api/agent/weekly-plan/replace", response_model=None)
+async def weekly_plan_replace(
+    request: WeeklyPlanReplaceRequest,
+) -> WeeklyPlanReplaceResponse | JSONResponse:
+    result = update_training_plan(
+        session_date=request.session_date,
+        session_type=request.session_type,
+        duration_minutes=request.duration_minutes,
+        target_tss=request.target_tss,
+        notes=request.notes,
+        workout_id=request.workout_id,
+        status=request.status,
+        mode="replace",
+        target_session_id=request.target_session_id,
+        expected_plan_revision=request.expected_plan_revision,
+    )
+
+    status = result.get("status")
+    if status == "success":
+        return WeeklyPlanReplaceResponse(
+            status="success",
+            week_start=result.get("week_start"),
+            plan_revision=result.get("plan_revision"),
+            updated_session=result.get("updated_session"),
+        )
+    if status == "conflict":
+        return _conflict_response(result)
+    error_message = result.get("error_message", "replace failed")
+    if "not found" in error_message:
+        raise HTTPException(status_code=404, detail=error_message)
     raise HTTPException(status_code=500, detail=error_message)
 
 

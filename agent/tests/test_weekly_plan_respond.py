@@ -1,3 +1,4 @@
+import json
 from unittest.mock import AsyncMock, patch
 
 import pytest
@@ -92,7 +93,9 @@ async def test_weekly_respond_returns_conflict_on_stale_revision():
             )
         )
 
-    assert response.status == "conflict"
+    assert response.status_code == 409
+    payload = json.loads(response.body)
+    assert payload["status"] == "conflict"
 
 
 @pytest.mark.asyncio

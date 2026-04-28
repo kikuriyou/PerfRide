@@ -83,6 +83,31 @@ describe('forwardAppendToAgent', () => {
     expect((outcome.payload as { error: string }).error).toContain('outside');
   });
 
+  it('passes through HTTP 409 conflict payloads', async () => {
+    const fetchMock = vi.fn().mockResolvedValue(
+      makeResponse({
+        ok: false,
+        status: 409,
+        body: {
+          detail: {
+            status: 'conflict',
+            message: 'stale plan revision',
+            current_plan_revision: 6,
+          },
+        },
+      }),
+    );
+
+    const outcome = await forwardAppendToAgent(validBody, 'http://agent', fetchMock);
+
+    expect(outcome.status).toBe(409);
+    expect(outcome.payload).toEqual({
+      status: 'conflict',
+      message: 'stale plan revision',
+      current_plan_revision: 6,
+    });
+  });
+
   it('returns 502 with a descriptive error when the agent is unreachable', async () => {
     const fetchMock = vi.fn().mockRejectedValue(new Error('connection refused'));
     const outcome = await forwardAppendToAgent(validBody, 'http://agent', fetchMock);
