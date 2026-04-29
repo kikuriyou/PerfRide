@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { after } from 'next/server';
-import { readUserSettings, writeUserSettings } from '@/lib/gcs-settings';
+import { readUserSettings, writeCoachDecision, writeUserSettings } from '@/lib/gcs-settings';
+import type { CoachDecisionRecord, ProposedSession } from '@/lib/gcs-schema';
 import type { GCSUserSettings } from '@/lib/gcs-settings';
 import { readActivityCache } from '@/app/dashboard/_lib/gcs';
 import { recomputeFitnessFromProcessed } from '@/app/dashboard/_lib/gcs';
@@ -36,6 +37,16 @@ interface StravaTokenResponse {
   access_token: string;
   refresh_token: string;
   expires_at: number;
+}
+
+interface AgentWebhookResponse {
+  session_id?: string;
+  trace_id?: string;
+  summary?: string | null;
+  detail?: string | null;
+  why_now?: string | null;
+  proposed_session?: ProposedSession | null;
+  response?: string;
 }
 
 function buildTraceId(event: StravaWebhookEvent): string {
@@ -258,9 +269,10 @@ async function processWebhookEvent(event: StravaWebhookEvent, traceId: string): 
     let sessionId = 'unknown';
     let responseTraceId = 'unknown';
     try {
-      const parsed = JSON.parse(body) as { session_id?: string; trace_id?: string };
+      const parsed = JSON.parse(body) as AgentWebhookResponse;
       sessionId = parsed.session_id ?? sessionId;
       responseTraceId = parsed.trace_id ?? responseTraceId;
+      await writeCoachDecision(buildWebhookDecision(parsed, processed, traceId));
     } catch {
       // Keep raw body out of logs unless status is non-OK.
     }
@@ -270,4 +282,25 @@ async function processWebhookEvent(event: StravaWebhookEvent, traceId: string): 
   } catch (err) {
     console.error(`${prefix} Agent notify failed:`, err);
   }
+}
+
+export function buildWebhookDecision(
+  agent: AgentWebhookResponse,
+  activity: ProcessedActivity,
+  traceId: string,
+): CoachDecisionRecord {
+  const proposed = agent.proposed_session ?? null;
+  return {
+    source: 'webhook',
+    source_label: 'アクティビティ後の提案',
+    summary: agent.summary || '次のおすすめが届きました',
+    detail: agent.detail || agent.response || null,
+    why_now: agent.why_now || proposed?.reason || null,
+    proposed_session: proposed,
+    activity_id: activity.id,
+    session_id: agent.session_id ?? null,
+    trace_id: agent.trace_id ?? traceId,
+    created_at: new Date().toISOString(),
+    valid_for_date: activity.start_date_local.slice(0, 10),
+  };
 }

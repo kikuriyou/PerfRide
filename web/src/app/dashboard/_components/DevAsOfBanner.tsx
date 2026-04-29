@@ -1,25 +1,13 @@
 'use client';
 
 import { useSettings } from '@/lib/settings';
+import { formatJstClockLabel } from '@/lib/weekly-plan-reference';
 
 export default function DevAsOfBanner() {
   const { settings } = useSettings();
   if (!settings.asOf) return null;
 
-  const display = (() => {
-    const parsed = new Date(settings.asOf);
-    if (Number.isNaN(parsed.getTime())) return `${settings.asOf} (JST)`;
-    const formatted = parsed.toLocaleString('ja-JP', {
-      timeZone: 'Asia/Tokyo',
-      hour12: false,
-      year: 'numeric',
-      month: '2-digit',
-      day: '2-digit',
-      hour: '2-digit',
-      minute: '2-digit',
-    });
-    return `${formatted} (JST)`;
-  })();
+  const display = `${formatJstClockLabel(settings.asOf)} (JST)`;
 
   return (
     <div

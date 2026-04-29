@@ -145,6 +145,26 @@ ngrok http 3000
 
 Credentials are read from `web/.env.local` automatically.
 
+## Weekly Plan (Local Development)
+
+Once the agent is running on `http://localhost:8000`, you can reproduce any Monday weekly plan locally:
+
+```bash
+curl -X POST http://localhost:8000/api/agent/weekly-plan \
+  -H 'Content-Type: application/json' \
+  -d '{
+    "week_start": "2026-04-27",
+    "as_of": "2026-04-27T04:00:00+09:00",
+    "force": true
+  }'
+```
+
+- Omit `as_of` to use `week_startT04:00:00+09:00`
+- In `coach` mode, the weekly plan is saved directly as the current week in `training_plan.json`
+- In `suggest` / `observe`, the weekly scheduler skips automatic reflection
+- The weekly scheduler does not register external workouts; post-ride replacement still requires user approval
+- `deploy.sh.example` also includes the Cloud Scheduler job definition for the weekly trigger
+
 ## Tech Stack
 
 | Category           | Technology                                                                         |

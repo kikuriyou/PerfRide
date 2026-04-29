@@ -70,6 +70,19 @@ Claude Code (Opus 4.6, 200K context) is the orchestrator. Codex CLI (/codex plug
 | Agent Teams 削除                                                  | 個人プロジェクトにはトークンコスト3倍以上で過剰。サブエージェントで十分                               | Agent Teams を維持（コスト過大）                         | 2026-04-03 |
 | codex exec → /codex plugin に移行                                 | Claude Code プラグインとして統合され、セッション管理・レビュー機能が充実                             | codex exec 直接呼び出しを維持                            | 2026-04-03 |
 | AGENTS.md にコンテキストをインライン化                             | context-loader スキルの tool call 6回を 0 に削減、発火確実性の問題も解消                              | context-loader スキルを維持                              | 2026-04-03 |
+| 週間計画 UI を `/planner` から `/weekly-plan` に分離               | レースシミュレータと coach mode 週間計画は仕様が異なり、同居させた `PlannerForm` が肥大化していた。`/planner` はローカルシミュレータ専用、`/weekly-plan` は GCS coach plan 専用に切り分け | 統合 UI のまま維持（拡張のたびに分岐が増える）           | 2026-04-25 |
+| 同日複数 session を許容（baseline + appended）                    | 月曜の baseline を上書きせず「次回おすすめ承認 → 同日に追加」を成立させる。week 検証は `set(actual_dates) == set(expected_dates)` に緩和し、`TrainingSession.origin` で出自を区別 | 上書き方式（baseline が壊れる）/ `extra_sessions[]` で配列分離（二重系の維持コスト大） | 2026-04-25 |
+| GCS 楽観ロックは `if_generation_match` precondition で実装         | append と replace が同時走行した際の lost update を防ぐ。`updated_at` 比較は検出にならない。`transactional_update` で read-modify-write を共通化、412 を 3 回 retry → `OptimisticLockError` | `updated_at` 比較で先勝ち / 排他ロックを導入             | 2026-04-25 |
+| append API は `/respond` 流用ではなく `/api/agent/weekly-plan/append` を新設 | `/respond` は ADK session 応答用で、daily approve と weekly review が混ざると意図せぬ書き込みが起きうる。append は構造化リクエスト/レスポンスを持つ専用エンドポイントに | `/respond` で action パラメータ拡張                      | 2026-04-25 |
+| Weekly Plan session は `session_id` で識別                         | 同日に baseline/appended が複数並ぶため、replace 対象を date/origin だけで選ぶと順序依存になる。baseline は `baseline:{week_start}:{date}`、appended は `appended:{week_start}:{date}:{random}`、legacy appended は read-time 補完する | date + origin のまま維持 / index 指定                    | 2026-04-27 |
+| Dashboard recommendation は source priority で表示                  | coach mode では古い localStorage cache より、同日 webhook 判断、月曜の weekly plan、生成 recommend の順でユーザーに見せる情報を選ぶ。webhook 判断は JST 同日かつ次の activity まで有効 | 常に dashboard open 時に再生成 / 常に webhook を固定表示 | 2026-04-27 |
+| webhook 後の次回判断は `proposed_session` として構造化              | UI 表示、weekly plan replace、workout 登録状態表示で自由文 parsing を避けるため、`session_date/type/duration/target_tss/is_rest/workout_id/registered` を response と保存データに持たせる | 通知文だけ保存 / LLM 出力を後段で正規表現 parse          | 2026-04-27 |
+| Weekly Plan conflict は HTTP 409 に統一                             | UI/proxy/client が stale revision を通常成功と誤解しないようにする。body は `status: "conflict"`, `message`, `current_plan_revision`, `week_start`, `current_sessions` を基本形にする。段階移行中は旧 `200 + status:"conflict"` も読む | HTTP 200 + body.status のまま維持                         | 2026-04-27 |
+| Chrome/LINE 通知内容と webhook 判断を GCS に保存                    | 通知だけで消える判断を dashboard に再表示できるよう、`notification_log.jsonl` と `coach_decision.json` を保存する。weekly review は pending review 側、次回 workout 判断は recommendation 欄に寄せる | ブラウザ通知のみ / recommendation API で毎回再生成       | 2026-04-27 |
+
+## Domain Rules
+
+- `web/src/app/planner/_lib/planner.ts` の `PHASE_TEMPLATES` キーと `agent/src/recommend_agent/` の phase 定義を同期すること（`PhaseName` literal union: `base | build1 | build2 | peak | taper | maintenance | custom`）。
 
 ## TODO
 
@@ -87,6 +100,7 @@ Claude Code (Opus 4.6, 200K context) is the orchestrator. Codex CLI (/codex plug
 | Date       | Changes                                                                                                      |
 | ---------- | ------------------------------------------------------------------------------------------------------------ |
 | 2026-04-03 | Skills 17→5, Hooks 16→4: ベストプラクティスに基づく大規模クリーンアップ。Agent Teams, Gemini CLI 削除。codex exec → /codex plugin 移行。AGENTS.md インライン化 |
+| 2026-04-27 | Weekly Plan follow-up: `session_id`, `proposed_session`, webhook source priority, notification/coach decision persistence, conflict 409 を追加 |
 | 2026-04-03 | Gemini CLI removed: auth issues; roles absorbed by Claude native tools + Explore subagent                      |
 | 2026-03-19 | Added generated AI entrypoint workflow: `.claude` is canonical, `CLAUDE.md` and `.codex/AGENTS.md` are derived |
 | 2026-02-19 | Context-aware redesign: Claude=200K, Gemini=1M (codebase+research+multimodal), all subagents/teams→Opus      |

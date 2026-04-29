@@ -151,6 +151,7 @@ class TestRecommendHandlerAsOf:
             patch("recommend_agent.main._load_cache") as mock_load_cache,
             patch("recommend_agent.main._save_cache") as mock_save_cache,
             patch("recommend_agent.main._should_regenerate") as mock_should_regenerate,
+            patch("recommend_agent.main._should_trigger_ambient", return_value=False),
             patch("recommend_agent.main.build_agent"),
             patch(
                 "recommend_agent.main.session_service.create_session",
@@ -190,6 +191,7 @@ class TestRecommendHandlerAsOf:
         with (
             patch("recommend_agent.main._load_cache", return_value=cached),
             patch("recommend_agent.main._should_regenerate", return_value=False) as mock_should,
+            patch("recommend_agent.main._should_trigger_ambient", return_value=False),
             patch("recommend_agent.main.RECOMMEND_MODE", "quick"),
             patch("recommend_agent.main.USE_PERSONAL_DATA", True),
         ):
@@ -236,6 +238,7 @@ class TestRecommendHandlerAsOf:
 
         with (
             patch("recommend_agent.main._save_cache"),
+            patch("recommend_agent.main._should_trigger_ambient", return_value=False),
             patch("recommend_agent.main.build_agent"),
             patch(
                 "recommend_agent.main.session_service.create_session",
