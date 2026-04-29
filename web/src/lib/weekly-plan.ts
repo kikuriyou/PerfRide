@@ -79,15 +79,37 @@ export function buildPlanContextKey(
   return `${coachAutonomy}:${weekStart}:${planRevision}:${planStatus}`;
 }
 
-function approvedWeekForDate(
+function addIsoDays(dateString: string, days: number): string | null {
+  const match = dateString.match(/^(\d{4})-(\d{2})-(\d{2})$/);
+  if (!match) return null;
+  const date = new Date(Date.UTC(Number(match[1]), Number(match[2]) - 1, Number(match[3])));
+  date.setUTCDate(date.getUTCDate() + days);
+  return date.toISOString().slice(0, 10);
+}
+
+export function weekCoversDate(week: ApprovedWeekPayload, targetDate: string): boolean {
+  const weekEnd = addIsoDays(week.week_start, 6);
+  if (weekEnd && week.week_start <= targetDate && targetDate <= weekEnd) {
+    return true;
+  }
+  const sessionDates = week.sessions
+    .map((session) => session.date)
+    .filter((date): date is string => typeof date === 'string');
+  if (sessionDates.includes(targetDate)) {
+    return true;
+  }
+  if (sessionDates.length === 0) return false;
+  const sortedDates = [...sessionDates].sort();
+  return sortedDates[0] <= targetDate && targetDate <= sortedDates[sortedDates.length - 1];
+}
+
+export function approvedWeekForDate(
   trainingPlan: GCSTrainingPlan | null,
   targetDate: string,
 ): ApprovedWeekPayload | null {
   if (!trainingPlan) return null;
   return (
-    Object.values(trainingPlan.weekly_plan).find((week) =>
-      week.sessions.some((session) => session.date === targetDate),
-    ) ?? null
+    Object.values(trainingPlan.weekly_plan).find((week) => weekCoversDate(week, targetDate)) ?? null
   );
 }
 

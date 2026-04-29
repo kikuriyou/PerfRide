@@ -5,11 +5,11 @@ import {
   formatShortDate,
 } from '@/lib/training-session-display';
 
-export function displaySourceLabel(source: string | null | undefined, label?: string): string {
-  if (source === 'webhook') return 'アクティビティ後の提案';
-  if (source === 'weekly_plan') return '今週のプラン';
-  if (source === 'generated') return '今の状態から作成';
-  return label ?? '提案';
+export function displaySourceLabel(source: string | null | undefined): string | null {
+  if (source === 'webhook') return '最新ライドから';
+  if (source === 'generated') return '今日の状態から';
+  if (source === 'weekly_plan') return null;
+  return source ? '提案' : null;
 }
 
 export function buildReplacePreview(
@@ -23,6 +23,27 @@ export function buildReplacePreview(
     type: proposed.session_type,
     duration_minutes: proposed.duration_minutes,
   })} に変更します`;
+}
+
+export function buildWebhookDiffLine(
+  target: TrainingSession | null | undefined,
+  proposed: ProposedSession | null | undefined,
+): string | null {
+  if (!proposed) return null;
+  if (proposed.is_rest) {
+    return target
+      ? `回復優先: ${formatSessionBrief(target)} は見送り`
+      : '回復優先: 今日は休養を優先しましょう';
+  }
+  if (!target) return '最新ライドを踏まえた提案です';
+
+  const before = formatSessionBrief(target);
+  const after = formatSessionBrief({
+    type: proposed.is_rest ? 'rest' : proposed.session_type,
+    duration_minutes: proposed.duration_minutes,
+  });
+  if (before === after) return `予定どおりでOK: ${after}`;
+  return `軽めに調整: ${before} → ${after}`;
 }
 
 export function buildReplaceSuccessMessage(proposed: ProposedSession): string {

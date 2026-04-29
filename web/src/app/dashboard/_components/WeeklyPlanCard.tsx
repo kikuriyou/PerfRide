@@ -1,8 +1,10 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useEffect, useState } from 'react';
+import type { CSSProperties } from 'react';
 import Link from 'next/link';
 import { useSettings } from '@/lib/settings';
+import { formatSessionBrief } from '@/lib/training-session-display';
 import { plannedSessionCount, shouldRenderWeeklyPlanCard } from './weekly-plan-card-helpers';
 
 interface TodaySession {
@@ -15,31 +17,25 @@ interface TodaySession {
   origin?: 'baseline' | 'appended';
 }
 
-interface CurrentWeek {
+interface PlanWeek {
   week_start: string;
   phase: string;
   target_tss: number;
   plan_revision: number;
   status: string;
-  updated_at?: string;
-  sessions: { date: string; type: string; status: string }[];
-}
-
-interface PendingReview {
-  review_id: string;
-  week_start: string;
-  plan_revision: number;
-  status: string;
+  sessions: TodaySession[];
 }
 
 interface WeeklyPlanData {
   coach_autonomy: string;
-  reference_date?: string;
-  week_start?: string;
-  as_of?: string | null;
-  current_week: CurrentWeek | null;
-  pending_review: PendingReview | null;
+  current_week: PlanWeek | null;
+  pending_review: unknown | null;
   today_sessions: TodaySession[];
+}
+
+function todaySummary(sessions: TodaySession[]): string {
+  if (sessions.length === 0) return '今日は休養または予定なし';
+  return sessions.map((session) => formatSessionBrief(session)).join(' / ');
 }
 
 export default function WeeklyPlanCard() {
@@ -55,223 +51,105 @@ export default function WeeklyPlanCard() {
 
   useEffect(() => {
     if (!isLoaded) return;
-    fetch(weeklyPlanApiPath)
+    let cancelled = false;
+    fetch(weeklyPlanApiPath, { cache: 'no-store' })
       .then((r) => (r.ok ? r.json() : null))
-      .then((d) => {
+      .then((d: WeeklyPlanData | null) => {
+        if (cancelled) return;
         setData(d);
         setLoading(false);
       })
-      .catch(() => setLoading(false));
+      .catch(() => {
+        if (!cancelled) setLoading(false);
+      });
+    return () => {
+      cancelled = true;
+    };
   }, [isLoaded, weeklyPlanApiPath]);
 
   if (loading) {
     return (
       <div
         style={{
-          background: 'linear-gradient(135deg, rgba(0,150,136,0.07), rgba(0,121,107,0.04))',
-          border: '1px solid rgba(0,150,136,0.2)',
-          borderRadius: 'var(--radius-lg)',
-          padding: '1.25rem',
-          opacity: 0.6,
-          fontSize: '0.9rem',
+          border: '1px solid rgba(0,150,136,0.16)',
+          borderRadius: 'var(--radius-md)',
+          padding: '0.5rem 0.75rem',
+          opacity: 0.65,
+          fontSize: '0.8rem',
         }}
       >
-        📅 Loading weekly plan...
+        今週のプランを読み込み中...
       </div>
     );
   }
 
-  if (!shouldRenderWeeklyPlanCard(data)) {
-    return null;
-  }
+  if (!shouldRenderWeeklyPlanCard(data)) return null;
 
-  const { current_week, pending_review, today_sessions } = data!;
-  const plannedCount = plannedSessionCount(current_week);
-  const todayList = today_sessions ?? [];
+  const currentWeek = data!.current_week!;
+  const plannedCount = plannedSessionCount(currentWeek);
+  const todayText = todaySummary(data!.today_sessions ?? []);
 
   return (
     <div
       style={{
-        background: 'linear-gradient(135deg, rgba(0,150,136,0.07), rgba(0,121,107,0.04))',
-        border: '1px solid rgba(0,150,136,0.25)',
-        borderRadius: 'var(--radius-lg)',
-        padding: '1.25rem',
+        border: '1px solid rgba(0,150,136,0.18)',
+        borderRadius: 'var(--radius-md)',
+        padding: '0.55rem 0.75rem',
+        background: 'rgba(0,150,136,0.04)',
+        fontSize: '0.82rem',
+        lineHeight: 1.45,
       }}
     >
       <div
         style={{
           display: 'flex',
           alignItems: 'center',
-          justifyContent: 'space-between',
-          marginBottom: '0.75rem',
+          gap: '0.5rem',
         }}
       >
-        <h3 style={{ margin: 0, fontSize: '1rem', fontWeight: 600 }}>
-          📅 This Week&apos;s Plan
-        </h3>
-        {current_week && (
-          <span
-            style={{
-              background: '#009688',
-              color: 'white',
-              padding: '0.15rem 0.5rem',
-              borderRadius: 'var(--radius-full)',
-              fontSize: '0.72rem',
-              fontWeight: 600,
-              textTransform: 'capitalize',
-            }}
-          >
-            {current_week.phase}
-          </span>
-        )}
-      </div>
-
-      {current_week && (
         <div
           style={{
-            display: 'flex',
-            flexWrap: 'wrap',
-            gap: '0.45rem',
-            marginBottom: '0.75rem',
-            alignItems: 'center',
+            flex: 1,
+            minWidth: 0,
+            overflow: 'hidden',
+            textOverflow: 'ellipsis',
+            whiteSpace: 'nowrap',
           }}
         >
-          <div
-            style={{
-              background: 'var(--surface)',
-              borderRadius: 'var(--radius-md)',
-              padding: '0.42rem 0.65rem',
-              minWidth: '110px',
-            }}
-          >
-            <span style={{ fontSize: '1rem', fontWeight: 700, color: '#009688' }}>
-              {plannedCount}
-            </span>{' '}
-            <span style={{ fontSize: '0.72rem', opacity: 0.7 }}>sessions</span>
-          </div>
-          <div
-            style={{
-              background: 'var(--surface)',
-              borderRadius: 'var(--radius-md)',
-              padding: '0.42rem 0.65rem',
-              minWidth: '130px',
-            }}
-          >
-            <span style={{ fontSize: '1rem', fontWeight: 700, color: '#009688' }}>
-              {current_week.target_tss}
-            </span>{' '}
-            <span style={{ fontSize: '0.72rem', opacity: 0.7 }}>target TSS</span>
-          </div>
-          <div
-            style={{
-              background: 'var(--surface)',
-              borderRadius: 'var(--radius-md)',
-              padding: '0.42rem 0.65rem',
-              textTransform: 'capitalize',
-              fontSize: '0.78rem',
-              opacity: 0.85,
-            }}
-          >
-            {current_week.phase}
-          </div>
+          <strong style={{ fontSize: '0.86rem' }}>今週のプラン</strong>
+          <span style={separator}> · </span>
+          <span style={{ opacity: 0.7, textTransform: 'capitalize' }}>{currentWeek.phase}</span>
+          <span style={separator}> · </span>
+          <strong>{plannedCount}</strong>
+          <span style={{ opacity: 0.6, marginLeft: '0.2rem' }}>sessions</span>
+          <span style={separator}> · </span>
+          <strong>{currentWeek.target_tss}</strong>
+          <span style={{ opacity: 0.6, marginLeft: '0.2rem' }}>TSS</span>
+          <span style={separator}> · </span>
+          <span style={{ opacity: 0.55, marginRight: '0.35rem' }}>今日</span>
+          {todayText}
         </div>
-      )}
-
-      {current_week?.updated_at && (
-        <div style={{ fontSize: '0.74rem', opacity: 0.62, marginBottom: '0.75rem' }}>
-          Weekly Plan updated · revision {current_week.plan_revision}
-          {data?.as_of ? ` · 確認日 ${data.reference_date}` : ''}
-        </div>
-      )}
-
-      {todayList.length > 0 && (
-        <div
-          style={{
-            padding: '0.5rem 0.75rem',
-            background: 'var(--surface)',
-            borderRadius: 'var(--radius-md)',
-            fontSize: '0.85rem',
-            marginBottom: '0.75rem',
-            display: 'flex',
-            flexDirection: 'column',
-            gap: '0.25rem',
-          }}
-        >
-          <span style={{ opacity: 0.6, fontSize: '0.75rem' }}>
-            {data?.as_of ? '確認日の予定' : 'Today'}
-          </span>
-          {todayList.map((session, idx) => (
-            <div
-              key={session.session_id ?? `${session.date}-${session.origin ?? 'baseline'}-${idx}`}
-              style={{ display: 'flex', alignItems: 'baseline', gap: '0.4rem' }}
-            >
-              <span style={{ fontWeight: 600, textTransform: 'capitalize' }}>{session.type}</span>
-              {session.duration_minutes ? (
-                <span style={{ opacity: 0.6, fontSize: '0.78rem' }}>
-                  {session.duration_minutes}min
-                </span>
-              ) : null}
-              {session.origin === 'appended' && (
-                <span style={{ fontSize: '0.7rem', color: '#e65100', fontWeight: 500 }}>
-                  + added
-                </span>
-              )}
-            </div>
-          ))}
-        </div>
-      )}
-
-      {pending_review && (
-        <div
-          style={{
-            padding: '0.5rem 0.75rem',
-            background: 'rgba(255,152,0,0.1)',
-            border: '1px solid rgba(255,152,0,0.3)',
-            borderRadius: 'var(--radius-md)',
-            fontSize: '0.8rem',
-            marginBottom: '0.75rem',
-            display: 'flex',
-            alignItems: 'center',
-            gap: '0.4rem',
-          }}
-        >
-          <span>🔔</span>
-          <span>承認待ちのプランがあります</span>
-        </div>
-      )}
-
-      <div style={{ display: 'flex', gap: '0.5rem', flexWrap: 'wrap' }}>
         <Link
           href={weeklyPlanHref}
           style={{
-            padding: '0.4rem 0.9rem',
+            padding: '0.2rem 0.6rem',
             borderRadius: 'var(--radius-sm)',
             background: '#009688',
             color: 'white',
             fontWeight: 600,
-            fontSize: '0.82rem',
+            fontSize: '0.74rem',
             textDecoration: 'none',
+            whiteSpace: 'nowrap',
+            flexShrink: 0,
           }}
         >
-          Open Weekly Plan
+          見る
         </Link>
-        {pending_review && (
-          <Link
-            href={weeklyPlanHref}
-            style={{
-              padding: '0.4rem 0.9rem',
-              borderRadius: 'var(--radius-sm)',
-              border: '1px solid rgba(255,152,0,0.5)',
-              background: 'rgba(255,152,0,0.1)',
-              color: 'var(--foreground)',
-              fontSize: '0.82rem',
-              textDecoration: 'none',
-            }}
-          >
-            Review Draft
-          </Link>
-        )}
       </div>
     </div>
   );
 }
+
+const separator: CSSProperties = {
+  opacity: 0.35,
+};

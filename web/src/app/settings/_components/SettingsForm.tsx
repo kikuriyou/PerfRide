@@ -6,6 +6,7 @@ import NotificationSettings from '@/app/dashboard/_components/NotificationSettin
 import type { DayName, WeeklySchedule } from '@/lib/gcs-schema';
 import { useSettings } from '@/lib/settings';
 import type { CoachAutonomy, RecommendMode } from '@/lib/settings';
+import { formatJstClockLabel } from '@/lib/weekly-plan-reference';
 
 const DAY_LABELS: Record<DayName, string> = {
   mon: '月',
@@ -488,7 +489,7 @@ export default function SettingsForm() {
           </div>
           {settings.asOf && (
             <div style={{ marginTop: '0.75rem', fontSize: '0.85rem', opacity: 0.7 }}>
-              現在の確認時刻: <strong>{settings.asOf.replace('T', ' ')} (JST)</strong>
+              現在の確認時刻: <strong>{formatJstClockLabel(settings.asOf)} (JST)</strong>
             </div>
           )}
         </div>

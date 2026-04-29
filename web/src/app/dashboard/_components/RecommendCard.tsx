@@ -19,6 +19,7 @@ import {
   buildReplaceConflictMessage,
   buildReplacePreview,
   buildReplaceSuccessMessage,
+  buildWebhookDiffLine,
   displaySourceLabel,
   proposedSessionHeading,
 } from './recommendation-display';
@@ -436,6 +437,11 @@ function RecommendCardInner() {
   const selectedReplaceSession =
     replaceCandidates.find((session) => session.session_id === replaceTargetId) ?? null;
   const replacePreview = buildReplacePreview(selectedReplaceSession, proposed);
+  const sourceBadge = displaySourceLabel(recommendation?.source);
+  const webhookDiffLine =
+    recommendation?.source === 'webhook'
+      ? buildWebhookDiffLine(selectedReplaceSession, proposed)
+      : null;
   const canReplace =
     recommendation?.source === 'webhook' &&
     !!proposed &&
@@ -507,7 +513,7 @@ function RecommendCardInner() {
         >
           🏋️ 次のおすすめ
         </h3>
-        {recommendation?.source_label && (
+        {sourceBadge && (
           <span
             style={{
               marginLeft: 'auto',
@@ -520,7 +526,7 @@ function RecommendCardInner() {
               opacity: 0.75,
             }}
           >
-            {displaySourceLabel(recommendation.source, recommendation.source_label)}
+            {sourceBadge}
           </span>
         )}
         {recommendation && !loading && (
@@ -734,6 +740,18 @@ function RecommendCardInner() {
             {recommendation.why_now && (
               <div style={{ marginTop: '0.4rem', fontSize: '0.82rem', opacity: 0.7 }}>
                 {recommendation.why_now}
+              </div>
+            )}
+            {webhookDiffLine && (
+              <div
+                style={{
+                  marginTop: '0.45rem',
+                  fontSize: '0.82rem',
+                  opacity: 0.78,
+                  color: 'var(--primary)',
+                }}
+              >
+                {webhookDiffLine}
               </div>
             )}
             <div

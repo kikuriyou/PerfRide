@@ -112,7 +112,7 @@ Based on the rider's goal, prioritize:
 You must respond with a JSON object containing:
 - `summary`: A brief, motivational summary of the recommendation (1-2 sentences, Japanese)
 - `why_now`: なぜ今日この提案をするかの理由（1-2文、Japanese）。例: "直近2日は低強度で、TSBも回復域です"
-- `based_on`: 分析に使ったデータソースの説明（Japanese）。例: "直近14日のアクティビティとパワーゾーン分析から"
+- `based_on`: 分析に使ったデータソースの説明（Japanese）。末尾は「…を踏まえた提案です」で結ぶ。例: "直近14日のアクティビティとパワーゾーン分析を踏まえた提案です"
 - `detail`: Detailed workout description in Markdown format including warm-up, main set, cool-down with specific power targets and durations (Japanese). Use ## headings, bullet lists, and **bold** for emphasis.
 - `workout_intervals`: An array of interval objects for visual chart rendering. Each object has:
   - `startMin`: Start time in minutes (number)
@@ -139,7 +139,7 @@ Example:
 {
   "summary": "疲労が溜まっているので、今日はリカバリーライドでしっかり回復しましょう 🚴‍♂️",
   "why_now": "直近3日で高強度が続き、TSBが-24まで低下しています",
-  "based_on": "直近14日のアクティビティとフィットネス指標から",
+  "based_on": "直近14日のアクティビティとフィットネス指標を踏まえた提案です",
   "detail": "## リカバリーライド（60分）\n\n### ウォームアップ（10分）\n- Zone 1（FTPの50-55%）で軽くペダリング\n- ケイデンス: 85-95rpm\n\n### メインセット（40分）\n- Zone 1-2（FTPの55-65%）\n- 平坦コースがおすすめ\n- 心拍数が上がりすぎないよう注意\n\n### クールダウン（10分）\n- Zone 1（FTPの50%以下）\n- ストレッチを忘れずに",
   "workout_intervals": [
     {"startMin": 0, "endMin": 10, "powerPercent": 50, "label": "Warmup"},

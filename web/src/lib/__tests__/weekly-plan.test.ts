@@ -1,7 +1,13 @@
 import { describe, expect, it } from 'vitest';
 
 import type { GCSTrainingPlan, WeeklyPlanReviewStore } from '@/lib/gcs-schema';
-import { buildPlanContextKey, getCurrentPlanContext, isoDate, mondayOfWeek } from '@/lib/weekly-plan';
+import {
+  approvedWeekForDate,
+  buildPlanContextKey,
+  getCurrentPlanContext,
+  isoDate,
+  mondayOfWeek,
+} from '@/lib/weekly-plan';
 
 describe('isoDate (JST)', () => {
   it('returns the JST calendar day even when UTC is still on the previous day', () => {
@@ -121,6 +127,28 @@ describe('buildPlanContextKey', () => {
     expect(buildPlanContextKey('coach', '2026-04-06', 4, 'pending')).toBe(
       'coach:2026-04-06:4:pending',
     );
+  });
+});
+
+describe('approvedWeekForDate', () => {
+  it('selects the week that covers the configured reference date', () => {
+    const week = approvedWeekForDate(approvedPlan, '2026-04-08');
+    expect(week?.week_start).toBe('2026-04-06');
+  });
+
+  it('can select by week_start range even when a session date is missing', () => {
+    const sparsePlan: GCSTrainingPlan = {
+      ...approvedPlan,
+      weekly_plan: {
+        week_17: {
+          ...approvedPlan.weekly_plan.week_15,
+          week_start: '2026-04-20',
+          sessions: [{ date: '2026-04-20', type: 'rest', status: 'planned' }],
+        },
+      },
+    };
+    const week = approvedWeekForDate(sparsePlan, '2026-04-22');
+    expect(week?.week_start).toBe('2026-04-20');
   });
 });
 

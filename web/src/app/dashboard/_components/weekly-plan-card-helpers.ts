@@ -7,7 +7,7 @@ export interface MinimalWeeklyPlanData {
 export function shouldRenderWeeklyPlanCard(data: MinimalWeeklyPlanData | null): boolean {
   if (!data) return false;
   if (data.coach_autonomy !== 'coach') return false;
-  return Boolean(data.current_week) || Boolean(data.pending_review);
+  return Boolean(data.current_week);
 }
 
 export function plannedSessionCount(

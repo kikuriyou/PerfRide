@@ -2,12 +2,15 @@ import { redirect } from 'next/navigation';
 import { getServerSession } from 'next-auth/next';
 import { cookies } from 'next/headers';
 import { authOptions } from '@/lib/auth';
-import { readTrainingPlan, readUserSettings, readWeeklyPlanReview } from '@/lib/gcs-settings';
-import { mondayOfWeek, isoDate } from '@/lib/weekly-plan';
-import { decodeAsOfCookie, resolveWeeklyPlanReference } from '@/lib/weekly-plan-reference';
-import type { ApprovedWeekPayload, WeeklyPlanReviewPayload } from '@/lib/gcs-schema';
+import { readTrainingPlan, readUserSettings } from '@/lib/gcs-settings';
+import { approvedWeekForDate, mondayOfWeek, isoDate } from '@/lib/weekly-plan';
+import {
+  decodeAsOfCookie,
+  formatJstClockLabel,
+  resolveWeeklyPlanReference,
+} from '@/lib/weekly-plan-reference';
+import type { ApprovedWeekPayload } from '@/lib/gcs-schema';
 import { AddSessionForm } from './_components/AddSessionForm';
-import { PendingReviewPanel, type PendingReviewSummary } from './_components/PendingReviewPanel';
 import { WeekView } from './_components/WeekView';
 
 export const dynamic = 'force-dynamic';
@@ -18,7 +21,6 @@ interface WeeklyPlanPageProps {
 
 function statusLabel(status: string): string {
   if (status === 'approved') return '現在のプラン';
-  if (status === 'pending' || status === 'modified') return '確認待ちのプラン案';
   if (status === 'draft') return '下書き';
   return status;
 }
@@ -36,42 +38,24 @@ export default async function WeeklyPlanPage({ searchParams }: WeeklyPlanPagePro
   const referenceState = resolveWeeklyPlanReference(asOf);
   const reference = referenceState.reference;
 
-  const [settings, plan, reviewStore] = await Promise.all([
-    readUserSettings(),
-    readTrainingPlan(),
-    readWeeklyPlanReview(),
-  ]);
+  const [settings, plan] = await Promise.all([readUserSettings(), readTrainingPlan()]);
 
   const coachAutonomy = settings?.coach_autonomy ?? 'suggest';
   const today = isoDate(reference);
   const weekStart = mondayOfWeek(reference);
 
-  const currentWeek: ApprovedWeekPayload | null = plan
-    ? (Object.values(plan.weekly_plan).find((w) => w.week_start === weekStart) ?? null)
-    : null;
-
-  const pendingReviewRaw = reviewStore.reviews[`weekly_${weekStart}`];
-  const pendingReview: WeeklyPlanReviewPayload | null =
-    pendingReviewRaw && (pendingReviewRaw.status === 'pending' || pendingReviewRaw.status === 'modified')
-      ? pendingReviewRaw
-      : null;
-
-  const displayWeek: ApprovedWeekPayload | null = currentWeek ?? pendingReview?.draft ?? null;
-  const pendingSummary: PendingReviewSummary | null = pendingReview
-    ? {
-        review_id: pendingReview.review_id,
-        week_start: pendingReview.week_start,
-        plan_revision: pendingReview.plan_revision,
-        status: pendingReview.status,
-      }
-    : null;
+  const currentWeek: ApprovedWeekPayload | null = approvedWeekForDate(plan, today);
+  const displayWeek: ApprovedWeekPayload | null = currentWeek;
 
   return (
     <main style={{ padding: '1.5rem 1rem', maxWidth: '1100px', margin: '0 auto' }}>
       <header style={{ marginBottom: '1.25rem' }}>
         <h1 style={{ margin: 0, fontSize: '1.4rem', fontWeight: 700 }}>📅 Weekly Plan</h1>
         <p style={{ margin: '0.3rem 0 0', opacity: 0.7, fontSize: '0.85rem' }}>
-          Week of {weekStart} · {referenceState.asOf ? '確認日' : 'today'} {today}
+          Week of {weekStart} ·{' '}
+          {referenceState.asOf
+            ? `確認日時 ${formatJstClockLabel(referenceState.asOf)} JST`
+            : `today ${today}`}
         </p>
       </header>
 
@@ -85,11 +69,10 @@ export default async function WeeklyPlanPage({ searchParams }: WeeklyPlanPagePro
             fontSize: '0.85rem',
           }}
         >
-          Coach mode is off. Switch to coach autonomy in <a href="/settings">Settings</a> to receive a weekly plan.
+          Coach mode is off. Switch to coach autonomy in <a href="/settings">Settings</a> to receive
+          a weekly plan.
         </div>
       )}
-
-      {coachAutonomy === 'coach' && pendingSummary && <PendingReviewPanel review={pendingSummary} />}
 
       {coachAutonomy === 'coach' && !displayWeek && (
         <div
@@ -145,8 +128,7 @@ export default async function WeeklyPlanPage({ searchParams }: WeeklyPlanPagePro
               color: '#00796b',
             }}
           >
-            Weekly Plan updated · revision {displayWeek.plan_revision} ·{' '}
-            {displayWeek.updated_at}
+            Weekly Plan updated · revision {displayWeek.plan_revision} · {displayWeek.updated_at}
           </div>
           <WeekView week={displayWeek} today={today} />
           <AddSessionForm

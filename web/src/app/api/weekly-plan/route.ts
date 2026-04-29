@@ -3,7 +3,7 @@ import { getServerSession } from 'next-auth/next';
 import { cookies } from 'next/headers';
 import { authOptions } from '@/lib/auth';
 import { readTrainingPlan, readUserSettings, readWeeklyPlanReview } from '@/lib/gcs-settings';
-import { mondayOfWeek, isoDate } from '@/lib/weekly-plan';
+import { approvedWeekForDate, mondayOfWeek, isoDate } from '@/lib/weekly-plan';
 import { decodeAsOfCookie, resolveWeeklyPlanReference } from '@/lib/weekly-plan-reference';
 import type { ApprovedWeekPayload, WeeklyPlanReviewPayload } from '@/lib/gcs-schema';
 
@@ -36,18 +36,18 @@ export async function GET(request: Request) {
     const today = isoDate(reference);
     const weekStart = mondayOfWeek(reference);
 
-    const currentWeek: ApprovedWeekPayload | null = plan
-      ? (Object.values(plan.weekly_plan).find((w) => w.week_start === weekStart) ?? null)
-      : null;
+    const currentWeek: ApprovedWeekPayload | null = approvedWeekForDate(plan, today);
 
     const pendingReviewRaw = reviewStore.reviews[`weekly_${weekStart}`];
     const pendingReview: WeeklyPlanReviewPayload | null =
-      pendingReviewRaw && (pendingReviewRaw.status === 'pending' || pendingReviewRaw.status === 'modified')
+      pendingReviewRaw &&
+      (pendingReviewRaw.status === 'pending' || pendingReviewRaw.status === 'modified')
         ? pendingReviewRaw
         : null;
+    const displayWeek = currentWeek ?? pendingReview?.draft ?? null;
 
     const todaySessionsPayload =
-      currentWeek?.sessions
+      displayWeek?.sessions
         .filter((s) => s.date === today)
         .map((s) => ({
           session_id: s.session_id,

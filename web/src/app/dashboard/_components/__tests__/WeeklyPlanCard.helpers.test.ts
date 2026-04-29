@@ -1,8 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import {
-  plannedSessionCount,
-  shouldRenderWeeklyPlanCard,
-} from '../weekly-plan-card-helpers';
+import { plannedSessionCount, shouldRenderWeeklyPlanCard } from '../weekly-plan-card-helpers';
 
 describe('shouldRenderWeeklyPlanCard', () => {
   const baseWeek = { sessions: [] };
@@ -21,7 +18,7 @@ describe('shouldRenderWeeklyPlanCard', () => {
     ).toBe(false);
   });
 
-  it('hides the card when there is neither a week nor a pending review', () => {
+  it('hides the card when there is no current week', () => {
     expect(
       shouldRenderWeeklyPlanCard({
         coach_autonomy: 'coach',
@@ -41,14 +38,14 @@ describe('shouldRenderWeeklyPlanCard', () => {
     ).toBe(true);
   });
 
-  it('shows the card when only a pending review is present', () => {
+  it('hides the card when only a legacy pending review is present', () => {
     expect(
       shouldRenderWeeklyPlanCard({
         coach_autonomy: 'coach',
         current_week: null,
         pending_review: { review_id: 'weekly_2026-04-20' },
       }),
-    ).toBe(true);
+    ).toBe(false);
   });
 });
 

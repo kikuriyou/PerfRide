@@ -1,19 +1,15 @@
 import { NextResponse } from 'next/server';
 
-import {
-  parseJstClock,
-  readActivityCache,
-  recomputeFitnessFromProcessed,
-} from '@/app/dashboard/_lib/gcs';
+import { readActivityCache, recomputeFitnessFromProcessed } from '@/app/dashboard/_lib/gcs';
+import { parseJstClock } from '@/lib/jst-clock';
 import {
   readCoachDecision,
   readTrainingPlan,
   readUserSettings,
   readWeeklyPlanReview,
 } from '@/lib/gcs-settings';
-import type { ApprovedWeekPayload, CoachDecisionRecord, ProposedSession } from '@/lib/gcs-schema';
-import { getCurrentPlanContext, isoDate, mondayOfWeek } from '@/lib/weekly-plan';
-import { formatSessionBrief } from '@/lib/training-session-display';
+import type { CoachDecisionRecord } from '@/lib/gcs-schema';
+import { getCurrentPlanContext, isoDate } from '@/lib/weekly-plan';
 
 interface RecommendBody {
   goal?: string;
@@ -60,9 +56,7 @@ export function latestTodayActivity(
       (activity): activity is { id?: number; start_date_local: string } =>
         typeof activity.start_date_local === 'string',
     )
-    .filter((activity) =>
-      activity.start_date_local.startsWith(today),
-    )
+    .filter((activity) => activity.start_date_local.startsWith(today))
     .sort((a, b) => a.start_date_local.localeCompare(b.start_date_local));
   return todayActivities.at(-1) ?? null;
 }
@@ -81,53 +75,6 @@ export function validWebhookDecision(
   return decision;
 }
 
-function proposedFromSession(session: {
-  date: string;
-  type: string;
-  duration_minutes?: number;
-  target_tss?: number;
-  notes?: string;
-}): ProposedSession {
-  return {
-    session_date: session.date,
-    session_type: session.type,
-    duration_minutes: session.duration_minutes ?? 0,
-    target_tss: session.target_tss ?? 0,
-    notes: session.notes ?? null,
-    is_rest: session.type === 'rest',
-    source: 'weekly_plan',
-  };
-}
-
-export function weeklyPlanRecommendation(
-  week: ApprovedWeekPayload | null,
-  today: string,
-): Record<string, unknown> | null {
-  if (!week) return null;
-  const todayIndex = week.sessions.findIndex((session) => session.date === today);
-  const candidates = week.sessions.filter((session) => session.date >= today);
-  const session =
-    candidates.find((candidate) => candidate.type !== 'rest') ??
-    (todayIndex >= 0 ? week.sessions[todayIndex] : null);
-  if (!session) return null;
-  const summary =
-    session.type === 'rest'
-      ? '今日は週次プラン上は休養日です。回復を優先しましょう。'
-      : `週次プランでは次に ${formatSessionBrief(session)} が予定されています。`;
-  return {
-    summary,
-    detail: week.summary ?? summary,
-    created_at: week.updated_at,
-    from_cache: false,
-    why_now: '月曜の週次プランをもとに表示しています。',
-    based_on: `Weekly plan ${week.week_start} revision ${week.plan_revision}`,
-    plan_context_key: `coach:${week.week_start}:${week.plan_revision}:${week.status}`,
-    proposed_session: proposedFromSession(session),
-    source: 'weekly_plan',
-    source_label: '今週のプラン',
-  };
-}
-
 export function decisionResponse(decision: CoachDecisionRecord): Record<string, unknown> {
   return {
     summary: decision.summary,
@@ -139,8 +86,16 @@ export function decisionResponse(decision: CoachDecisionRecord): Record<string, 
     plan_context_key: decision.plan_context_key ?? null,
     proposed_session: decision.proposed_session ?? null,
     source: decision.source,
-    source_label: decision.source_label,
   };
+}
+
+export function priorityDecisionResponse(
+  decision: CoachDecisionRecord | null,
+  today: string,
+  latestActivity: { id?: number } | null,
+): Record<string, unknown> | null {
+  const webhookDecision = validWebhookDecision(decision, today, latestActivity);
+  return webhookDecision ? decisionResponse(webhookDecision) : null;
 }
 
 export async function POST(request: Request) {
@@ -181,17 +136,9 @@ export async function POST(request: Request) {
     const shouldUsePriority =
       !body.constraint && !body.asOf && body.mode !== 'insight' && coachAutonomy === 'coach';
     if (shouldUsePriority) {
-      const webhookDecision = validWebhookDecision(coachDecision, today, latestActivity);
-      if (webhookDecision) {
-        return NextResponse.json(decisionResponse(webhookDecision));
-      }
-      const jstWeekStart = mondayOfWeek(reference);
-      const isMonday = today === jstWeekStart;
-      if (isMonday && !latestActivity) {
-        const weekly = weeklyPlanRecommendation(planContext.week, today);
-        if (weekly) {
-          return NextResponse.json(weekly);
-        }
+      const priorityResponse = priorityDecisionResponse(coachDecision, today, latestActivity);
+      if (priorityResponse) {
+        return NextResponse.json(priorityResponse);
       }
     }
 
@@ -221,12 +168,13 @@ export async function POST(request: Request) {
     }
 
     const data = (await response.json()) as Record<string, unknown>;
+    const payload = { ...data };
+    delete payload.source_label;
     return NextResponse.json({
-      ...data,
+      ...payload,
       coach_autonomy: coachAutonomy,
       plan_context_key: data.plan_context_key ?? planContext.planContextKey,
       source: data.source ?? 'generated',
-      source_label: data.source_label ?? '今の状態から作成',
     });
   } catch (error) {
     console.error('Recommend API error:', error);

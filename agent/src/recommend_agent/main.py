@@ -21,7 +21,9 @@ from recommend_agent.constants import RECOMMEND_MODE, USE_PERSONAL_DATA
 from recommend_agent.plan_store import (
     StalePlanRevisionError,
     WeekPayload,
+    get_current_week,
     get_review,
+    load_training_plan,
     replace_current_week,
     review_id_for_week_start,
     update_review_status,
@@ -444,13 +446,14 @@ def _coach_plan_message(now_jst: datetime) -> str:
     if not isinstance(week, dict):
         return ""
     sessions = context.get("sessions") or []
-    source = context.get("source", "approved")
+    raw_source = context.get("source", "approved")
+    plan_state = "draft" if raw_source == "pending" else "active"
     phase = week.get("phase", "maintenance")
     revision = week.get("plan_revision", 1)
     lines = [
         "",
         "## 今週の計画コンテキスト",
-        f"- source: {source}",
+        f"- plan_state: {plan_state}  # 内部メタデータ。出力文章には書かないこと",
         f"- week_start: {week.get('week_start', now_jst.date().isoformat())}",
         f"- phase: {phase}",
         f"- plan_revision: {revision}",
@@ -477,20 +480,23 @@ def _count_planned_sessions(week: WeekPayload) -> int:
 
 def _weekly_notification_actions() -> list[dict[str, str]]:
     return [
-        {"id": "open_review", "label": "確認する"},
-        {"id": "approve", "label": "承認"},
-        {"id": "dismiss", "label": "見送る"},
+        {"id": "open_weekly_plan", "label": "見る"},
     ]
 
 
-def _weekly_notification_metadata(review_id: str, week: WeekPayload) -> dict[str, object]:
-    return {
-        "kind": "weekly_review",
-        "review_id": review_id,
+def _weekly_notification_metadata(
+    review_id: str | None,
+    week: WeekPayload,
+) -> dict[str, object]:
+    metadata: dict[str, object] = {
+        "kind": "weekly_plan",
         "week_start": week["week_start"],
         "plan_revision": week["plan_revision"],
-        "respond_path": "/respond",
+        "page_path": "/weekly-plan",
     }
+    if review_id is not None:
+        metadata["review_id"] = review_id
+    return metadata
 
 
 def _profile_goal(profile: dict[str, object]) -> dict[str, Any]:
@@ -984,6 +990,7 @@ async def _create_or_update_weekly_review(
     effective_as_of: datetime,
     force: bool,
     user_message: str | None = None,
+    apply_immediately: bool = True,
 ) -> WeeklyPlanResponse:
     profile = _require_profile()
     if profile.get("coach_autonomy") != "coach":
@@ -994,21 +1001,27 @@ async def _create_or_update_weekly_review(
         )
 
     review_id = review_id_for_week_start(week_start_date.isoformat())
-    existing_review = get_review(review_id)
-    if existing_review and existing_review.get("status") == "applied" and not force:
-        return WeeklyPlanResponse(
-            status="skipped",
-            week_start=week_start_date.isoformat(),
-            review_id=review_id,
-            plan_revision=existing_review.get("plan_revision"),
-            message="review already applied",
-        )
+    existing_review = None if apply_immediately else get_review(review_id)
+    current_week: WeekPayload | None = None
+    if apply_immediately:
+        training_plan = load_training_plan()
+        weekly_plan = training_plan.get("weekly_plan")
+        if isinstance(weekly_plan, dict):
+            current_week = get_current_week(weekly_plan, week_start_date)
 
-    next_revision = (
-        existing_review["plan_revision"] + 1
-        if existing_review and isinstance(existing_review.get("plan_revision"), int)
-        else 1
+    current_revision = (
+        current_week.get("plan_revision")
+        if isinstance(current_week, dict) and isinstance(current_week.get("plan_revision"), int)
+        else None
     )
+    if apply_immediately:
+        next_revision = (current_revision + 1) if isinstance(current_revision, int) else 1
+    else:
+        next_revision = (
+            existing_review["plan_revision"] + 1
+            if existing_review and isinstance(existing_review.get("plan_revision"), int)
+            else 1
+        )
     baseline_week = build_baseline_week(profile, week_start_date, plan_revision=next_revision)
     session_id, raw_response = await _run_weekly_agent(
         profile=profile,
@@ -1017,6 +1030,54 @@ async def _create_or_update_weekly_review(
         baseline_week=baseline_week,
         user_message=user_message,
     )
+    if apply_immediately:
+        draft = coerce_weekly_draft(
+            raw_response,
+            baseline_week=baseline_week,
+            week_start_date=week_start_date,
+            plan_revision=next_revision,
+            status="approved",
+        )
+        try:
+            replace_current_week(
+                draft,
+                user_id=str(profile.get("user_id", "default")),
+                goal_event=_profile_goal_label(profile),
+                current_phase=str(draft.get("phase", "maintenance")),
+                expected_current_revision=current_revision,
+            )
+        except StalePlanRevisionError as exc:
+            return WeeklyPlanResponse(
+                status="conflict",
+                week_start=week_start_date.isoformat(),
+                plan_revision=exc.current_revision,
+                sessions_planned=_count_planned_sessions(draft),
+                session_id=session_id,
+                message="approved week has advanced since the weekly plan was generated",
+            )
+
+        metadata = _weekly_notification_metadata(None, draft)
+        send_notification(
+            user_id=str(profile.get("user_id", "default")),
+            title=(
+                "今週のプランを更新しました"
+                if isinstance(current_revision, int)
+                else "今週のプランを作成しました"
+            ),
+            body=draft.get("summary", "今週のトレーニングプランを作成しました。"),
+            actions=_weekly_notification_actions(),
+            metadata=metadata,
+        )
+
+        return WeeklyPlanResponse(
+            status="applied",
+            week_start=week_start_date.isoformat(),
+            plan_revision=next_revision,
+            sessions_planned=_count_planned_sessions(draft),
+            sessions_registered=0,
+            session_id=session_id,
+        )
+
     review_status = "modified" if user_message else "pending"
     draft = coerce_weekly_draft(
         raw_response,
@@ -1368,6 +1429,7 @@ async def weekly_plan_respond(
             effective_as_of=effective_as_of,
             force=True,
             user_message=request.user_message,
+            apply_immediately=False,
         )
     if request.action == "dismiss":
         dismissed_at = datetime.now(JST).isoformat()

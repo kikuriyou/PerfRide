@@ -1,5 +1,9 @@
 import { describe, expect, it } from 'vitest';
-import { decodeAsOfCookie, resolveWeeklyPlanReference } from '@/lib/weekly-plan-reference';
+import {
+  decodeAsOfCookie,
+  formatJstClockLabel,
+  resolveWeeklyPlanReference,
+} from '@/lib/weekly-plan-reference';
 import { isoDate } from '@/lib/weekly-plan';
 
 describe('weekly plan reference helpers', () => {
@@ -23,5 +27,10 @@ describe('weekly plan reference helpers', () => {
 
   it('decodes asOf cookie values', () => {
     expect(decodeAsOfCookie('2026-04-27T23%3A30')).toBe('2026-04-27T23:30');
+  });
+
+  it('formats JST clock labels without reinterpreting them as browser-local time', () => {
+    expect(formatJstClockLabel('2026-04-27T23:30')).toBe('2026-04-27 23:30');
+    expect(formatJstClockLabel('2026-04-27T23:30:00+09:00')).toBe('2026-04-27 23:30');
   });
 });

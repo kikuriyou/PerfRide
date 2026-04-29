@@ -3,6 +3,7 @@ import {
   buildReplaceConflictMessage,
   buildReplacePreview,
   buildReplaceSuccessMessage,
+  buildWebhookDiffLine,
   displaySourceLabel,
   proposedSessionHeading,
 } from '../recommendation-display';
@@ -39,8 +40,39 @@ describe('recommendation display helpers', () => {
   });
 
   it('maps source labels to user-facing Japanese labels', () => {
-    expect(displaySourceLabel('webhook', 'Webhook decision')).toBe('アクティビティ後の提案');
-    expect(displaySourceLabel('weekly_plan', 'Weekly Plan')).toBe('今週のプラン');
-    expect(displaySourceLabel('generated', 'Generated now')).toBe('今の状態から作成');
+    expect(displaySourceLabel('webhook')).toBe('最新ライドから');
+    expect(displaySourceLabel('generated')).toBe('今日の状態から');
+    expect(displaySourceLabel('weekly_plan')).toBeNull();
+  });
+
+  it('builds webhook diff lines against the weekly target', () => {
+    expect(
+      buildWebhookDiffLine(
+        { date: '2026-04-28', type: 'threshold', duration_minutes: 60, status: 'planned' },
+        { session_date: '2026-04-28', session_type: 'recovery', duration_minutes: 45 },
+      ),
+    ).toBe('軽めに調整: Threshold 60min → Recovery 45min');
+
+    expect(
+      buildWebhookDiffLine(
+        { date: '2026-04-28', type: 'endurance', duration_minutes: 60, status: 'planned' },
+        { session_date: '2026-04-28', session_type: 'endurance', duration_minutes: 60 },
+      ),
+    ).toBe('予定どおりでOK: Endurance 60min');
+
+    expect(
+      buildWebhookDiffLine(
+        { date: '2026-04-28', type: 'threshold', duration_minutes: 60, status: 'planned' },
+        { session_date: '2026-04-28', is_rest: true },
+      ),
+    ).toBe('回復優先: Threshold 60min は見送り');
+
+    expect(
+      buildWebhookDiffLine(null, {
+        session_date: '2026-04-28',
+        session_type: 'recovery',
+        duration_minutes: 45,
+      }),
+    ).toBe('最新ライドを踏まえた提案です');
   });
 });

@@ -9,6 +9,7 @@ import RideCard from './_components/RideCard';
 import InsightCards from './_components/InsightCards';
 import RecommendCard from './_components/RecommendCard';
 import WeeklyPlanCard from './_components/WeeklyPlanCard';
+import CoachStatusBanner from './_components/CoachStatusBanner';
 import DevAsOfBanner from './_components/DevAsOfBanner';
 import { writeActivityCache } from './_lib/gcs';
 
@@ -85,6 +86,7 @@ export default async function DashboardPage() {
       </header>
 
       <DevAsOfBanner />
+      <CoachStatusBanner />
 
       {/* Insight Cards */}
       <InsightCards />
