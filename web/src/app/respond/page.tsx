@@ -379,33 +379,30 @@ function WeeklyReviewView({ reviewId, action }: { reviewId: string; action: Week
     load();
   }, [reviewId]);
 
-  const submit = async (
-    nextAction: Exclude<WeeklyAction, 'open_review'>,
-    userMessage?: string,
-  ) => {
-      if (!review) return;
-      setStatus('submitting');
-      try {
-        const response = await sendWeeklyAction(
-          review.review_id,
-          nextAction,
-          review.plan_revision,
-          userMessage,
-        );
-        clearRecommendCache();
-        setMessage(response.message || response.status);
-        if (response.status === 'modified') {
-          const nextReview = await fetchWeeklyReview(review.review_id);
-          setReview(nextReview);
-          setStatus('idle');
-          return;
-        }
-        setStatus('done');
-      } catch (error) {
-        setStatus('error');
-        setMessage(error instanceof Error ? error.message : 'Failed to submit action');
+  const submit = async (nextAction: Exclude<WeeklyAction, 'open_review'>, userMessage?: string) => {
+    if (!review) return;
+    setStatus('submitting');
+    try {
+      const response = await sendWeeklyAction(
+        review.review_id,
+        nextAction,
+        review.plan_revision,
+        userMessage,
+      );
+      clearRecommendCache();
+      setMessage(response.message || response.status);
+      if (response.status === 'modified') {
+        const nextReview = await fetchWeeklyReview(review.review_id);
+        setReview(nextReview);
+        setStatus('idle');
+        return;
       }
-    };
+      setStatus('done');
+    } catch (error) {
+      setStatus('error');
+      setMessage(error instanceof Error ? error.message : 'Failed to submit action');
+    }
+  };
   const submitFromEffect = useEffectEvent((nextAction: Exclude<WeeklyAction, 'open_review'>) => {
     submit(nextAction).catch(() => {});
   });
