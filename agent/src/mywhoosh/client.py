@@ -23,14 +23,26 @@ class DeployResult:
     message: str
 
 
+@dataclass(frozen=True)
+class MyWhooshCredentials:
+    email: str
+    password: str
+
+
 class MyWhooshClient:
-    def __init__(self) -> None:
+    def __init__(self, credentials: MyWhooshCredentials | None = None) -> None:
+        self._credentials = credentials or MyWhooshCredentials(
+            email=MYWHOOSH_EMAIL,
+            password=MYWHOOSH_PASSWORD,
+        )
         self._session: AuthSession | None = None
 
     def login(self) -> AuthSession:
+        if not self._credentials.email or not self._credentials.password:
+            raise RuntimeError("MyWhoosh credentials are not configured")
         payload = {
-            "Username": MYWHOOSH_EMAIL,
-            "Password": MYWHOOSH_PASSWORD,
+            "Username": self._credentials.email,
+            "Password": self._credentials.password,
             "Platform": "web",
             "Action": 1001,
             "CorrelationId": str(uuid.uuid4()),
@@ -40,14 +52,16 @@ class MyWhooshClient:
         resp.raise_for_status()
         data = resp.json()
 
-        if not data.get("Success") and "already logged in" in (data.get("Message") or ""):
-            payload["Action"] = 1002
-            resp = httpx.post(LOGIN_URL, json=payload, timeout=30)
+        message = str(data.get("Message") or "")
+        if not data.get("Success") and "already logged in" in message.lower():
+            retry_payload = {**payload, "Action": 1002}
+            resp = httpx.post(LOGIN_URL, json=retry_payload, timeout=30)
             resp.raise_for_status()
             data = resp.json()
 
         if not data.get("Success"):
-            raise RuntimeError(f"MyWhoosh login failed: {data.get('Message')}")
+            message = str(data.get("Message") or "unknown error")
+            raise RuntimeError(f"MyWhoosh login failed: {message}")
         self._session = AuthSession(
             access_token=data["AccessToken"],
             whoosh_id=data["WhooshId"],

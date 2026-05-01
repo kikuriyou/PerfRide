@@ -1,6 +1,9 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { after } from 'next/server';
+import { recordAgentOperationLog } from '@/lib/agent-operation-log';
+import { agentFetch } from '@/lib/agent';
 import { readUserSettings, writeCoachDecision, writeUserSettings } from '@/lib/gcs-settings';
+import { userObjectPath } from '@/lib/gcs-settings';
 import type { CoachDecisionRecord, ProposedSession } from '@/lib/gcs-schema';
 import type { GCSUserSettings } from '@/lib/gcs-settings';
 import { readActivityCache } from '@/app/dashboard/_lib/gcs';
@@ -53,6 +56,44 @@ function buildTraceId(event: StravaWebhookEvent): string {
   return `strava-${event.object_id}-${event.event_time}`;
 }
 
+function logWebhookOperation(
+  event: StravaWebhookEvent,
+  traceId: string,
+  status: 'triggered' | 'started' | 'completed' | 'error' | 'skipped',
+  message: string,
+  metadata?: Record<string, unknown>,
+) {
+  return recordAgentOperationLog(event.owner_id, {
+    status,
+    operation: 'strava_webhook',
+    trigger: 'strava_activity_create',
+    message,
+    runId: traceId,
+    traceId,
+    activityId: event.object_id,
+    metadata,
+  });
+}
+
+function logWebhookAgentOperation(
+  event: StravaWebhookEvent,
+  traceId: string,
+  status: 'triggered' | 'started' | 'completed' | 'error' | 'skipped',
+  message: string,
+  metadata?: Record<string, unknown>,
+) {
+  return recordAgentOperationLog(event.owner_id, {
+    status,
+    operation: 'webhook_recommend',
+    trigger: 'strava_activity_create',
+    message,
+    runId: traceId,
+    traceId,
+    activityId: event.object_id,
+    metadata,
+  });
+}
+
 export async function GET(request: NextRequest) {
   const params = request.nextUrl.searchParams;
   const mode = params.get('hub.mode');
@@ -77,10 +118,14 @@ export async function POST(request: NextRequest) {
   if (event.object_type === 'activity' && event.aspect_type === 'create') {
     console.log(`${prefix} Scheduling background processing`);
     after(async () => {
+      await logWebhookOperation(event, traceId, 'triggered', 'Strava activity webhook received', {
+        owner_id: event.owner_id,
+      });
       try {
         await processWebhookEvent(event, traceId);
       } catch (err) {
         console.error(`${prefix} processWebhookEvent failed:`, err);
+        await logWebhookOperation(event, traceId, 'error', 'Webhook background processing failed');
       }
     });
   } else {
@@ -116,7 +161,7 @@ async function refreshStravaTokens(settings: GCSUserSettings): Promise<GCSUserSe
     },
     updated_at: new Date().toISOString(),
   };
-  await writeUserSettings(updated);
+  await writeUserSettings(updated, updated.user_id);
   return updated;
 }
 
@@ -168,11 +213,14 @@ function processActivity(raw: StravaActivityResponse, ftp: number): ProcessedAct
   };
 }
 
-async function writeActivityCacheData(data: FitnessComputation): Promise<void> {
+async function writeActivityCacheData(
+  userId: string | number,
+  data: FitnessComputation,
+): Promise<void> {
   const { Storage } = await import('@google-cloud/storage');
   const storage = new Storage();
   const bucket = storage.bucket(process.env.GCS_BUCKET!);
-  const blob = bucket.file('activity_cache.json');
+  const blob = bucket.file(userObjectPath(userId, 'activity_cache.json'));
   await blob.save(JSON.stringify(data, null, 2), {
     contentType: 'application/json',
   });
@@ -181,10 +229,12 @@ async function writeActivityCacheData(data: FitnessComputation): Promise<void> {
 async function processWebhookEvent(event: StravaWebhookEvent, traceId: string): Promise<void> {
   const prefix = `[webhook trace_id=${traceId}]`;
   console.log(`${prefix} Background processing started`);
+  await logWebhookOperation(event, traceId, 'started', 'Webhook background processing started');
 
-  const settings = await readUserSettings();
+  const settings = await readUserSettings(event.owner_id, { fallbackLegacy: true });
   if (!settings) {
     console.error(`${prefix} No user settings found in GCS`);
+    await logWebhookOperation(event, traceId, 'error', 'User settings were not found');
     return;
   }
 
@@ -192,6 +242,10 @@ async function processWebhookEvent(event: StravaWebhookEvent, traceId: string): 
     console.error(
       `${prefix} Owner mismatch: expected ${settings.strava_owner_id}, got ${event.owner_id}`,
     );
+    await logWebhookOperation(event, traceId, 'error', 'Strava owner mismatch', {
+      expected_owner_id: settings.strava_owner_id,
+      actual_owner_id: event.owner_id,
+    });
     return;
   }
 
@@ -204,6 +258,9 @@ async function processWebhookEvent(event: StravaWebhookEvent, traceId: string): 
 
   if (!activityRes.ok) {
     console.error(`${prefix} Failed to fetch activity ${event.object_id}: ${activityRes.status}`);
+    await logWebhookOperation(event, traceId, 'error', 'Failed to fetch activity from Strava', {
+      status: activityRes.status,
+    });
     return;
   }
 
@@ -214,22 +271,33 @@ async function processWebhookEvent(event: StravaWebhookEvent, traceId: string): 
 
   if (!rawActivity.distance || !rawActivity.moving_time) {
     console.log(`${prefix} Skipping activity ${rawActivity.id}: missing distance or moving_time`);
+    await logWebhookOperation(
+      event,
+      traceId,
+      'skipped',
+      'Activity skipped: missing distance or moving time',
+    );
     return;
   }
 
   if (rawActivity.type !== 'Ride' && rawActivity.type !== 'VirtualRide') {
     console.log(`${prefix} Skipping non-ride activity ${rawActivity.id}: type=${rawActivity.type}`);
+    await logWebhookOperation(event, traceId, 'skipped', 'Activity skipped: not a ride', {
+      type: rawActivity.type,
+      sport_type: rawActivity.sport_type,
+    });
     return;
   }
 
   const ftp = settings.ftp || 200;
   const processed = processActivity(rawActivity, ftp);
 
-  const existingCache = await readActivityCache();
+  const existingCache = await readActivityCache(event.owner_id);
   const activities: ProcessedActivity[] = existingCache?.activities ?? [];
 
   if (activities.some((a) => a.id === processed.id)) {
     console.log(`${prefix} Activity ${processed.id} already in cache, skipping`);
+    await logWebhookOperation(event, traceId, 'skipped', 'Activity already existed in cache');
     return;
   }
 
@@ -239,21 +307,21 @@ async function processWebhookEvent(event: StravaWebhookEvent, traceId: string): 
   );
 
   const updated = recomputeFitnessFromProcessed(activities, new Date());
-  await writeActivityCacheData(updated);
+  await writeActivityCacheData(event.owner_id, updated);
 
   console.log(
     `${prefix} Activity cached: id=${processed.id} total_cached=${activities.length} ctl=${updated.fitness_metrics.ctl} atl=${updated.fitness_metrics.atl} tsb=${updated.fitness_metrics.tsb}`,
   );
 
-  const agentUrl = process.env.AGENT_API_URL || 'http://localhost:8000';
-  const endpoint = `${agentUrl}/api/agent/recommend`;
-  console.log(`${prefix} Triggering agent at ${endpoint}`);
+  console.log(`${prefix} Triggering agent`);
+  await logWebhookOperation(event, traceId, 'completed', 'Activity cache updated');
+  await logWebhookAgentOperation(event, traceId, 'triggered', 'Agent trigger turned on');
 
   try {
-    const agentRes = await fetch(endpoint, {
+    const agentRes = await agentFetch('/api/agent/recommend', {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
+        user_id: String(event.owner_id),
         trigger: 'webhook',
         activity_id: event.object_id,
         trace_id: traceId,
@@ -263,6 +331,9 @@ async function processWebhookEvent(event: StravaWebhookEvent, traceId: string): 
 
     if (!agentRes.ok) {
       console.error(`${prefix} Agent responded ${agentRes.status}: ${body}`);
+      await logWebhookAgentOperation(event, traceId, 'error', 'Agent returned an error', {
+        status: agentRes.status,
+      });
       return;
     }
 
@@ -272,15 +343,27 @@ async function processWebhookEvent(event: StravaWebhookEvent, traceId: string): 
       const parsed = JSON.parse(body) as AgentWebhookResponse;
       sessionId = parsed.session_id ?? sessionId;
       responseTraceId = parsed.trace_id ?? responseTraceId;
-      await writeCoachDecision(buildWebhookDecision(parsed, processed, traceId));
+      await writeCoachDecision(buildWebhookDecision(parsed, processed, traceId), event.owner_id);
     } catch {
       // Keep raw body out of logs unless status is non-OK.
     }
     console.log(
       `${prefix} Agent responded: status=${agentRes.status} session_id=${sessionId} response_trace_id=${responseTraceId}`,
     );
+    await logWebhookAgentOperation(
+      event,
+      traceId,
+      'completed',
+      'Agent webhook processing completed',
+      {
+        status: agentRes.status,
+        session_id: sessionId,
+        response_trace_id: responseTraceId,
+      },
+    );
   } catch (err) {
     console.error(`${prefix} Agent notify failed:`, err);
+    await logWebhookAgentOperation(event, traceId, 'error', 'Agent invocation failed');
   }
 }
 

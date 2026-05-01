@@ -15,6 +15,7 @@ services:
         target: '/root/.config'
     environment:
       - AGENT_API_URL=http://agent:8000
+      - AGENT_AUDIENCE=http://agent:8000
     depends_on:
       agent:
         condition: service_healthy
@@ -42,8 +43,13 @@ services:
       - GOOGLE_CLOUD_LOCATION=global
       - GOOGLE_GENAI_USE_VERTEXAI=true
       - GCS_BUCKET=your-gcs-bucket
+      - WEB_API_URL=http://web:3000
       - RECOMMEND_MODE=no_grounding  # hybrid | web_only | no_grounding
       - USE_PERSONAL_DATA=true  # true | false
+      - WORKOUT_PLATFORM=mywhoosh  # mywhoosh | zwift
+      - KMS_KEY_NAME=
+      - MYWHOOSH_EMAIL=  # local fallback only
+      - MYWHOOSH_PASSWORD=  # local fallback only
     restart: unless-stopped
     healthcheck:
       test: ['CMD', 'python', '-c', 'import urllib.request; urllib.request.urlopen("http://localhost:8000/docs")']

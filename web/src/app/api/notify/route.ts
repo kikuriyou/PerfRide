@@ -146,7 +146,7 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'user_id, title, and body are required' }, { status: 400 });
     }
 
-    const settings = await readUserSettings();
+    const settings = await readUserSettings(user_id, { fallbackLegacy: true });
     if (!settings) {
       return NextResponse.json({ error: 'User settings not found' }, { status: 404 });
     }
@@ -164,6 +164,7 @@ export async function POST(request: NextRequest) {
     }
 
     const sent: string[] = [];
+    const metadataWithUser: NotificationMetadata = { ...(metadata ?? {}), user_id };
 
     const promises = channels.map(async (channel) => {
       if (channel === 'web_push' && settings.notification.web_push_subscription) {
@@ -172,7 +173,7 @@ export async function POST(request: NextRequest) {
           title,
           body: messageBody,
           actions,
-          data: buildPushPayloadData(metadata),
+          data: buildPushPayloadData(metadataWithUser),
         });
         console.log('[notify] Web push result:', ok);
         if (ok) sent.push('web_push');
@@ -184,7 +185,7 @@ export async function POST(request: NextRequest) {
           title,
           messageBody,
           actions,
-          metadata,
+          metadataWithUser,
         );
         if (ok) sent.push('line');
       }
@@ -197,9 +198,10 @@ export async function POST(request: NextRequest) {
 
     await appendNotificationLog(
       buildNotificationLogRecord(
-        { title, body: messageBody, actions, metadata },
+        { title, body: messageBody, actions, metadata: metadataWithUser },
         { channels_sent: sent, status },
       ),
+      user_id,
     );
 
     return NextResponse.json({ channels_sent: sent, status } satisfies NotifyResult);

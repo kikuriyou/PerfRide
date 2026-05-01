@@ -13,7 +13,7 @@ async function persistStravaTokens(
   refreshToken: string,
   expiresAt: number,
 ): Promise<void> {
-  const existing = await readUserSettings();
+  const existing = await readUserSettings(ownerId, { fallbackLegacy: true });
   const settings: GCSUserSettings = existing ?? {
     user_id: String(ownerId),
     strava_owner_id: ownerId,
@@ -39,7 +39,7 @@ async function persistStravaTokens(
     expires_at: expiresAt,
   };
   settings.updated_at = new Date().toISOString();
-  await writeUserSettings(settings);
+  await writeUserSettings(settings, ownerId);
 }
 
 async function refreshAccessToken(token: JWT): Promise<JWT> {

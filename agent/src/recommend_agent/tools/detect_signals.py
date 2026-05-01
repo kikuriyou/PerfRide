@@ -1,9 +1,10 @@
 """Rule-based signal detection for insight cards."""
 
-import json
-import os
 from datetime import datetime, timedelta
 from zoneinfo import ZoneInfo
+
+from recommend_agent.gcs import read_user_gcs_json
+from recommend_agent.tools._request_context import resolve_user_id
 
 JST = ZoneInfo("Asia/Tokyo")
 
@@ -17,19 +18,9 @@ PRIORITY_MAP = {
 }
 
 
-def _load_activity_cache() -> dict | None:
-    bucket_name = os.environ.get("GCS_BUCKET")
-    if not bucket_name:
-        return None
+def _load_activity_cache(user_id: str | None = None) -> dict | None:
     try:
-        from google.cloud import storage
-
-        client = storage.Client()
-        bucket = client.bucket(bucket_name)
-        blob = bucket.blob("activity_cache.json")
-        if not blob.exists():
-            return None
-        return json.loads(blob.download_as_text())
+        return read_user_gcs_json("activity_cache.json", user_id=resolve_user_id(user_id))
     except Exception:
         return None
 
@@ -229,9 +220,10 @@ def _check_weekly_tss_front_loaded(activities: list[dict], now: datetime | None 
 def detect_signals(
     override: dict | None = None,
     as_of: datetime | None = None,
+    user_id: str | None = None,
 ) -> list[dict]:
     """Run all signal detection rules against activity_cache.json (or override)."""
-    cache = override if override is not None else _load_activity_cache()
+    cache = override if override is not None else _load_activity_cache(user_id)
     if cache is None:
         return []
 

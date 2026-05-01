@@ -2,6 +2,8 @@ from contextvars import ContextVar
 from datetime import date, datetime, time, timedelta
 from zoneinfo import ZoneInfo
 
+from recommend_agent.config import DEFAULT_USER_ID
+
 ActivityOverride = dict[str, object]
 JST = ZoneInfo("Asia/Tokyo")
 
@@ -29,6 +31,22 @@ reference_date_var: ContextVar[date | None] = ContextVar(
     "perfride_reference_date",
     default=None,
 )
+
+user_id_var: ContextVar[str] = ContextVar(
+    "perfride_user_id",
+    default=DEFAULT_USER_ID,
+)
+
+
+def normalize_user_id(user_id: str | None) -> str:
+    value = (user_id or "").strip()
+    if not value:
+        return DEFAULT_USER_ID
+    return value.replace("/", "_")
+
+
+def resolve_user_id(user_id: str | None = None) -> str:
+    return normalize_user_id(user_id or user_id_var.get())
 
 
 def parse_as_of(value: str | None) -> datetime | None:

@@ -137,7 +137,7 @@ function mergeServerSettings(local: UserSettings, remote: UserSettings): UserSet
 }
 
 export function SettingsProvider({ children }: { children: ReactNode }) {
-  const [settings, setSettings] = useState<UserSettings>(loadLocalSettings);
+  const [settings, setSettings] = useState<UserSettings>(defaultSettings);
   const [isLoaded, setIsLoaded] = useState(false);
   const syncReady = useRef(false);
 

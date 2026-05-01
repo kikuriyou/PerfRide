@@ -27,7 +27,7 @@ function statusLabel(status: string): string {
 
 export default async function WeeklyPlanPage({ searchParams }: WeeklyPlanPageProps) {
   const session = await getServerSession(authOptions);
-  if (!session) {
+  if (!session?.user?.id) {
     redirect('/api/auth/signin');
   }
 
@@ -38,7 +38,10 @@ export default async function WeeklyPlanPage({ searchParams }: WeeklyPlanPagePro
   const referenceState = resolveWeeklyPlanReference(asOf);
   const reference = referenceState.reference;
 
-  const [settings, plan] = await Promise.all([readUserSettings(), readTrainingPlan()]);
+  const [settings, plan] = await Promise.all([
+    readUserSettings(session.user.id, { fallbackLegacy: true }),
+    readTrainingPlan(session.user.id),
+  ]);
 
   const coachAutonomy = settings?.coach_autonomy ?? 'suggest';
   const today = isoDate(reference);

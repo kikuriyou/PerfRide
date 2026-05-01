@@ -1,9 +1,11 @@
 from __future__ import annotations
 
 import json
-import os
 import urllib.request
 from urllib.error import URLError
+
+from recommend_agent.config import get_web_api_url
+from recommend_agent.tools._request_context import resolve_user_id
 
 
 def explore_outdoor_routes(
@@ -11,8 +13,12 @@ def explore_outdoor_routes(
     longitude: float,
     radius_km: float = 10.0,
 ) -> dict:
-    base_url = os.environ.get("WEB_API_URL", "http://web:3000")
-    url = f"{base_url}/api/strava/routes?lat={latitude}&lng={longitude}&radius={radius_km}"
+    base_url = get_web_api_url()
+    user_id = resolve_user_id()
+    url = (
+        f"{base_url}/api/strava/routes?lat={latitude}&lng={longitude}"
+        f"&radius={radius_km}&user_id={user_id}"
+    )
     try:
         with urllib.request.urlopen(url, timeout=15) as resp:
             body = json.loads(resp.read())

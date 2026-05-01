@@ -14,6 +14,7 @@ from recommend_agent.plan_store import (
     recalculate_week_target_tss,
     transactional_update,
 )
+from recommend_agent.tools._request_context import resolve_user_id
 
 UpdateMode = Literal["replace", "append"]
 
@@ -99,6 +100,7 @@ def update_training_plan(
     expected_plan_revision: int | None = None,
     target_origin: SessionOrigin | None = None,
     target_session_id: str | None = None,
+    user_id: str | None = None,
 ) -> dict:
     """Update or append a training session in the GCS-backed weekly plan."""
     parsed_session_date = parse_iso_date(session_date)
@@ -320,7 +322,12 @@ def update_training_plan(
         return data
 
     try:
-        transactional_update(PLAN_FILE, _mutator)
+        transactional_update(
+            PLAN_FILE,
+            _mutator,
+            user_id=resolve_user_id(user_id),
+            fallback_legacy=True,
+        )
     except _UpdateAbortedError as aborted:
         return aborted.result
     except Exception as exc:

@@ -1,4 +1,5 @@
 import type {
+  AgentOperationLogRecord,
   CoachDecisionRecord,
   GCSTrainingPlan,
   GCSUserSettings,
@@ -8,7 +9,11 @@ import type {
 } from '@/lib/gcs-schema';
 import { resolvePhaseName } from '@/lib/gcs-schema';
 
+export type GCSUserId = string | number;
+
 export type {
+  AgentOperationLogRecord,
+  AgentOperationLogStatus,
   ApprovedWeekPayload,
   CoachDecisionRecord,
   CoachAutonomy,
@@ -30,10 +35,26 @@ export type {
 } from '@/lib/gcs-schema';
 export { resolvePhaseName } from '@/lib/gcs-schema';
 
+interface ReadUserSettingsOptions {
+  fallbackLegacy?: boolean;
+}
+
 async function getGCSBucket() {
   const { Storage } = await import('@google-cloud/storage');
   const storage = new Storage();
   return storage.bucket(process.env.GCS_BUCKET!);
+}
+
+export function normalizeGcsUserId(userId: GCSUserId): string {
+  const normalized = String(userId).trim();
+  if (!/^[A-Za-z0-9._:-]+$/.test(normalized)) {
+    throw new Error('Invalid GCS user id');
+  }
+  return normalized;
+}
+
+export function userObjectPath(userId: GCSUserId, filename: string): string {
+  return `users/${normalizeGcsUserId(userId)}/${filename.replace(/^\/+/, '')}`;
 }
 
 async function readJSON<T>(path: string): Promise<T | null> {
@@ -75,6 +96,20 @@ async function writeJSON(path: string, data: unknown): Promise<void> {
   });
 }
 
+export function readGCSJSON<T>(path: string): Promise<T | null> {
+  return readJSON<T>(path);
+}
+
+export function writeGCSJSON(path: string, data: unknown): Promise<void> {
+  return writeJSON(path, data);
+}
+
+export async function deleteGCSObject(path: string): Promise<void> {
+  const bucket = await getGCSBucket();
+  const blob = bucket.file(path);
+  await blob.delete({ ignoreNotFound: true });
+}
+
 async function appendJSONL(path: string, record: Record<string, unknown>): Promise<void> {
   const bucket = await getGCSBucket();
   const blob = bucket.file(path);
@@ -93,16 +128,30 @@ async function appendJSONL(path: string, record: Record<string, unknown>): Promi
   await blob.save(content, { contentType: 'application/x-ndjson' });
 }
 
-export function readUserSettings(): Promise<GCSUserSettings | null> {
-  return readJSON<GCSUserSettings>('user_settings.json');
+function objectPath(userId: GCSUserId | undefined, filename: string): string {
+  return userId === undefined ? filename : userObjectPath(userId, filename);
 }
 
-export function writeUserSettings(settings: GCSUserSettings): Promise<void> {
-  return writeJSON('user_settings.json', settings);
+export async function readUserSettings(
+  userId?: GCSUserId,
+  options: ReadUserSettingsOptions = {},
+): Promise<GCSUserSettings | null> {
+  if (userId === undefined) {
+    return readJSON<GCSUserSettings>('user_settings.json');
+  }
+  const settings = await readJSON<GCSUserSettings>(userObjectPath(userId, 'settings.json'));
+  if (settings || !options.fallbackLegacy) return settings;
+  const legacy = await readJSON<GCSUserSettings>('user_settings.json');
+  return legacy?.strava_owner_id === Number(userId) ? legacy : null;
 }
 
-export async function readTrainingPlan(): Promise<GCSTrainingPlan | null> {
-  const raw = await readJSON<GCSTrainingPlan>('training_plan.json');
+export function writeUserSettings(settings: GCSUserSettings, userId?: GCSUserId): Promise<void> {
+  const filename = userId === undefined ? 'user_settings.json' : 'settings.json';
+  return writeJSON(objectPath(userId, filename), settings);
+}
+
+export async function readTrainingPlan(userId?: GCSUserId): Promise<GCSTrainingPlan | null> {
+  const raw = await readJSON<GCSTrainingPlan>(objectPath(userId, 'training_plan.json'));
   if (!raw) return null;
   const weeklyPlan = Object.fromEntries(
     Object.entries(raw.weekly_plan).map(([k, v]) => [
@@ -121,12 +170,14 @@ export async function readTrainingPlan(): Promise<GCSTrainingPlan | null> {
   };
 }
 
-export function writeTrainingPlan(plan: GCSTrainingPlan): Promise<void> {
-  return writeJSON('training_plan.json', plan);
+export function writeTrainingPlan(plan: GCSTrainingPlan, userId?: GCSUserId): Promise<void> {
+  return writeJSON(objectPath(userId, 'training_plan.json'), plan);
 }
 
-export async function readWeeklyPlanReview(): Promise<WeeklyPlanReviewStore> {
-  const store = await readJSON<WeeklyPlanReviewStore>('weekly_plan_review.json');
+export async function readWeeklyPlanReview(userId?: GCSUserId): Promise<WeeklyPlanReviewStore> {
+  const store = await readJSON<WeeklyPlanReviewStore>(
+    objectPath(userId, 'weekly_plan_review.json'),
+  );
   if (!store) return { reviews: {}, updated_at: new Date().toISOString() };
   return {
     ...store,
@@ -139,32 +190,72 @@ export async function readWeeklyPlanReview(): Promise<WeeklyPlanReviewStore> {
   };
 }
 
-export function writeWeeklyPlanReview(store: WeeklyPlanReviewStore): Promise<void> {
-  return writeJSON('weekly_plan_review.json', store);
+export function writeWeeklyPlanReview(
+  store: WeeklyPlanReviewStore,
+  userId?: GCSUserId,
+): Promise<void> {
+  return writeJSON(objectPath(userId, 'weekly_plan_review.json'), store);
 }
 
-export function appendRecommendLog(record: Record<string, unknown>): Promise<void> {
-  return appendJSONL('recommend_log.jsonl', record);
+export function appendRecommendLog(
+  record: Record<string, unknown>,
+  userId?: GCSUserId,
+): Promise<void> {
+  return appendJSONL(objectPath(userId, 'recommend_log.jsonl'), record);
 }
 
-export function appendUserResponse(record: Record<string, unknown>): Promise<void> {
-  return appendJSONL('user_response.jsonl', record);
+export function appendUserResponse(
+  record: Record<string, unknown>,
+  userId?: GCSUserId,
+): Promise<void> {
+  return appendJSONL(objectPath(userId, 'user_response.jsonl'), record);
 }
 
-export function readCoachDecision(): Promise<CoachDecisionRecord | null> {
-  return readJSON<CoachDecisionRecord>('coach_decision.json');
+export function readCoachDecision(userId?: GCSUserId): Promise<CoachDecisionRecord | null> {
+  return readJSON<CoachDecisionRecord>(objectPath(userId, 'coach_decision.json'));
 }
 
-export function writeCoachDecision(record: CoachDecisionRecord): Promise<void> {
-  return writeJSON('coach_decision.json', record);
+export function writeCoachDecision(record: CoachDecisionRecord, userId?: GCSUserId): Promise<void> {
+  return writeJSON(objectPath(userId, 'coach_decision.json'), record);
 }
 
-export function appendNotificationLog(record: NotificationLogRecord): Promise<void> {
-  return appendJSONL('notification_log.jsonl', record as unknown as Record<string, unknown>);
+export function appendNotificationLog(
+  record: NotificationLogRecord,
+  userId?: GCSUserId,
+): Promise<void> {
+  return appendJSONL(
+    objectPath(userId, 'notification_log.jsonl'),
+    record as unknown as Record<string, unknown>,
+  );
 }
 
-export async function readNotificationLog(limit = 20): Promise<NotificationLogRecord[]> {
-  const records = await readJSONL<NotificationLogRecord>('notification_log.jsonl');
+export async function readNotificationLog(
+  limit = 20,
+  userId?: GCSUserId,
+): Promise<NotificationLogRecord[]> {
+  const records = await readJSONL<NotificationLogRecord>(
+    objectPath(userId, 'notification_log.jsonl'),
+  );
+  return records.slice(-limit).reverse();
+}
+
+export function appendAgentOperationLog(
+  record: AgentOperationLogRecord,
+  userId?: GCSUserId,
+): Promise<void> {
+  return appendJSONL(
+    objectPath(userId, 'agent_operation_log.jsonl'),
+    record as unknown as Record<string, unknown>,
+  );
+}
+
+export async function readAgentOperationLog(
+  limit = 50,
+  userId?: GCSUserId,
+): Promise<AgentOperationLogRecord[]> {
+  const records = await readJSONL<AgentOperationLogRecord>(
+    objectPath(userId, 'agent_operation_log.jsonl'),
+  );
   return records.slice(-limit).reverse();
 }
 

@@ -3,15 +3,15 @@ from __future__ import annotations
 from datetime import datetime, timedelta
 from zoneinfo import ZoneInfo
 
-from recommend_agent.gcs import read_gcs_json
-from recommend_agent.tools._request_context import as_of_var
+from recommend_agent.gcs import read_user_gcs_json
+from recommend_agent.tools._request_context import as_of_var, resolve_user_id
 
 JST = ZoneInfo("Asia/Tokyo")
 
 
 def get_current_fitness(user_id: str = "default") -> dict:
     try:
-        data = read_gcs_json("activity_cache.json")
+        data = read_user_gcs_json("activity_cache.json", user_id=resolve_user_id(user_id))
         if data is None:
             return {
                 "status": "error",

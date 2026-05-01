@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server';
 import { getServerSession } from 'next-auth/next';
+import { agentFetch } from '@/lib/agent';
 import { authOptions } from '@/lib/auth';
 import { readUserSettings } from '@/lib/gcs-settings';
 
@@ -57,16 +58,19 @@ export type FetchLike = (input: string, init?: RequestInit) => Promise<Response>
 
 export async function forwardAppendToAgent(
   body: AppendRequestBody,
-  agentUrl: string,
+  userId: string,
   fetchImpl: FetchLike = fetch,
 ): Promise<AppendProxyOutcome> {
   let agentResponse: Response;
   try {
-    agentResponse = await fetchImpl(`${agentUrl}/api/agent/weekly-plan/append`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(body),
-    });
+    agentResponse = await agentFetch(
+      '/api/agent/weekly-plan/append',
+      {
+        method: 'POST',
+        body: JSON.stringify({ ...body, user_id: userId }),
+      },
+      fetchImpl,
+    );
   } catch (err) {
     console.error('[POST /api/weekly-plan/append] fetch failed:', err);
     return { status: 502, payload: { error: 'Failed to reach agent service.' } };
@@ -84,11 +88,11 @@ export async function forwardAppendToAgent(
 
 export async function POST(request: Request) {
   const session = await getServerSession(authOptions);
-  if (!session) {
+  if (!session?.user?.id) {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
   }
 
-  const settings = await readUserSettings();
+  const settings = await readUserSettings(session.user.id, { fallbackLegacy: true });
   if ((settings?.coach_autonomy ?? 'suggest') !== 'coach') {
     return NextResponse.json(
       { error: 'Coach autonomy must be enabled to append sessions.' },
@@ -106,7 +110,6 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: 'Invalid append payload' }, { status: 400 });
   }
 
-  const agentUrl = process.env.AGENT_API_URL || 'http://localhost:8000';
-  const outcome = await forwardAppendToAgent(body, agentUrl);
+  const outcome = await forwardAppendToAgent(body, session.user.id);
   return NextResponse.json(outcome.payload, { status: outcome.status });
 }

@@ -1,12 +1,13 @@
 """Tool to read recent activity data from GCS."""
 
 import json
-import os
 
-from recommend_agent.tools._request_context import activity_override_var
+from recommend_agent.config import get_gcs_bucket
+from recommend_agent.gcs import user_gcs_path
+from recommend_agent.tools._request_context import activity_override_var, resolve_user_id
 
 
-def get_recent_activities() -> dict:
+def get_recent_activities(user_id: str = "default") -> dict:
     """Retrieves recent cycling activity data and schema from GCS shared storage.
 
     Reads activity_cache.json (activity metrics including TSS, CTL, ATL, TSB)
@@ -28,25 +29,30 @@ def get_recent_activities() -> dict:
             },
         }
 
-    bucket_name = os.environ["GCS_BUCKET"]
-
     try:
         from google.cloud import storage
 
+        resolved_user_id = resolve_user_id(user_id)
         client = storage.Client()
-        bucket = client.bucket(bucket_name)
+        bucket = client.bucket(get_gcs_bucket())
 
-        activity_blob = bucket.blob("activity_cache.json")
+        activity_blob = bucket.blob(user_gcs_path("activity_cache.json", resolved_user_id))
+        if not activity_blob.exists():
+            activity_blob = bucket.blob("activity_cache.json")
         if not activity_blob.exists():
             return {
                 "status": "error",
-                "error_message": "Activity cache not found. The dashboard needs to be loaded first to generate activity data.",
+                "error_message": (
+                    "Activity cache not found. Load the dashboard first to generate activity data."
+                ),
             }
 
         activity_data = json.loads(activity_blob.download_as_text())
 
         schema_data = None
-        schema_blob = bucket.blob("schema.json")
+        schema_blob = bucket.blob(user_gcs_path("schema.json", resolved_user_id))
+        if not schema_blob.exists():
+            schema_blob = bucket.blob("schema.json")
         if schema_blob.exists():
             schema_data = json.loads(schema_blob.download_as_text())
 

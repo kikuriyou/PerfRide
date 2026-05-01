@@ -1,8 +1,9 @@
 from __future__ import annotations
 
 import json
-import os
 import urllib.request
+
+from recommend_agent.config import get_web_api_url
 
 
 def send_notification(
@@ -12,7 +13,7 @@ def send_notification(
     actions: list[dict] | None = None,
     metadata: dict | None = None,
 ) -> dict:
-    web_api_url = os.environ.get("WEB_API_URL", "http://web:3000")
+    web_api_url = get_web_api_url()
     url = f"{web_api_url}/api/notify"
 
     payload: dict = {

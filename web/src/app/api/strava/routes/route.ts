@@ -39,7 +39,7 @@ async function getValidAccessToken(
       },
       updated_at: new Date().toISOString(),
     };
-    await writeUserSettings(updated);
+    await writeUserSettings(updated, updated.user_id);
     return { token: updated.strava_auth.access_token, settings: updated };
   }
   return { token: settings.strava_auth.access_token, settings };
@@ -47,6 +47,7 @@ async function getValidAccessToken(
 
 export async function GET(request: NextRequest) {
   const searchParams = request.nextUrl.searchParams;
+  const userId = searchParams.get('user_id') ?? undefined;
   const lat = searchParams.get('lat');
   const lng = searchParams.get('lng');
   const radius = searchParams.get('radius') || '0.1';
@@ -55,7 +56,7 @@ export async function GET(request: NextRequest) {
     return NextResponse.json({ error: 'lat and lng are required' }, { status: 400 });
   }
 
-  const settings = await readUserSettings();
+  const settings = await readUserSettings(userId, { fallbackLegacy: true });
   if (!settings) {
     return NextResponse.json({ error: 'No user settings found' }, { status: 500 });
   }

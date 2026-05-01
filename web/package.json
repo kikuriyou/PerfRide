@@ -16,6 +16,7 @@
     "@google-cloud/storage": "^7.19.0",
     "@mapbox/polyline": "^1.2.1",
     "@types/leaflet": "^1.9.21",
+    "google-auth-library": "^9.15.1",
     "leaflet": "^1.9.4",
     "next": "^16.0.10",
     "next-auth": "^4.24.13",

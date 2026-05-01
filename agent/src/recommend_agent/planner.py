@@ -256,6 +256,7 @@ def generate_training_plan(
 
 
 def save_training_plan(plan: dict) -> None:
-    from recommend_agent.gcs import write_gcs_json
+    from recommend_agent.gcs import write_user_gcs_json
 
-    write_gcs_json("training_plan.json", plan)
+    user_id = str(plan.get("user_id", "default")) if isinstance(plan, dict) else "default"
+    write_user_gcs_json("training_plan.json", plan, user_id=user_id)

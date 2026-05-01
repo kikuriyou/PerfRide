@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 
+import { agentFetch, getAgentApiUrl } from '@/lib/agent';
 import { parsePostbackData } from '@/lib/notify';
 
 interface LineEvent {
@@ -20,16 +21,15 @@ export function resolveLineForwardUrl(
   agentUrl: string,
 ): string {
   if (kind === 'weekly_review') {
-    return new URL('/api/weekly-plan/respond', request.url).toString();
+    return `${agentUrl}/api/agent/weekly-plan/respond`;
   }
   return `${agentUrl}/recommend/respond`;
 }
 
 export async function POST(request: NextRequest) {
-  const agentUrl = process.env.AGENT_API_URL || 'http://localhost:8000';
-
   try {
     const body: LineWebhookBody = await request.json();
+    const agentUrl = getAgentApiUrl();
 
     const postbackEvents = body.events.filter((e) => e.type === 'postback' && e.postback?.data);
 
@@ -38,10 +38,10 @@ export async function POST(request: NextRequest) {
         const params = parsePostbackData(event.postback!.data);
         const forwardUrl = resolveLineForwardUrl(request, params.kind, agentUrl);
         if (params.kind === 'weekly_review') {
-          await fetch(forwardUrl, {
+          await agentFetch(new URL(forwardUrl).pathname, {
             method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({
+              user_id: params.user_id,
               review_id: params.review_id,
               action: params.action,
               expected_plan_revision: Number(params.plan_revision || '0'),
@@ -49,10 +49,10 @@ export async function POST(request: NextRequest) {
           });
           return;
         }
-        await fetch(forwardUrl, {
+        await agentFetch(new URL(forwardUrl).pathname, {
           method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
+            user_id: params.user_id,
             line_user_id: event.source.userId,
             action: params.action,
             reply_token: event.replyToken,

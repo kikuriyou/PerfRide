@@ -1,4 +1,8 @@
 import { NextResponse } from 'next/server';
+import { getServerSession } from 'next-auth/next';
+
+import { agentFetch } from '@/lib/agent';
+import { authOptions } from '@/lib/auth';
 
 interface RespondBody {
   session_id: string;
@@ -8,13 +12,16 @@ interface RespondBody {
 }
 
 export async function POST(request: Request) {
+  const session = await getServerSession(authOptions);
+  if (!session?.user?.id) {
+    return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+  }
+
   try {
     const body: RespondBody = await request.json();
-    const agentUrl = process.env.AGENT_API_URL || 'http://localhost:8000';
-    const resp = await fetch(`${agentUrl}/recommend/respond`, {
+    const resp = await agentFetch('/recommend/respond', {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(body),
+      body: JSON.stringify({ ...body, user_id: session.user.id }),
     });
 
     if (!resp.ok) {

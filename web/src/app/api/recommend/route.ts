@@ -1,6 +1,9 @@
 import { NextResponse } from 'next/server';
+import { getServerSession } from 'next-auth/next';
 
 import { readActivityCache, recomputeFitnessFromProcessed } from '@/app/dashboard/_lib/gcs';
+import { agentFetch } from '@/lib/agent';
+import { authOptions } from '@/lib/auth';
 import { parseJstClock } from '@/lib/jst-clock';
 import {
   readCoachDecision,
@@ -30,8 +33,8 @@ interface ActivityOverride {
   schema: unknown | null;
 }
 
-async function buildActivityOverride(asOf: Date): Promise<ActivityOverride | null> {
-  const cache = await readActivityCache();
+async function buildActivityOverride(userId: string, asOf: Date): Promise<ActivityOverride | null> {
+  const cache = await readActivityCache(userId);
   if (!cache) return null;
   const recomputed = recomputeFitnessFromProcessed(cache.activities, asOf);
   return {
@@ -99,10 +102,14 @@ export function priorityDecisionResponse(
 }
 
 export async function POST(request: Request) {
+  const session = await getServerSession(authOptions);
+  if (!session?.user?.id) {
+    return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+  }
+  const userId = session.user.id;
+
   try {
     const body: RecommendBody = await request.json();
-
-    const agentUrl = process.env.AGENT_API_URL || 'http://localhost:8000';
 
     let asOfParsed: Date | null = null;
     let activityOverride: ActivityOverride | null = null;
@@ -110,17 +117,17 @@ export async function POST(request: Request) {
       const parsed = parseJstClock(body.asOf);
       if (parsed) {
         asOfParsed = parsed;
-        activityOverride = await buildActivityOverride(parsed);
+        activityOverride = await buildActivityOverride(userId, parsed);
       }
     }
 
-    const userSettings = await readUserSettings();
+    const userSettings = await readUserSettings(userId, { fallbackLegacy: true });
     const coachAutonomy = body.coachAutonomy ?? userSettings?.coach_autonomy ?? 'suggest';
     const [trainingPlan, reviewStore, coachDecision, rawActivityCache] = await Promise.all([
-      readTrainingPlan(),
-      readWeeklyPlanReview(),
-      readCoachDecision(),
-      readActivityCache(),
+      readTrainingPlan(userId),
+      readWeeklyPlanReview(userId),
+      readCoachDecision(userId),
+      readActivityCache(userId),
     ]);
     const planContext = getCurrentPlanContext(
       coachAutonomy,
@@ -142,12 +149,10 @@ export async function POST(request: Request) {
       }
     }
 
-    const response = await fetch(`${agentUrl}/recommend`, {
+    const response = await agentFetch('/recommend', {
       method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-      },
       body: JSON.stringify({
+        user_id: userId,
         goal: body.goal || 'fitness_maintenance',
         ftp: body.ftp || 200,
         goal_custom: body.goalCustom || null,

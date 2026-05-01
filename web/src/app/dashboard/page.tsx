@@ -52,7 +52,7 @@ export default async function DashboardPage() {
     const userFtp = ftpCookie ? parseInt(ftpCookie.value, 10) || 200 : 200;
 
     try {
-      await writeActivityCache(allActivities, userFtp);
+      await writeActivityCache(session.user.id, allActivities, userFtp);
     } catch (cacheErr) {
       console.error('Failed to write activity cache to GCS:', cacheErr);
     }

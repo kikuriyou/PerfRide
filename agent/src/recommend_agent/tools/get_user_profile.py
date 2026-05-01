@@ -1,6 +1,7 @@
 from __future__ import annotations
 
-from recommend_agent.gcs import read_gcs_json
+from recommend_agent.gcs import read_user_gcs_json
+from recommend_agent.tools._request_context import resolve_user_id
 
 _ALLOWED_FIELDS = {
     "coach_autonomy",
@@ -15,7 +16,7 @@ _ALLOWED_FIELDS = {
 
 def get_user_profile(user_id: str = "default") -> dict:
     try:
-        data = read_gcs_json("user_settings.json")
+        data = read_user_gcs_json("settings.json", user_id=resolve_user_id(user_id))
         if data is None:
             return {
                 "status": "error",
@@ -56,6 +57,7 @@ def get_user_profile(user_id: str = "default") -> dict:
                 else {"lat": 0, "lon": 0}
             ),
         }
+        profile["user_id"] = resolve_user_id(user_id)
         return {"status": "success", "profile": profile}
 
     except Exception as e:

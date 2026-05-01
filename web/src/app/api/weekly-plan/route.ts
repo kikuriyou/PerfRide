@@ -20,15 +20,15 @@ async function referenceDateFromRequest(request: Request): Promise<{
 
 export async function GET(request: Request) {
   const session = await getServerSession(authOptions);
-  if (!session) {
+  if (!session?.user?.id) {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
   }
 
   try {
     const [settings, plan, reviewStore] = await Promise.all([
-      readUserSettings(),
-      readTrainingPlan(),
-      readWeeklyPlanReview(),
+      readUserSettings(session.user.id, { fallbackLegacy: true }),
+      readTrainingPlan(session.user.id),
+      readWeeklyPlanReview(session.user.id),
     ]);
 
     const coachAutonomy = settings?.coach_autonomy ?? 'suggest';

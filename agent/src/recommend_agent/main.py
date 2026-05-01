@@ -2,7 +2,6 @@
 
 import asyncio
 import json
-import os
 from datetime import UTC, date, datetime, timedelta
 from pathlib import Path
 from typing import Any
@@ -17,7 +16,10 @@ from google.genai import types
 from pydantic import BaseModel
 
 from recommend_agent.agent import build_agent, build_insight_agent
+from recommend_agent.config import get_gcs_bucket
 from recommend_agent.constants import RECOMMEND_MODE, USE_PERSONAL_DATA
+from recommend_agent.gcs import read_user_gcs_json, user_gcs_path
+from recommend_agent.operation_log import new_operation_run_id, record_agent_operation
 from recommend_agent.plan_store import (
     StalePlanRevisionError,
     WeekPayload,
@@ -35,7 +37,9 @@ from recommend_agent.tools._request_context import (
     parse_as_of,
     parse_week_start,
     reference_date_var,
+    resolve_user_id,
     resolve_week_start_and_as_of,
+    user_id_var,
     webhook_trace_id_var,
     week_start_var,
 )
@@ -74,14 +78,39 @@ CACHE_DIR.mkdir(exist_ok=True)
 CACHE_FILE = CACHE_DIR / "recommendation_cache.json"
 MAX_GENERATIONS_PER_DAY = 2
 
-# GCS config
-GCS_BUCKET = os.environ.get("GCS_BUCKET", "perfride-shared")
-
 # ADK session service
 session_service = InMemorySessionService()
 
 
+def _record_operation(
+    *,
+    status: str,
+    operation: str,
+    trigger: str,
+    message: str,
+    user_id: str | None = None,
+    run_id: str | None = None,
+    trace_id: str | None = None,
+    session_id: str | None = None,
+    activity_id: int | None = None,
+    metadata: dict[str, Any] | None = None,
+) -> None:
+    record_agent_operation(
+        status=status,  # type: ignore[arg-type]
+        operation=operation,
+        trigger=trigger,
+        message=message,
+        user_id=user_id,
+        run_id=run_id,
+        trace_id=trace_id,
+        session_id=session_id,
+        activity_id=activity_id,
+        metadata=metadata,
+    )
+
+
 class RecommendRequest(BaseModel):
+    user_id: str = "default"
     goal: str
     ftp: int = 200
     goal_custom: str | None = None
@@ -128,8 +157,8 @@ class RecommendResponse(BaseModel):
     created_at: str
     from_cache: bool = False
     workout_intervals: list[dict[str, str | int | float | None]] | None = None
-    totalDurationMin: int | None = None
-    workoutName: str | None = None
+    totalDurationMin: int | None = None  # noqa: N815
+    workoutName: str | None = None  # noqa: N815
     references: list[dict[str, str | None]] | None = None
     why_now: str | None = None
     based_on: str | None = None
@@ -138,6 +167,7 @@ class RecommendResponse(BaseModel):
 
 
 class WeeklyPlanRequest(BaseModel):
+    user_id: str = "default"
     trigger: str = "scheduler"
     week_start: str | None = None
     as_of: str | None = None
@@ -156,6 +186,7 @@ class WeeklyPlanResponse(BaseModel):
 
 
 class WeeklyPlanRespondRequest(BaseModel):
+    user_id: str = "default"
     review_id: str
     action: str
     user_message: str | None = None
@@ -163,6 +194,7 @@ class WeeklyPlanRespondRequest(BaseModel):
 
 
 class WeeklyPlanAppendRequest(BaseModel):
+    user_id: str = "default"
     session_date: str
     session_type: str
     duration_minutes: int = 0
@@ -172,6 +204,7 @@ class WeeklyPlanAppendRequest(BaseModel):
 
 
 class WeeklyPlanReplaceRequest(BaseModel):
+    user_id: str = "default"
     target_session_id: str
     session_date: str
     session_type: str
@@ -181,6 +214,16 @@ class WeeklyPlanReplaceRequest(BaseModel):
     workout_id: str | None = None
     status: str = "planned"
     expected_plan_revision: int
+
+
+class MyWhooshTestRequest(BaseModel):
+    user_id: str = "default"
+
+
+class MyWhooshTestResponse(BaseModel):
+    ok: bool
+    status: str
+    message: str
 
 
 class WeeklyPlanAppendResponse(BaseModel):
@@ -231,14 +274,7 @@ def _save_cache(data: dict[str, object]) -> None:
 
 def _load_activity_cache_json() -> dict | None:
     try:
-        from google.cloud import storage
-
-        client = storage.Client()
-        bucket = client.bucket(GCS_BUCKET)
-        blob = bucket.blob("activity_cache.json")
-        if not blob.exists():
-            return None
-        return json.loads(blob.download_as_text())
+        return read_user_gcs_json("activity_cache.json", user_id=resolve_user_id())
     except Exception:
         return None
 
@@ -309,9 +345,12 @@ def _get_activity_cache_mtime() -> datetime | None:
     try:
         from google.cloud import storage
 
+        user_id = resolve_user_id()
         client = storage.Client()
-        bucket = client.bucket(GCS_BUCKET)
-        blob = bucket.blob("activity_cache.json")
+        bucket = client.bucket(get_gcs_bucket())
+        blob = bucket.blob(user_gcs_path("activity_cache.json", user_id))
+        if not blob.exists():
+            blob = bucket.blob("activity_cache.json")
         blob.reload()
         return blob.updated
     except Exception:
@@ -548,8 +587,9 @@ def _weekly_request_message(
 
 async def _handle_insight(request: RecommendRequest) -> InsightResponse:
     """Detect signals via rules, then use LLM to generate user-facing text."""
+    user_id = resolve_user_id(request.user_id)
     as_of = _parse_as_of(request.as_of)
-    signals = detect_signals(override=request.activity_override, as_of=as_of)
+    signals = detect_signals(override=request.activity_override, as_of=as_of, user_id=user_id)
 
     if not signals:
         return InsightResponse(items=[])
@@ -559,7 +599,7 @@ async def _handle_insight(request: RecommendRequest) -> InsightResponse:
 
         session = await session_service.create_session(
             app_name="perfride_insight",
-            user_id="perfride_user",
+            user_id=user_id,
         )
 
         runner = Runner(
@@ -580,7 +620,7 @@ async def _handle_insight(request: RecommendRequest) -> InsightResponse:
 
         final_response = ""
         async for event in runner.run_async(
-            user_id="perfride_user",
+            user_id=user_id,
             session_id=session.id,
             new_message=content,
         ):
@@ -633,12 +673,79 @@ async def _handle_insight(request: RecommendRequest) -> InsightResponse:
 @app.post("/recommend")
 async def recommend_training(request: RecommendRequest) -> InsightResponse | RecommendResponse:
     """Generate training recommendation or insight signals."""
+    resolved_user_id = resolve_user_id(request.user_id)
+    user_token = user_id_var.set(resolved_user_id)
     if request.mode == "insight":
-        return await _handle_insight(request)
+        operation_run_id = new_operation_run_id("insight")
+        _record_operation(
+            status="triggered",
+            operation="insight",
+            trigger="dashboard",
+            message="Insight request received",
+            user_id=resolved_user_id,
+            run_id=operation_run_id,
+        )
+        try:
+            _record_operation(
+                status="started",
+                operation="insight",
+                trigger="dashboard",
+                message="Insight processing started",
+                user_id=resolved_user_id,
+                run_id=operation_run_id,
+            )
+            response = await _handle_insight(request)
+            _record_operation(
+                status="completed",
+                operation="insight",
+                trigger="dashboard",
+                message="Insight processing completed",
+                user_id=resolved_user_id,
+                run_id=operation_run_id,
+                metadata={"items": len(response.items)},
+            )
+            return response
+        except Exception as e:
+            _record_operation(
+                status="error",
+                operation="insight",
+                trigger="dashboard",
+                message=f"Insight processing failed: {e}",
+                user_id=resolved_user_id,
+                run_id=operation_run_id,
+            )
+            raise
+        finally:
+            user_id_var.reset(user_token)
 
     effective_mode = request.recommend_mode or RECOMMEND_MODE
     effective_personal = (
         request.use_personal_data if request.use_personal_data is not None else USE_PERSONAL_DATA
+    )
+    trigger = (
+        "coach_daily" if effective_personal and request.coach_autonomy == "coach" else "dashboard"
+    )
+    operation_run_id = new_operation_run_id("daily_recommend")
+    _record_operation(
+        status="triggered",
+        operation="daily_recommend",
+        trigger=trigger,
+        message="Recommendation request received",
+        user_id=resolved_user_id,
+        run_id=operation_run_id,
+        metadata={
+            "mode": effective_mode,
+            "use_personal_data": effective_personal,
+            "coach_autonomy": request.coach_autonomy,
+        },
+    )
+    _record_operation(
+        status="started",
+        operation="daily_recommend",
+        trigger=trigger,
+        message="Recommendation processing started",
+        user_id=resolved_user_id,
+        run_id=operation_run_id,
     )
 
     as_of = _parse_as_of(request.as_of)
@@ -656,26 +763,48 @@ async def recommend_training(request: RecommendRequest) -> InsightResponse | Rec
         or cache.get("ftp") != request.ftp
         or cache.get("coach_autonomy") != request.coach_autonomy
         or cache.get("plan_context_key") != request.plan_context_key
+        or cache.get("user_id") not in (None, resolved_user_id)
     ):
         cache = None
 
     if cache and not _should_regenerate(cache, effective_personal):
-        if effective_personal and _should_trigger_ambient():
-            asyncio.create_task(_run_ambient_flow())
-        return RecommendResponse(
-            summary=str(cache.get("summary", "")),
-            detail=str(cache.get("detail", "")),
-            created_at=str(cache.get("created_at", "")),
-            from_cache=True,
-            workout_intervals=cache.get("workout_intervals"),  # type: ignore[arg-type]
-            totalDurationMin=cache.get("totalDurationMin"),  # type: ignore[arg-type]
-            workoutName=cache.get("workoutName"),  # type: ignore[arg-type]
-            references=cache.get("references"),  # type: ignore[arg-type]
-            why_now=cache.get("why_now"),  # type: ignore[arg-type]
-            based_on=cache.get("based_on"),  # type: ignore[arg-type]
-            plan_context_key=cache.get("plan_context_key"),  # type: ignore[arg-type]
-            proposed_session=_proposed_session_from(cache.get("proposed_session")),
-        )
+        try:
+            if effective_personal and _should_trigger_ambient():
+                ambient_run_id = new_operation_run_id("ambient_flow")
+                _record_operation(
+                    status="triggered",
+                    operation="ambient_flow",
+                    trigger="dashboard",
+                    message="Ambient flow trigger turned on",
+                    user_id=resolved_user_id,
+                    run_id=ambient_run_id,
+                )
+                asyncio.create_task(_run_ambient_flow(resolved_user_id, run_id=ambient_run_id))
+            _record_operation(
+                status="completed",
+                operation="daily_recommend",
+                trigger=trigger,
+                message="Recommendation returned from cache",
+                user_id=resolved_user_id,
+                run_id=operation_run_id,
+                metadata={"from_cache": True},
+            )
+            return RecommendResponse(
+                summary=str(cache.get("summary", "")),
+                detail=str(cache.get("detail", "")),
+                created_at=str(cache.get("created_at", "")),
+                from_cache=True,
+                workout_intervals=cache.get("workout_intervals"),  # type: ignore[arg-type]
+                totalDurationMin=cache.get("totalDurationMin"),  # type: ignore[arg-type]
+                workoutName=cache.get("workoutName"),  # type: ignore[arg-type]
+                references=cache.get("references"),  # type: ignore[arg-type]
+                why_now=cache.get("why_now"),  # type: ignore[arg-type]
+                based_on=cache.get("based_on"),  # type: ignore[arg-type]
+                plan_context_key=cache.get("plan_context_key"),  # type: ignore[arg-type]
+                proposed_session=_proposed_session_from(cache.get("proposed_session")),
+            )
+        finally:
+            user_id_var.reset(user_token)
 
     goal_text = _goal_text(request.goal, request.goal_custom)
 
@@ -713,16 +842,11 @@ async def recommend_training(request: RecommendRequest) -> InsightResponse | Rec
         reset_search_count()
         set_search_limit(effective_mode)
 
-        trigger = (
-            "coach_daily"
-            if effective_personal and request.coach_autonomy == "coach"
-            else "dashboard"
-        )
         agent = build_agent(effective_mode, effective_personal, trigger=trigger)
 
         session = await session_service.create_session(
             app_name="perfride_recommend",
-            user_id="perfride_user",
+            user_id=resolved_user_id,
         )
 
         runner = Runner(
@@ -738,7 +862,7 @@ async def recommend_training(request: RecommendRequest) -> InsightResponse | Rec
 
         final_response = ""
         async for event in runner.run_async(
-            user_id="perfride_user",
+            user_id=resolved_user_id,
             session_id=session.id,
             new_message=content,
         ):
@@ -786,12 +910,33 @@ async def recommend_training(request: RecommendRequest) -> InsightResponse | Rec
             "why_now": parsed.get("why_now"),
             "based_on": parsed.get("based_on"),
             "proposed_session": parsed.get("proposed_session"),
+            "user_id": resolved_user_id,
         }
         if not bypass_cache:
             _save_cache(cache_data)
 
         if effective_personal and not bypass_cache and _should_trigger_ambient():
-            asyncio.create_task(_run_ambient_flow())
+            ambient_run_id = new_operation_run_id("ambient_flow")
+            _record_operation(
+                status="triggered",
+                operation="ambient_flow",
+                trigger="dashboard",
+                message="Ambient flow trigger turned on",
+                user_id=resolved_user_id,
+                run_id=ambient_run_id,
+            )
+            asyncio.create_task(_run_ambient_flow(resolved_user_id, run_id=ambient_run_id))
+
+        _record_operation(
+            status="completed",
+            operation="daily_recommend",
+            trigger=trigger,
+            message="Recommendation processing completed",
+            user_id=resolved_user_id,
+            run_id=operation_run_id,
+            session_id=session.id,
+            metadata={"from_cache": False},
+        )
 
         return RecommendResponse(
             summary=parsed.get("summary", ""),
@@ -809,6 +954,14 @@ async def recommend_training(request: RecommendRequest) -> InsightResponse | Rec
         )
 
     except Exception as e:
+        _record_operation(
+            status="error",
+            operation="daily_recommend",
+            trigger=trigger,
+            message=f"Recommendation processing failed: {e}",
+            user_id=resolved_user_id,
+            run_id=operation_run_id,
+        )
         raise HTTPException(
             status_code=500,
             detail=f"Failed to generate recommendation: {e}",
@@ -818,15 +971,18 @@ async def recommend_training(request: RecommendRequest) -> InsightResponse | Rec
         as_of_var.reset(as_of_token)
         week_start_var.reset(week_start_token)
         reference_date_var.reset(reference_date_token)
+        user_id_var.reset(user_token)
 
 
 class WebhookRecommendRequest(BaseModel):
+    user_id: str = "default"
     trigger: str = "webhook"
     activity_id: int | None = None
     trace_id: str | None = None
 
 
 class RespondRequest(BaseModel):
+    user_id: str = "default"
     session_id: str
     action: str
     user_message: str | None = None
@@ -849,7 +1005,7 @@ def _save_ambient_state(session_id: str, trigger: str) -> None:
 
     activity_mtime = _get_activity_cache_mtime()
     write_gcs_json(
-        "ambient_state.json",
+        user_gcs_path("ambient_state.json", resolve_user_id()),
         {
             "last_run_at": now_jst_iso(),
             "activity_cache_mtime": activity_mtime.isoformat() if activity_mtime else None,
@@ -868,7 +1024,9 @@ def _should_trigger_ambient() -> bool:
         activity_mtime = _get_activity_cache_mtime()
         if activity_mtime is None:
             return False
-        state = read_gcs_json("ambient_state.json")
+        state = read_gcs_json(user_gcs_path("ambient_state.json", resolve_user_id()))
+        if state is None:
+            state = read_gcs_json("ambient_state.json")
         if state is None:
             return True
         stored_mtime = state.get("activity_cache_mtime")
@@ -879,16 +1037,34 @@ def _should_trigger_ambient() -> bool:
         return False
 
 
-async def _run_ambient_flow() -> None:
+async def _run_ambient_flow(user_id: str = "default", *, run_id: str | None = None) -> None:
     global _ambient_running
     if _ambient_running:
+        _record_operation(
+            status="skipped",
+            operation="ambient_flow",
+            trigger="dashboard",
+            message="Ambient flow skipped because another run is already active",
+            user_id=user_id,
+            run_id=run_id,
+        )
         return
     _ambient_running = True
+    resolved_user_id = resolve_user_id(user_id)
+    user_token = user_id_var.set(resolved_user_id)
     try:
+        _record_operation(
+            status="started",
+            operation="ambient_flow",
+            trigger="dashboard",
+            message="Ambient flow processing started",
+            user_id=resolved_user_id,
+            run_id=run_id,
+        )
         agent = build_agent(mode=RECOMMEND_MODE, use_personal_data=True, trigger="webhook")
         session = await session_service.create_session(
             app_name="perfride_webhook",
-            user_id="perfride_user",
+            user_id=resolved_user_id,
         )
         _webhook_sessions["latest"] = session.id
 
@@ -911,7 +1087,7 @@ async def _run_ambient_flow() -> None:
         )
 
         async for _event in runner.run_async(
-            user_id="perfride_user",
+            user_id=resolved_user_id,
             session_id=session.id,
             new_message=content,
         ):
@@ -919,14 +1095,32 @@ async def _run_ambient_flow() -> None:
 
         _save_ambient_state(session.id, "dashboard")
         print(f"[ambient] Completed via dashboard trigger, session={session.id}")
+        _record_operation(
+            status="completed",
+            operation="ambient_flow",
+            trigger="dashboard",
+            message="Ambient flow processing completed",
+            user_id=resolved_user_id,
+            run_id=run_id,
+            session_id=session.id,
+        )
     except Exception as e:
         print(f"[ambient] Flow failed: {e}")
+        _record_operation(
+            status="error",
+            operation="ambient_flow",
+            trigger="dashboard",
+            message=f"Ambient flow processing failed: {e}",
+            user_id=resolved_user_id,
+            run_id=run_id,
+        )
     finally:
+        user_id_var.reset(user_token)
         _ambient_running = False
 
 
-def _require_profile() -> dict[str, Any]:
-    result = get_user_profile()
+def _require_profile(user_id: str | None = None) -> dict[str, Any]:
+    result = get_user_profile(resolve_user_id(user_id))
     if result.get("status") != "success" or not isinstance(result.get("profile"), dict):
         raise HTTPException(status_code=500, detail="Failed to load user profile")
     return dict(result["profile"])
@@ -939,15 +1133,29 @@ async def _run_weekly_agent(
     effective_as_of: datetime,
     baseline_week: WeekPayload,
     user_message: str | None = None,
+    operation_run_id: str | None = None,
+    operation_trigger: str = "weekly",
 ) -> tuple[str, str]:
+    resolved_user_id = resolve_user_id(str(profile.get("user_id", "")))
     as_of_token = as_of_var.set(effective_as_of)
     week_start_token = week_start_var.set(week_start_date)
     reference_date_token = reference_date_var.set(week_start_date)
+    user_token = user_id_var.set(resolved_user_id)
     try:
         agent = build_agent(RECOMMEND_MODE, True, trigger="weekly")
         session = await session_service.create_session(
             app_name="perfride_weekly_plan",
-            user_id="perfride_user",
+            user_id=resolved_user_id,
+        )
+        _record_operation(
+            status="started",
+            operation="weekly_plan",
+            trigger=operation_trigger,
+            message="Weekly plan processing started",
+            user_id=resolved_user_id,
+            run_id=operation_run_id,
+            session_id=session.id,
+            metadata={"week_start": week_start_date.isoformat()},
         )
         runner = Runner(
             agent=agent,
@@ -971,17 +1179,42 @@ async def _run_weekly_agent(
 
         final_response = ""
         async for event in runner.run_async(
-            user_id="perfride_user",
+            user_id=resolved_user_id,
             session_id=session.id,
             new_message=content,
         ):
             if event.is_final_response() and event.content and event.content.parts:
                 final_response = event.content.parts[0].text
+        _record_operation(
+            status="completed",
+            operation="weekly_plan",
+            trigger=operation_trigger,
+            message="Weekly plan processing completed",
+            user_id=resolved_user_id,
+            run_id=operation_run_id,
+            session_id=session.id,
+            metadata={
+                "week_start": week_start_date.isoformat(),
+                "response_chars": len(final_response),
+            },
+        )
         return session.id, final_response
+    except Exception as e:
+        _record_operation(
+            status="error",
+            operation="weekly_plan",
+            trigger=operation_trigger,
+            message=f"Weekly plan processing failed: {e}",
+            user_id=resolved_user_id,
+            run_id=operation_run_id,
+            metadata={"week_start": week_start_date.isoformat()},
+        )
+        raise
     finally:
         as_of_var.reset(as_of_token)
         week_start_var.reset(week_start_token)
         reference_date_var.reset(reference_date_token)
+        user_id_var.reset(user_token)
 
 
 async def _create_or_update_weekly_review(
@@ -991,9 +1224,35 @@ async def _create_or_update_weekly_review(
     force: bool,
     user_message: str | None = None,
     apply_immediately: bool = True,
+    trigger: str = "weekly",
 ) -> WeeklyPlanResponse:
     profile = _require_profile()
+    operation_run_id = new_operation_run_id("weekly_plan")
+    operation_user_id = str(profile.get("user_id", "default"))
+    _record_operation(
+        status="triggered",
+        operation="weekly_plan",
+        trigger=trigger,
+        message="Weekly plan trigger turned on",
+        user_id=operation_user_id,
+        run_id=operation_run_id,
+        metadata={
+            "week_start": week_start_date.isoformat(),
+            "force": force,
+            "apply_immediately": apply_immediately,
+            "has_user_message": user_message is not None,
+        },
+    )
     if profile.get("coach_autonomy") != "coach":
+        _record_operation(
+            status="skipped",
+            operation="weekly_plan",
+            trigger=trigger,
+            message="Weekly plan skipped because coach mode is disabled",
+            user_id=operation_user_id,
+            run_id=operation_run_id,
+            metadata={"week_start": week_start_date.isoformat()},
+        )
         return WeeklyPlanResponse(
             status="skipped",
             week_start=week_start_date.isoformat(),
@@ -1029,6 +1288,8 @@ async def _create_or_update_weekly_review(
         effective_as_of=effective_as_of,
         baseline_week=baseline_week,
         user_message=user_message,
+        operation_run_id=operation_run_id,
+        operation_trigger=trigger,
     )
     if apply_immediately:
         draft = coerce_weekly_draft(
@@ -1251,13 +1512,26 @@ async def _approve_weekly_review(
 @app.post("/api/agent/recommend")
 async def recommend_webhook(request: WebhookRecommendRequest):
     """Webhook-triggered recommendation (called by Next.js after Strava webhook)."""
+    resolved_user_id = resolve_user_id(request.user_id)
+    user_token = user_id_var.set(resolved_user_id)
     trace_id = request.trace_id or (
         f"activity-{request.activity_id or 'unknown'}-{int(datetime.now(UTC).timestamp())}"
     )
+    operation_run_id = trace_id
     trace_token = webhook_trace_id_var.set(trace_id)
     _log_webhook_flow(
         trace_id,
         f"Received request: trigger={request.trigger} activity_id={request.activity_id}",
+    )
+    _record_operation(
+        status="triggered",
+        operation="webhook_recommend",
+        trigger=request.trigger,
+        message="Webhook recommendation request received",
+        user_id=resolved_user_id,
+        run_id=operation_run_id,
+        trace_id=trace_id,
+        activity_id=request.activity_id,
     )
 
     try:
@@ -1270,10 +1544,21 @@ async def recommend_webhook(request: WebhookRecommendRequest):
 
         session = await session_service.create_session(
             app_name="perfride_webhook",
-            user_id="perfride_user",
+            user_id=resolved_user_id,
         )
         _webhook_sessions["latest"] = session.id
         _log_webhook_flow(trace_id, f"Session created: session_id={session.id}")
+        _record_operation(
+            status="started",
+            operation="webhook_recommend",
+            trigger=request.trigger,
+            message="Webhook recommendation processing started",
+            user_id=resolved_user_id,
+            run_id=operation_run_id,
+            trace_id=trace_id,
+            session_id=session.id,
+            activity_id=request.activity_id,
+        )
 
         runner = Runner(
             agent=agent,
@@ -1298,7 +1583,7 @@ async def recommend_webhook(request: WebhookRecommendRequest):
         final_response = ""
         _log_webhook_flow(trace_id, "Runner started")
         async for event in runner.run_async(
-            user_id="perfride_user",
+            user_id=resolved_user_id,
             session_id=session.id,
             new_message=content,
         ):
@@ -1309,6 +1594,18 @@ async def recommend_webhook(request: WebhookRecommendRequest):
         _log_webhook_flow(
             trace_id,
             f"Runner completed: session_id={session.id} response_chars={len(final_response)}",
+        )
+        _record_operation(
+            status="completed",
+            operation="webhook_recommend",
+            trigger=request.trigger,
+            message="Webhook recommendation processing completed",
+            user_id=resolved_user_id,
+            run_id=operation_run_id,
+            trace_id=trace_id,
+            session_id=session.id,
+            activity_id=request.activity_id,
+            metadata={"response_chars": len(final_response)},
         )
         parsed = _parse_agent_json_response(final_response) or {}
         proposed = _proposed_session_from(parsed.get("proposed_session"), request.activity_id)
@@ -1325,129 +1622,205 @@ async def recommend_webhook(request: WebhookRecommendRequest):
         }
     except Exception as e:
         _log_webhook_flow(trace_id, f"Flow failed: {e}")
+        _record_operation(
+            status="error",
+            operation="webhook_recommend",
+            trigger=request.trigger,
+            message=f"Webhook recommendation processing failed: {e}",
+            user_id=resolved_user_id,
+            run_id=operation_run_id,
+            trace_id=trace_id,
+            activity_id=request.activity_id,
+        )
         raise
     finally:
         webhook_trace_id_var.reset(trace_token)
+        user_id_var.reset(user_token)
+
+
+@app.post("/api/agent/mywhoosh/test", response_model=MyWhooshTestResponse)
+async def test_mywhoosh_connection(request: MyWhooshTestRequest):
+    from recommend_agent.tools.build_and_register_workout import test_mywhoosh_login
+
+    return test_mywhoosh_login(resolve_user_id(request.user_id))
 
 
 @app.post("/recommend/respond")
 async def recommend_respond(request: RespondRequest):
     """Handle user response to a notification (feedback loop)."""
-    agent = build_agent(
-        mode=RECOMMEND_MODE,
-        use_personal_data=True,
-        trigger="webhook",
-    )
-
-    runner = Runner(
-        agent=agent,
-        app_name="perfride_webhook",
-        session_service=session_service,
-    )
-
-    content = types.Content(
-        role="user",
-        parts=[
-            types.Part.from_text(
-                text=(
-                    f"ユーザーの応答: {request.action}\n"
-                    f"メッセージ: {request.user_message or 'なし'}\n"
-                    f"修正回数: {request.modification_count}/3"
-                )
-            )
-        ],
-    )
-
-    final_response = ""
-    async for event in runner.run_async(
-        user_id="perfride_user",
+    resolved_user_id = resolve_user_id(request.user_id)
+    user_token = user_id_var.set(resolved_user_id)
+    operation_run_id = new_operation_run_id("daily_response")
+    _record_operation(
+        status="triggered",
+        operation="daily_response",
+        trigger="user_response",
+        message="Daily recommendation response received",
+        user_id=resolved_user_id,
+        run_id=operation_run_id,
         session_id=request.session_id,
-        new_message=content,
-    ):
-        if event.is_final_response() and event.content and event.content.parts:
-            final_response = event.content.parts[0].text
+        metadata={"action": request.action},
+    )
+    try:
+        _record_operation(
+            status="started",
+            operation="daily_response",
+            trigger="user_response",
+            message="Daily recommendation response processing started",
+            user_id=resolved_user_id,
+            run_id=operation_run_id,
+            session_id=request.session_id,
+        )
+        agent = build_agent(
+            mode=RECOMMEND_MODE,
+            use_personal_data=True,
+            trigger="webhook",
+        )
 
-    return {
-        "status": "ok",
-        "session_id": request.session_id,
-        "response": final_response,
-    }
+        runner = Runner(
+            agent=agent,
+            app_name="perfride_webhook",
+            session_service=session_service,
+        )
+
+        content = types.Content(
+            role="user",
+            parts=[
+                types.Part.from_text(
+                    text=(
+                        f"ユーザーの応答: {request.action}\n"
+                        f"メッセージ: {request.user_message or 'なし'}\n"
+                        f"修正回数: {request.modification_count}/3"
+                    )
+                )
+            ],
+        )
+
+        final_response = ""
+        async for event in runner.run_async(
+            user_id=resolved_user_id,
+            session_id=request.session_id,
+            new_message=content,
+        ):
+            if event.is_final_response() and event.content and event.content.parts:
+                final_response = event.content.parts[0].text
+
+        _record_operation(
+            status="completed",
+            operation="daily_response",
+            trigger="user_response",
+            message="Daily recommendation response processing completed",
+            user_id=resolved_user_id,
+            run_id=operation_run_id,
+            session_id=request.session_id,
+            metadata={"response_chars": len(final_response)},
+        )
+        return {
+            "status": "ok",
+            "session_id": request.session_id,
+            "response": final_response,
+        }
+    except Exception as e:
+        _record_operation(
+            status="error",
+            operation="daily_response",
+            trigger="user_response",
+            message=f"Daily recommendation response processing failed: {e}",
+            user_id=resolved_user_id,
+            run_id=operation_run_id,
+            session_id=request.session_id,
+        )
+        raise
+    finally:
+        user_id_var.reset(user_token)
 
 
 @app.post("/api/agent/weekly-plan")
 async def weekly_plan(request: WeeklyPlanRequest) -> WeeklyPlanResponse:
-    if request.week_start is not None and parse_week_start(request.week_start) is None:
-        raise HTTPException(status_code=400, detail="week_start must be a Monday in YYYY-MM-DD")
-    if request.as_of is not None and parse_as_of(request.as_of) is None:
-        raise HTTPException(status_code=400, detail="as_of must be a valid ISO datetime")
-    week_start_date, effective_as_of = resolve_week_start_and_as_of(
-        request.week_start,
-        request.as_of,
-    )
-    return await _create_or_update_weekly_review(
-        week_start_date=week_start_date,
-        effective_as_of=effective_as_of,
-        force=request.force,
-    )
+    user_token = user_id_var.set(resolve_user_id(request.user_id))
+    try:
+        if request.week_start is not None and parse_week_start(request.week_start) is None:
+            raise HTTPException(status_code=400, detail="week_start must be a Monday in YYYY-MM-DD")
+        if request.as_of is not None and parse_as_of(request.as_of) is None:
+            raise HTTPException(status_code=400, detail="as_of must be a valid ISO datetime")
+        week_start_date, effective_as_of = resolve_week_start_and_as_of(
+            request.week_start,
+            request.as_of,
+        )
+        return await _create_or_update_weekly_review(
+            week_start_date=week_start_date,
+            effective_as_of=effective_as_of,
+            force=request.force,
+            trigger=request.trigger,
+        )
+    finally:
+        user_id_var.reset(user_token)
 
 
 @app.post("/api/agent/weekly-plan/respond", response_model=None)
 async def weekly_plan_respond(
     request: WeeklyPlanRespondRequest,
 ) -> WeeklyPlanResponse | JSONResponse:
-    review = get_review(request.review_id)
-    if review is None:
-        raise HTTPException(status_code=404, detail="Weekly review not found")
+    user_token = user_id_var.set(resolve_user_id(request.user_id))
+    try:
+        review = get_review(request.review_id)
+        if review is None:
+            raise HTTPException(status_code=404, detail="Weekly review not found")
 
-    if review.get("plan_revision") != request.expected_plan_revision:
-        return _conflict_response(
-            {
-                "week_start": str(review.get("week_start", "")),
-                "plan_revision": review["plan_revision"]
-                if isinstance(review.get("plan_revision"), int)
-                else None,
-                "message": "stale plan revision",
-            }
-        )
+        if review.get("plan_revision") != request.expected_plan_revision:
+            return _conflict_response(
+                {
+                    "week_start": str(review.get("week_start", "")),
+                    "plan_revision": review["plan_revision"]
+                    if isinstance(review.get("plan_revision"), int)
+                    else None,
+                    "message": "stale plan revision",
+                }
+            )
 
-    if request.action == "approve":
-        response = await _approve_weekly_review(
-            request.review_id,
-            expected_plan_revision=request.expected_plan_revision,
-        )
-        if response.status == "conflict":
-            return _conflict_response(response.model_dump())
-        return response
-    if request.action == "modify":
-        week_start_value = review.get("week_start")
-        if not isinstance(week_start_value, str):
-            raise HTTPException(status_code=500, detail="Weekly review week_start is invalid")
-        week_start_date = date.fromisoformat(week_start_value)
-        _, effective_as_of = resolve_week_start_and_as_of(week_start_value, None)
-        return await _create_or_update_weekly_review(
-            week_start_date=week_start_date,
-            effective_as_of=effective_as_of,
-            force=True,
-            user_message=request.user_message,
-            apply_immediately=False,
-        )
-    if request.action == "dismiss":
-        dismissed_at = datetime.now(JST).isoformat()
-        update_review_status(
-            request.review_id,
-            "dismissed",
-            dismissed_at=dismissed_at,
-        )
-        return WeeklyPlanResponse(
-            status="dismissed",
-            week_start=str(review.get("week_start", "")),
-            review_id=request.review_id,
-            plan_revision=(
-                review["plan_revision"] if isinstance(review.get("plan_revision"), int) else None
-            ),
-        )
+        if request.action == "approve":
+            response = await _approve_weekly_review(
+                request.review_id,
+                expected_plan_revision=request.expected_plan_revision,
+            )
+            if response.status == "conflict":
+                return _conflict_response(response.model_dump())
+            return response
+        if request.action == "modify":
+            week_start_value = review.get("week_start")
+            if not isinstance(week_start_value, str):
+                raise HTTPException(status_code=500, detail="Weekly review week_start is invalid")
+            week_start_date = date.fromisoformat(week_start_value)
+            _, effective_as_of = resolve_week_start_and_as_of(week_start_value, None)
+            return await _create_or_update_weekly_review(
+                week_start_date=week_start_date,
+                effective_as_of=effective_as_of,
+                force=True,
+                user_message=request.user_message,
+                apply_immediately=False,
+                trigger="user_response",
+            )
+        if request.action == "dismiss":
+            dismissed_at = datetime.now(JST).isoformat()
+            update_review_status(
+                request.review_id,
+                "dismissed",
+                dismissed_at=dismissed_at,
+            )
+            return WeeklyPlanResponse(
+                status="dismissed",
+                week_start=str(review.get("week_start", "")),
+                review_id=request.review_id,
+                plan_revision=(
+                    review["plan_revision"]
+                    if isinstance(review.get("plan_revision"), int)
+                    else None
+                ),
+            )
 
-    raise HTTPException(status_code=400, detail=f"Unknown weekly action: {request.action}")
+        raise HTTPException(status_code=400, detail=f"Unknown weekly action: {request.action}")
+    finally:
+        user_id_var.reset(user_token)
 
 
 @app.post("/api/agent/weekly-plan/append", response_model=None)
@@ -1463,6 +1836,7 @@ async def weekly_plan_append(
         notes=request.notes,
         mode="append",
         expected_plan_revision=request.expected_plan_revision,
+        user_id=request.user_id,
     )
 
     status = result.get("status")
@@ -1497,6 +1871,7 @@ async def weekly_plan_replace(
         mode="replace",
         target_session_id=request.target_session_id,
         expected_plan_revision=request.expected_plan_revision,
+        user_id=request.user_id,
     )
 
     status = result.get("status")

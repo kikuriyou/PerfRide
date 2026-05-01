@@ -48,6 +48,7 @@ describe('isAppendRequestBody', () => {
 
 describe('forwardAppendToAgent', () => {
   it('forwards the body to the agent and returns its payload on 2xx', async () => {
+    vi.stubEnv('AGENT_API_URL', 'http://agent');
     const fetchMock = vi.fn().mockResolvedValue(
       makeResponse({
         ok: true,
@@ -55,20 +56,22 @@ describe('forwardAppendToAgent', () => {
       }),
     );
 
-    const outcome = await forwardAppendToAgent(validBody, 'http://agent', fetchMock);
+    const outcome = await forwardAppendToAgent(validBody, '123', fetchMock);
 
     expect(fetchMock).toHaveBeenCalledWith(
       'http://agent/api/agent/weekly-plan/append',
       expect.objectContaining({
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: expect.any(Headers),
       }),
     );
+    expect(JSON.parse(fetchMock.mock.calls[0][1].body as string)).toMatchObject({ user_id: '123' });
     expect(outcome.status).toBe(200);
     expect(outcome.payload).toEqual({ status: 'success', plan_revision: 5 });
   });
 
   it('passes through non-2xx status with the agent detail message', async () => {
+    vi.stubEnv('AGENT_API_URL', 'http://agent');
     const fetchMock = vi.fn().mockResolvedValue(
       makeResponse({
         ok: false,
@@ -77,13 +80,14 @@ describe('forwardAppendToAgent', () => {
       }),
     );
 
-    const outcome = await forwardAppendToAgent(validBody, 'http://agent', fetchMock);
+    const outcome = await forwardAppendToAgent(validBody, '123', fetchMock);
 
     expect(outcome.status).toBe(400);
     expect((outcome.payload as { error: string }).error).toContain('outside');
   });
 
   it('passes through HTTP 409 conflict payloads', async () => {
+    vi.stubEnv('AGENT_API_URL', 'http://agent');
     const fetchMock = vi.fn().mockResolvedValue(
       makeResponse({
         ok: false,
@@ -98,7 +102,7 @@ describe('forwardAppendToAgent', () => {
       }),
     );
 
-    const outcome = await forwardAppendToAgent(validBody, 'http://agent', fetchMock);
+    const outcome = await forwardAppendToAgent(validBody, '123', fetchMock);
 
     expect(outcome.status).toBe(409);
     expect(outcome.payload).toEqual({
@@ -109,8 +113,9 @@ describe('forwardAppendToAgent', () => {
   });
 
   it('returns 502 with a descriptive error when the agent is unreachable', async () => {
+    vi.stubEnv('AGENT_API_URL', 'http://agent');
     const fetchMock = vi.fn().mockRejectedValue(new Error('connection refused'));
-    const outcome = await forwardAppendToAgent(validBody, 'http://agent', fetchMock);
+    const outcome = await forwardAppendToAgent(validBody, '123', fetchMock);
     expect(outcome.status).toBe(502);
     expect((outcome.payload as { error: string }).error).toMatch(/agent service/);
   });

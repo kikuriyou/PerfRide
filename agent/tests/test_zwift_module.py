@@ -20,6 +20,12 @@ from zwift.zwo_templates import (
 )
 
 
+@pytest.fixture(autouse=True)
+def _mywhoosh_env(monkeypatch):
+    monkeypatch.setenv("MYWHOOSH_EMAIL", "test@example.com")
+    monkeypatch.setenv("MYWHOOSH_PASSWORD", "secret")
+
+
 class TestZwoTemplates:
     def test_vo2max_75min(self):
         intervals = vo2max(75, 260)

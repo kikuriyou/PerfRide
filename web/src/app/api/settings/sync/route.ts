@@ -70,7 +70,7 @@ export async function GET() {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
   }
 
-  const settings = await readUserSettings();
+  const settings = await readUserSettings(session.user.id, { fallbackLegacy: true });
   return NextResponse.json({ settings });
 }
 
@@ -83,7 +83,7 @@ export async function POST(request: Request) {
 
   try {
     const body: SyncBody = await request.json();
-    const existing = await readUserSettings();
+    const existing = await readUserSettings(session.user.id, { fallbackLegacy: true });
     const current = existing ?? baseSettings(session.user.id);
 
     const merged: GCSUserSettings = {
@@ -119,7 +119,7 @@ export async function POST(request: Request) {
       updated_at: new Date().toISOString(),
     };
 
-    await writeUserSettings(merged);
+    await writeUserSettings(merged, session.user.id);
 
     return NextResponse.json({ ok: true, settings: merged });
   } catch (error) {

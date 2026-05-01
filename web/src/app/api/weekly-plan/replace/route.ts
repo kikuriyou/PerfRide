@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server';
 import { getServerSession } from 'next-auth/next';
+import { agentFetch } from '@/lib/agent';
 import { authOptions } from '@/lib/auth';
 import { readUserSettings } from '@/lib/gcs-settings';
 
@@ -55,10 +56,10 @@ function normalizeAgentPayload(status: number, payload: unknown): { status: numb
 
 export async function POST(request: Request) {
   const session = await getServerSession(authOptions);
-  if (!session) {
+  if (!session?.user?.id) {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
   }
-  const settings = await readUserSettings();
+  const settings = await readUserSettings(session.user.id, { fallbackLegacy: true });
   if ((settings?.coach_autonomy ?? 'suggest') !== 'coach') {
     return NextResponse.json(
       { error: 'Coach autonomy must be enabled to replace sessions.' },
@@ -71,11 +72,9 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: 'Invalid replace payload' }, { status: 400 });
   }
 
-  const agentUrl = process.env.AGENT_API_URL || 'http://localhost:8000';
-  const resp = await fetch(`${agentUrl}/api/agent/weekly-plan/replace`, {
+  const resp = await agentFetch('/api/agent/weekly-plan/replace', {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(body),
+    body: JSON.stringify({ ...body, user_id: session.user.id }),
   }).catch(() => null);
   if (!resp) {
     return NextResponse.json({ error: 'Failed to reach agent service.' }, { status: 502 });

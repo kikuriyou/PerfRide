@@ -10,16 +10,16 @@ import { buildCoachStatusCandidates } from '@/app/dashboard/_components/coach-st
 
 export async function GET() {
   const session = await getServerSession(authOptions);
-  if (!session) {
+  if (!session?.user?.id) {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
   }
 
   try {
     const [settings, trainingPlan, coachDecision, activityCache] = await Promise.all([
-      readUserSettings(),
-      readTrainingPlan(),
-      readCoachDecision(),
-      readActivityCache(),
+      readUserSettings(session.user.id, { fallbackLegacy: true }),
+      readTrainingPlan(session.user.id),
+      readCoachDecision(session.user.id),
+      readActivityCache(session.user.id),
     ]);
     const coachAutonomy = settings?.coach_autonomy ?? 'suggest';
     if (coachAutonomy !== 'coach') {

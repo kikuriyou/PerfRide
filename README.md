@@ -39,13 +39,17 @@ git clone https://github.com/kikuriyou/PerfRide.git
 cd PerfRide
 
 # Install dependencies
-cd web && npm install
+cd web
+npm install
+cd ..
 
 # Set up environment variables
-cp .env.local.example .env.local
-# Edit .env.local with your Strava API credentials
+cp web/.env.local.example web/.env.local
+cp agent/.env.example agent/.env
+# Edit both files with your Strava and Google Cloud settings
 
 # Start frontend only
+cd web
 npm run dev
 
 # Start full stack (frontend + AI agent)
@@ -58,13 +62,36 @@ Open [http://localhost:3000](http://localhost:3000)
 
 Copy `web/.env.local.example` to `web/.env.local` and fill in the values:
 
-| Variable                  | Description                                                             |
-| ------------------------- | ----------------------------------------------------------------------- |
-| `STRAVA_CLIENT_ID`        | Your Strava API application client ID                                   |
-| `STRAVA_CLIENT_SECRET`    | Your Strava API application client secret                               |
-| `NEXTAUTH_SECRET`         | Random secret for NextAuth.js (generate with `openssl rand -base64 32`) |
-| `NEXTAUTH_URL`            | App URL for local dev (`http://localhost:3000`)                         |
-| `NEXTAUTH_URL_PRODUCTION` | Production URL (used by `deploy.sh`)                                    |
+| Variable                       | Description                                                             |
+| ------------------------------ | ----------------------------------------------------------------------- |
+| `STRAVA_CLIENT_ID`             | Your Strava API application client ID                                   |
+| `STRAVA_CLIENT_SECRET`         | Your Strava API application client secret                               |
+| `STRAVA_WEBHOOK_VERIFY_TOKEN`  | Verify token used when creating Strava webhook subscriptions            |
+| `NEXTAUTH_SECRET`              | Random secret for NextAuth.js (generate with `openssl rand -base64 32`) |
+| `NEXTAUTH_URL`                 | App URL for local dev (`http://localhost:3000`)                         |
+| `NEXTAUTH_URL_PRODUCTION`      | Production web URL used by `deploy.sh`                                  |
+| `GCS_BUCKET`                   | Shared GCS bucket for cache and plan data                               |
+| `GOOGLE_CLOUD_PROJECT`         | Google Cloud project for GCS and Cloud Run                              |
+| `AGENT_API_URL`                | Agent base URL (`http://localhost:8000`, `http://agent:8000`, or Cloud Run URL) |
+| `AGENT_AUDIENCE`               | ID token audience for private Cloud Run agent calls                     |
+| `NEXT_PUBLIC_VAPID_PUBLIC_KEY` | Optional Web Push public key                                            |
+| `VAPID_PRIVATE_KEY`            | Optional Web Push private key                                           |
+| `LINE_CHANNEL_ACCESS_TOKEN`    | Optional LINE notification token                                        |
+| `KMS_KEY_NAME`                 | Optional Cloud KMS key for user credential encryption                   |
+
+Copy `agent/.env.example` to `agent/.env` for local agent development:
+
+| Variable                  | Description                                                |
+| ------------------------- | ---------------------------------------------------------- |
+| `GCS_BUCKET`              | Shared GCS bucket                                          |
+| `GOOGLE_GENAI_USE_VERTEXAI` | Set to `true` for Vertex AI-backed Gemini                |
+| `GOOGLE_CLOUD_PROJECT`    | Google Cloud project                                       |
+| `GOOGLE_CLOUD_LOCATION`   | Vertex AI location, usually `global`                       |
+| `WEB_API_URL`             | Web base URL (`http://localhost:3000`, `http://web:3000`, or production URL) |
+| `RECOMMEND_MODE`          | `hybrid`, `web_only`, or `no_grounding`                    |
+| `USE_PERSONAL_DATA`       | `true` or `false`                                          |
+| `WORKOUT_PLATFORM`        | Defaults to `mywhoosh`; `zwift` is a local fallback option |
+| `MYWHOOSH_EMAIL` / `MYWHOOSH_PASSWORD` | Local override. When both are set in the agent environment, they take priority over Settings UI credentials |
 
 > **Note:** Make sure to add your app's callback URL (`http://localhost:3000/api/auth/callback/strava`) in the [Strava API settings](https://www.strava.com/settings/api).
 
@@ -110,10 +137,19 @@ web/src/
 
 ## Deployment (Google Cloud Run)
 
+PerfRide is deployed as two Cloud Run services:
+
+| Service          | Access  | Runtime | Purpose |
+| ---------------- | ------- | ------- | ------- |
+| `perfride-web`   | Public  | Next.js | Browser app, Strava OAuth, web API routes |
+| `perfride-agent` | Private | FastAPI | Recommendations, weekly plan generation, workout registration |
+
+`web` calls `agent` through `AGENT_API_URL`. In production, the agent service should use `--no-allow-unauthenticated`, and the web service account should have `roles/run.invoker` on the agent service. App-level secrets such as `STRAVA_CLIENT_SECRET`, `NEXTAUTH_SECRET`, `VAPID_PRIVATE_KEY`, and `LINE_CHANNEL_ACCESS_TOKEN` should be passed from Secret Manager where possible.
+
 ```bash
 # Copy and configure deploy script
 cp deploy.sh.example deploy.sh
-# Edit PROJECT_ID, REGION, and other settings in deploy.sh
+# Edit PROJECT_ID, REGION, service accounts, and optional Secret Manager mappings
 
 # Deploy
 ./deploy.sh
@@ -121,9 +157,58 @@ cp deploy.sh.example deploy.sh
 
 The deploy script will:
 
-1. Build a Docker image locally
-2. Push to Google Artifact Registry
-3. Deploy to Cloud Run with environment variables
+1. Load `web/.env.local` and `agent/.env`
+2. Build `agent/` and `web/` Docker images locally
+3. Push both images to Artifact Registry
+4. Deploy the private agent service
+5. Deploy the public web service with `AGENT_API_URL` and `AGENT_AUDIENCE`
+6. Create or update the weekly Cloud Scheduler job against the agent endpoint
+
+Post-deploy smoke tests:
+
+```bash
+# Public web should respond.
+curl -I https://your-web-domain.example.com/
+
+# Agent should reject unauthenticated public access when private.
+curl -i https://your-agent-run-url.a.run.app/health
+
+# Verify from Cloud Run logs that web can call POST /api/recommend.
+# Verify Strava OAuth callback and webhook subscription after callback domains are updated.
+```
+
+For MyWhoosh, production credentials are intended to be entered by each user in the UI and stored per user with KMS-backed encryption. In local Docker Compose, `MYWHOOSH_EMAIL` and `MYWHOOSH_PASSWORD` in `agent/.env` take priority over Settings UI credentials when both are set. Do not set those envs in production unless you intentionally want a single shared override.
+
+Before MyWhoosh credentials can be saved, create the KMS key referenced by `KMS_KEY_NAME` and grant IAM:
+
+```bash
+PROJECT_ID=your-gcp-project-id
+KMS_LOCATION=asia-northeast1
+KMS_KEYRING=perfride
+KMS_KEY=mywhoosh-credentials
+
+gcloud services enable cloudkms.googleapis.com --project "$PROJECT_ID"
+gcloud kms keyrings create "$KMS_KEYRING" --project "$PROJECT_ID" --location "$KMS_LOCATION"
+gcloud kms keys create "$KMS_KEY" \
+  --project "$PROJECT_ID" \
+  --location "$KMS_LOCATION" \
+  --keyring "$KMS_KEYRING" \
+  --purpose encryption
+```
+
+For local Docker Compose testing, grant your ADC account dev-key encrypt/decrypt permission:
+
+```bash
+LOCAL_ACCOUNT=$(gcloud config get-value account)
+gcloud kms keys add-iam-policy-binding "$KMS_KEY" \
+  --project "$PROJECT_ID" \
+  --location "$KMS_LOCATION" \
+  --keyring "$KMS_KEYRING" \
+  --member "user:$LOCAL_ACCOUNT" \
+  --role "roles/cloudkms.cryptoKeyEncrypterDecrypter"
+```
+
+In Cloud Run, grant `perfride-web` only `roles/cloudkms.cryptoKeyEncrypter` and `perfride-agent` only `roles/cloudkms.cryptoKeyDecrypter`. See [development steps](docs/references/development-steps.md) for full commands.
 
 ## Strava Webhook (Local Development)
 

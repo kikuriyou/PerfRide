@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getServerSession } from 'next-auth/next';
+import { agentFetch } from '@/lib/agent';
 import { authOptions } from '@/lib/auth';
 import { readUserSettings, readWeeklyPlanReview } from '@/lib/gcs-settings';
 
@@ -37,7 +38,7 @@ export function unwrapAgentPayload(
 
 export async function GET(request: NextRequest) {
   const session = await getServerSession(authOptions);
-  if (!session) {
+  if (!session?.user?.id) {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
   }
 
@@ -46,7 +47,7 @@ export async function GET(request: NextRequest) {
     return NextResponse.json({ error: 'review_id is required' }, { status: 400 });
   }
 
-  const store = await readWeeklyPlanReview();
+  const store = await readWeeklyPlanReview(session.user.id);
   const review = store.reviews[reviewId];
   if (!review) {
     return NextResponse.json({ error: 'Review not found' }, { status: 404 });
@@ -57,10 +58,10 @@ export async function GET(request: NextRequest) {
 
 export async function POST(request: Request) {
   const session = await getServerSession(authOptions);
-  if (!session) {
+  if (!session?.user?.id) {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
   }
-  const settings = await readUserSettings();
+  const settings = await readUserSettings(session.user.id, { fallbackLegacy: true });
   if ((settings?.coach_autonomy ?? 'suggest') !== 'coach') {
     return NextResponse.json(
       { error: 'Coach autonomy must be enabled to respond to weekly reviews.' },
@@ -69,11 +70,9 @@ export async function POST(request: Request) {
   }
   try {
     const body: WeeklyRespondBody = await request.json();
-    const agentUrl = process.env.AGENT_API_URL || 'http://localhost:8000';
-    const resp = await fetch(`${agentUrl}/api/agent/weekly-plan/respond`, {
+    const resp = await agentFetch('/api/agent/weekly-plan/respond', {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(body),
+      body: JSON.stringify({ ...body, user_id: session.user.id }),
     });
 
     const payload = await resp.json().catch(() => null);

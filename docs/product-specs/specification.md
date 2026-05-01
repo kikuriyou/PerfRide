@@ -28,16 +28,38 @@ PerfRide は、ロードバイクサイクリスト向けのパフォーマン�
 
 ## 環境変数
 
-### `.env.local` の設定
+### `web/.env.local` の設定
 
 ```bash
 STRAVA_CLIENT_ID=あなたのStravaクライアントID
 STRAVA_CLIENT_SECRET=あなたのStravaクライアントシークレット
+STRAVA_WEBHOOK_VERIFY_TOKEN=任意の検証用トークン
 NEXTAUTH_SECRET=ランダムな文字列（openssl rand -base64 32 で生成）
 NEXTAUTH_URL=http://localhost:3000  # 開発環境
+NEXTAUTH_URL_PRODUCTION=https://your-web-domain.example.com
+GCS_BUCKET=your-gcs-bucket
+GOOGLE_CLOUD_PROJECT=your-gcp-project-id
+AGENT_API_URL=http://localhost:8000
+AGENT_AUDIENCE=http://localhost:8000
 ```
 
-> **本番環境では** `NEXTAUTH_URL` を本番URLに変更する必要があります。
+`deploy.sh` は `NEXTAUTH_URL_PRODUCTION` を本番の `NEXTAUTH_URL` として Cloud Run に設定します。
+
+### `agent/.env` の設定
+
+```bash
+GCS_BUCKET=your-gcs-bucket
+GOOGLE_GENAI_USE_VERTEXAI=true
+GOOGLE_CLOUD_PROJECT=your-gcp-project-id
+GOOGLE_CLOUD_LOCATION=global
+WEB_API_URL=http://localhost:3000
+RECOMMEND_MODE=hybrid
+USE_PERSONAL_DATA=true
+WORKOUT_PLATFORM=mywhoosh
+KMS_KEY_NAME=
+```
+
+通知を使う場合は `NEXT_PUBLIC_VAPID_PUBLIC_KEY` / `VAPID_PRIVATE_KEY` / `LINE_CHANNEL_ACCESS_TOKEN` を web 側に設定します。MyWhoosh の本番認証情報は env ではなく、ユーザーが UI で入力し、ユーザー単位で暗号化保存する方針です。
 
 ---
 
@@ -85,12 +107,26 @@ http://localhost:3000
 - Docker がインストール済み
 - GCPプロジェクトへのアクセス権限
 
-### Step 1: 本番用 `.env.local` を設定
+PerfRide は Cloud Run 上で2サービス構成です。
+
+| サービス | 公開範囲 | 役割 |
+| -------- | -------- | ---- |
+| `perfride-web` | public | Next.js、Strava OAuth、web API |
+| `perfride-agent` | private | 推薦、週間プラン、ワークアウト登録 |
+
+### Step 1: 本番用 env を設定
 
 ```bash
-# .env.local を編集
-NEXTAUTH_URL=https://your-cloud-run-url
+# web/.env.local
+NEXTAUTH_URL=http://localhost:3000
+NEXTAUTH_URL_PRODUCTION=https://your-web-domain.example.com
+AGENT_API_URL=http://localhost:8000
+
+# agent/.env
+WEB_API_URL=https://your-web-domain.example.com
 ```
+
+Cloud Run では `deploy.sh` が agent service URL を取得し、`AGENT_API_URL` と `AGENT_AUDIENCE` として web service に注入します。
 
 ### Step 2: デプロイ実行
 
@@ -100,11 +136,13 @@ NEXTAUTH_URL=https://your-cloud-run-url
 
 このスクリプトは以下を自動実行します：
 
-1. `.env.local` から環境変数を読み込み
-2. ローカルで Docker イメージをビルド
+1. `web/.env.local` と `agent/.env` から環境変数を読み込み
+2. `agent/` と `web/` の Docker イメージをローカルでビルド
 3. Artifact Registry にプッシュ
-4. Cloud Run にデプロイ
-5. 本番URLを表示
+4. private agent Cloud Run service をデプロイ
+5. public web Cloud Run service をデプロイ
+6. 週間プラン用 Cloud Scheduler job を作成または更新
+7. 本番 URL と agent URL を表示
 
 ### Step 3: Strava OAuth 設定を更新
 
@@ -123,7 +161,7 @@ NEXTAUTH_URL=https://your-cloud-run-url
 
 ### Step 4: 動作確認
 
-本番URL（https://your-cloud-run-url）でログインできることを確認
+本番 URL（https://your-web-domain.example.com）でログインできることを確認します。加えて、agent の未認証アクセスが拒否され、web service account からは agent を呼べることを確認します。
 
 ---
 
@@ -131,22 +169,22 @@ NEXTAUTH_URL=https://your-cloud-run-url
 
 ### deploy.sh の設定値
 
-| 変数         | 値                |
-| ------------ | ----------------- |
-| PROJECT_ID   | `your-gcp-project-id`   |
-| REGION       | `asia-northeast1` |
-| SERVICE_NAME | `perfride`        |
-| REPO_NAME    | `perfride-repo`   |
+| 変数 | 値 |
+| ---- | -- |
+| PROJECT_ID | `your-gcp-project-id` |
+| REGION | `asia-northeast1` |
+| REPO_NAME | `perfride-repo` |
+| WEB_SERVICE_NAME | `perfride-web` |
+| AGENT_SERVICE_NAME | `perfride-agent` |
 
 ### Cloud Run リソース
 
-| 設定          | 値    |
-| ------------- | ----- |
-| Memory        | 512Mi |
-| CPU           | 1     |
-| Min instances | 0     |
-| Max instances | 3     |
-| Port          | 8080  |
+| サービス | Memory | CPU | Min instances | Max instances | Port |
+| -------- | ------ | --- | ------------- | ------------- | ---- |
+| `perfride-web` | 512Mi | 1 | 0 | 3 | 8080 |
+| `perfride-agent` | 1Gi | 1 | 0 | 2 | 8000 |
+
+app-level secret は可能な限り Secret Manager から渡します。ユーザーごとの MyWhoosh password は Secret Manager の app-level secret ではなく、KMS で暗号化してユーザー単位 storage に保存する設計です。
 
 ---
 
@@ -154,13 +192,18 @@ NEXTAUTH_URL=https://your-cloud-run-url
 
 ### 開発 → 本番
 
-- [ ] `.env.local` の `NEXTAUTH_URL` を本番URLに変更
+- [ ] `web/.env.local` の `NEXTAUTH_URL_PRODUCTION` を本番 URL に設定
+- [ ] `agent/.env` の `WEB_API_URL` を本番 web URL に設定
 - [ ] Strava API の callback domain に本番ドメインを追加
 - [ ] `./deploy.sh` を実行
+- [ ] agent 未認証アクセスが拒否されることを確認
+- [ ] `POST web /api/recommend` が通ることを確認
 
 ### 本番 → 開発
 
-- [ ] `.env.local` の `NEXTAUTH_URL` を `http://localhost:3000` に戻す
+- [ ] `web/.env.local` の `NEXTAUTH_URL` を `http://localhost:3000` に戻す
+- [ ] `web/.env.local` の `AGENT_API_URL` を `http://localhost:8000` に戻す
+- [ ] `agent/.env` の `WEB_API_URL` を `http://localhost:3000` に戻す
 - [ ] Strava API の callback domain が `localhost` を含むことを確認
 - [ ] `npm run dev` で開発サーバー起動
 

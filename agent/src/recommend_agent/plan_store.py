@@ -13,12 +13,20 @@ from recommend_agent.gcs import (
     now_jst_iso,
     read_gcs_json,
     read_gcs_json_with_generation,
+    user_gcs_path,
     write_gcs_json,
 )
+from recommend_agent.tools._request_context import resolve_user_id
 
 PLAN_FILE = "training_plan.json"
 REVIEW_FILE = "weekly_plan_review.json"
 DEFAULT_MAX_RETRIES = 3
+
+
+def _read_user_json(filename: str, user_id: str | None = None) -> dict | None:
+    scoped = user_gcs_path(filename, resolve_user_id(user_id))
+    data = read_gcs_json(scoped)
+    return data if data is not None else read_gcs_json(filename)
 # Jitter keeps near-simultaneous updates from re-colliding.
 RETRY_BASE_DELAY_SEC = 0.05
 RETRY_MAX_DELAY_SEC = 0.5
@@ -320,6 +328,8 @@ def transactional_update(
     filename: str,
     mutator: Callable[[dict | None], dict],
     *,
+    user_id: str | None = None,
+    fallback_legacy: bool = False,
     max_retries: int = DEFAULT_MAX_RETRIES,
 ) -> dict:
     """Read-modify-write a GCS JSON object with generation precondition.
@@ -330,12 +340,13 @@ def transactional_update(
     mutate freely.
     """
     last_error: OptimisticLockError | None = None
+    write_filename = user_gcs_path(filename, user_id) if user_id is not None else filename
     for attempt in range(max_retries):
-        current, generation = read_gcs_json_with_generation(filename)
+        current, generation = read_gcs_json_with_generation(write_filename)
         snapshot = deepcopy(current) if isinstance(current, dict) else None
         new_data = mutator(snapshot)
         try:
-            write_gcs_json(filename, new_data, if_generation_match=generation)
+            write_gcs_json(write_filename, new_data, if_generation_match=generation)
             return new_data
         except OptimisticLockError as exc:
             last_error = exc
@@ -369,22 +380,26 @@ def _normalize_review_store(data: dict | None) -> WeeklyPlanReviewStore:
     }
 
 
-def read_weekly_plan_reviews() -> WeeklyPlanReviewStore:
-    data = read_gcs_json(REVIEW_FILE)
+def read_weekly_plan_reviews(user_id: str | None = None) -> WeeklyPlanReviewStore:
+    data = _read_user_json(REVIEW_FILE, user_id)
     return _normalize_review_store(data if isinstance(data, dict) else None)
 
 
-def write_weekly_plan_reviews(store: WeeklyPlanReviewStore) -> None:
+def write_weekly_plan_reviews(store: WeeklyPlanReviewStore, user_id: str | None = None) -> None:
     store["updated_at"] = now_jst_iso()
-    write_gcs_json(REVIEW_FILE, store)
+    write_gcs_json(user_gcs_path(REVIEW_FILE, resolve_user_id(user_id)), store)
 
 
-def get_review(review_id: str) -> WeeklyPlanReviewPayload | None:
-    return read_weekly_plan_reviews()["reviews"].get(review_id)
+def get_review(review_id: str, user_id: str | None = None) -> WeeklyPlanReviewPayload | None:
+    return read_weekly_plan_reviews(user_id)["reviews"].get(review_id)
 
 
-def upsert_review(review: WeeklyPlanReviewPayload) -> WeeklyPlanReviewPayload:
+def upsert_review(
+    review: WeeklyPlanReviewPayload,
+    user_id: str | None = None,
+) -> WeeklyPlanReviewPayload:
     review_id = review["review_id"]
+    resolved_user_id = resolve_user_id(user_id)
 
     def _mutator(current: dict | None) -> dict:
         store = _normalize_review_store(current)
@@ -392,16 +407,23 @@ def upsert_review(review: WeeklyPlanReviewPayload) -> WeeklyPlanReviewPayload:
         store["updated_at"] = now_jst_iso()
         return store
 
-    new_store = transactional_update(REVIEW_FILE, _mutator)
+    new_store = transactional_update(
+        REVIEW_FILE,
+        _mutator,
+        user_id=resolved_user_id,
+        fallback_legacy=True,
+    )
     return deepcopy(new_store["reviews"][review_id])
 
 
 def update_review_status(
     review_id: str,
     status: ReviewStatus,
+    user_id: str | None = None,
     **fields: object,
 ) -> WeeklyPlanReviewPayload | None:
     captured: dict[str, WeeklyPlanReviewPayload | None] = {"review": None}
+    resolved_user_id = resolve_user_id(user_id)
 
     def _mutator(current: dict | None) -> dict:
         store = _normalize_review_store(current)
@@ -418,12 +440,17 @@ def update_review_status(
         captured["review"] = deepcopy(review)
         return store
 
-    transactional_update(REVIEW_FILE, _mutator)
+    transactional_update(
+        REVIEW_FILE,
+        _mutator,
+        user_id=resolved_user_id,
+        fallback_legacy=True,
+    )
     return captured["review"]
 
 
-def load_training_plan() -> dict:
-    data = read_gcs_json(PLAN_FILE)
+def load_training_plan(user_id: str | None = None) -> dict:
+    data = _read_user_json(PLAN_FILE, user_id)
     return _normalize_training_plan(data if isinstance(data, dict) else None)
 
 
@@ -491,6 +518,7 @@ def replace_current_week(
     transaction so it composes with the GCS generation precondition.
     """
     source_revision = week.get("plan_revision") if isinstance(week, dict) else None
+    resolved_user_id = resolve_user_id(user_id)
     approved_week = normalize_week_payload(
         week,
         status="approved",
@@ -537,7 +565,12 @@ def replace_current_week(
             data["phases"] = []
         return data
 
-    return transactional_update(PLAN_FILE, _mutator)
+    return transactional_update(
+        PLAN_FILE,
+        _mutator,
+        user_id=resolved_user_id,
+        fallback_legacy=True,
+    )
 
 
 def _normalize_training_plan(data: dict | None) -> dict:

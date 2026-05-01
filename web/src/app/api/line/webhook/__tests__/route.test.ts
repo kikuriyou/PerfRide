@@ -7,7 +7,7 @@ describe('resolveLineForwardUrl', () => {
 
   it('routes weekly review postbacks to the weekly proxy route', () => {
     expect(resolveLineForwardUrl(request, 'weekly_review', 'http://localhost:8000')).toBe(
-      'https://perfride.local/api/weekly-plan/respond',
+      'http://localhost:8000/api/agent/weekly-plan/respond',
     );
   });
 

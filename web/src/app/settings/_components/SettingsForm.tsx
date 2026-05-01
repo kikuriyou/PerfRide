@@ -7,6 +7,7 @@ import type { DayName, WeeklySchedule } from '@/lib/gcs-schema';
 import { useSettings } from '@/lib/settings';
 import type { CoachAutonomy, RecommendMode } from '@/lib/settings';
 import { formatJstClockLabel } from '@/lib/weekly-plan-reference';
+import AgentOperationLogPanel from './AgentOperationLogPanel';
 
 const DAY_LABELS: Record<DayName, string> = {
   mon: '月',
@@ -56,6 +57,33 @@ const RECOMMEND_MODE_OPTIONS: { value: RecommendMode; label: string; description
   },
 ];
 
+interface MyWhooshStatus {
+  configured: boolean;
+  email: string;
+  updated_at: string | null;
+  encryption_ready?: boolean;
+  verification?: {
+    ok: boolean;
+    status: 'verified' | 'failed' | 'missing' | 'skipped';
+    message: string;
+    checked_at: string;
+  } | null;
+}
+
+export function myWhooshSaveMessage(data: MyWhooshStatus): string {
+  const verification = data.verification;
+  if (verification?.status === 'verified') {
+    return '保存しました。MyWhoosh ログイン確認も成功しました。';
+  }
+  if (verification?.status === 'failed' || verification?.status === 'missing') {
+    return `保存しましたが、MyWhoosh ログイン確認に失敗しました: ${verification.message}`;
+  }
+  if (verification?.status === 'skipped') {
+    return `保存しましたが、MyWhoosh ログイン確認は未実行です: ${verification.message}`;
+  }
+  return '保存しました';
+}
+
 function normalizeAsOf(raw: string): string | null {
   const trimmed = raw.trim();
   if (!trimmed) return null;
@@ -90,6 +118,11 @@ export default function SettingsForm() {
   const [localAsOf, setLocalAsOf] = useState<string>(settings.asOf ?? '');
   const [saved, setSaved] = useState(false);
   const [goalDateError, setGoalDateError] = useState<string | null>(null);
+  const [myWhooshEmail, setMyWhooshEmail] = useState('');
+  const [myWhooshPassword, setMyWhooshPassword] = useState('');
+  const [myWhooshConfigured, setMyWhooshConfigured] = useState(false);
+  const [myWhooshEncryptionReady, setMyWhooshEncryptionReady] = useState(true);
+  const [myWhooshMessage, setMyWhooshMessage] = useState<string | null>(null);
   const isDev = process.env.NODE_ENV === 'development';
 
   const syncLocalSettings = useEffectEvent(() => {
@@ -109,6 +142,25 @@ export default function SettingsForm() {
   useEffect(() => {
     syncLocalSettings();
   }, [settings]);
+
+  useEffect(() => {
+    let cancelled = false;
+    fetch('/api/settings/mywhoosh', { cache: 'no-store' })
+      .then((res) => (res.ok ? res.json() : null))
+      .then((data: MyWhooshStatus | null) => {
+        if (!data || cancelled) return;
+        setMyWhooshEmail(data.email);
+        setMyWhooshConfigured(data.configured);
+        setMyWhooshEncryptionReady(data.encryption_ready ?? true);
+        if (data.encryption_ready === false) {
+          setMyWhooshMessage('KMS_KEY_NAME が未設定のため MyWhoosh 認証情報を保存できません。');
+        }
+      })
+      .catch(() => {});
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   const handleSave = () => {
     if (!isValidGoalDate(localGoalDate)) {
@@ -138,6 +190,40 @@ export default function SettingsForm() {
     updateSettings({ asOf: null });
   };
 
+  const handleSaveMyWhoosh = async () => {
+    setMyWhooshMessage(null);
+    const res = await fetch('/api/settings/mywhoosh', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ email: myWhooshEmail, password: myWhooshPassword }),
+    });
+    const data = (await res.json().catch(() => null)) as MyWhooshStatus | { error?: string } | null;
+    if (!res.ok) {
+      setMyWhooshMessage(
+        data && 'error' in data ? data.error || '保存できませんでした' : '保存できませんでした',
+      );
+      return;
+    }
+    if (data && 'configured' in data) {
+      setMyWhooshConfigured(data.configured);
+      setMyWhooshEmail(data.email);
+    }
+    setMyWhooshPassword('');
+    setMyWhooshMessage(data && 'configured' in data ? myWhooshSaveMessage(data) : '保存しました');
+  };
+
+  const handleDeleteMyWhoosh = async () => {
+    setMyWhooshMessage(null);
+    const res = await fetch('/api/settings/mywhoosh', { method: 'DELETE' });
+    if (!res.ok) {
+      setMyWhooshMessage('削除できませんでした');
+      return;
+    }
+    setMyWhooshConfigured(false);
+    setMyWhooshPassword('');
+    setMyWhooshMessage('連携を解除しました');
+  };
+
   const updateDay = (dayName: DayName, patch: Partial<WeeklySchedule[DayName]>) => {
     setLocalWeeklySchedule((prev) => ({
       ...prev,
@@ -159,6 +245,10 @@ export default function SettingsForm() {
 
   return (
     <div style={{ display: 'grid', gap: '2rem' }}>
+      <div style={cardStyle}>
+        <AgentOperationLogPanel />
+      </div>
+
       <div style={cardStyle}>
         <h3 style={{ marginTop: 0, marginBottom: '1rem' }}>⚡ FTP</h3>
         <div style={{ display: 'flex', gap: '1rem', alignItems: 'center' }}>
@@ -454,6 +544,69 @@ export default function SettingsForm() {
           />
           <span>{localUsePersonalData ? 'ON — Stravaデータを使用' : 'OFF — 汎用推薦'}</span>
         </label>
+      </div>
+
+      <div style={cardStyle}>
+        <h3 style={{ marginTop: 0, marginBottom: '1rem' }}>MyWhoosh</h3>
+        <div style={{ display: 'grid', gap: '0.75rem' }}>
+          <input
+            type="email"
+            value={myWhooshEmail}
+            onChange={(e) => setMyWhooshEmail(e.target.value)}
+            placeholder="email@example.com"
+            autoComplete="username"
+            style={{
+              padding: '0.75rem 1rem',
+              borderRadius: 'var(--radius-md)',
+              border: '1px solid var(--border)',
+              background: 'var(--background)',
+              color: 'var(--foreground)',
+              fontSize: '1rem',
+            }}
+          />
+          <input
+            type="password"
+            value={myWhooshPassword}
+            onChange={(e) => setMyWhooshPassword(e.target.value)}
+            placeholder={myWhooshConfigured ? '保存済み。変更時のみ入力' : 'password'}
+            autoComplete="current-password"
+            style={{
+              padding: '0.75rem 1rem',
+              borderRadius: 'var(--radius-md)',
+              border: '1px solid var(--border)',
+              background: 'var(--background)',
+              color: 'var(--foreground)',
+              fontSize: '1rem',
+            }}
+          />
+          <div style={{ display: 'flex', gap: '0.75rem', flexWrap: 'wrap' }}>
+            <button
+              type="button"
+              onClick={handleSaveMyWhoosh}
+              className="btn btn-primary"
+              disabled={!myWhooshEmail || !myWhooshPassword || !myWhooshEncryptionReady}
+            >
+              Save MyWhoosh
+            </button>
+            <button
+              type="button"
+              onClick={handleDeleteMyWhoosh}
+              className="btn"
+              disabled={!myWhooshConfigured}
+              style={{
+                border: '1px solid var(--border)',
+                background: 'transparent',
+                color: 'var(--foreground)',
+              }}
+            >
+              Disconnect
+            </button>
+          </div>
+          <div style={{ fontSize: '0.85rem', opacity: 0.7 }}>
+            {myWhooshMessage ??
+              (myWhooshConfigured ? 'Credential configured' : 'Credential not configured')}
+          </div>
+        </div>
       </div>
 
       {isDev && (

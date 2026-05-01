@@ -10,17 +10,19 @@ Browser (Client Components)
     ├── /api/auth/*  ──→  Strava OAuth 2.0
     ├── /api/activities, /api/segments  ──→  Strava API v3
     ├── /api/geocode  ──→  Nominatim (OpenStreetMap)
-    ├── /api/recommend  ──→  Python Agent (:8000)
+    ├── /api/recommend  ──→  Python Agent
     │                           ├── GCS (activity_cache.json)
     │                           ├── Local knowledge files
     │                           ├── Google Search (grounding)
-    │                           └── Gemini 2.5 Flash (via ADK)
+    │                           └── Gemini 3 Flash Preview (via ADK)
     │
     └── Dashboard SSR  ──→  Strava API (activities)
                         ──→  GCS write (activity_cache.json)  [fire-and-forget]
 ```
 
 **GCS as shared data bus**: Dashboard writes `activity_cache.json` + `schema.json` to a GCS bucket (configured via `GCS_BUCKET` env var). The Python agent reads these to access rider data without direct Strava API access.
+
+In local Docker Compose, `web` reaches the agent at `http://agent:8000` and the agent reaches the web API at `http://web:3000`. In Cloud Run, `web` and `agent` are separate services. `perfride-web` is public, `perfride-agent` is private, and server-side web routes call the agent through `AGENT_API_URL` with a Google-signed ID token using `AGENT_AUDIENCE`.
 
 ## Frontend (web/)
 
@@ -117,4 +119,22 @@ Recommendations are cached with daily generation limits (max 2/day). Time-based 
 | Frontend  | Node.js (standalone output) | 3000 (dev), 8080 (prod) |
 | Agent     | Python + uvicorn            | 8000                    |
 
-Both services run via `docker-compose.yml`. Production deployment to Google Cloud Run via `deploy.sh`.
+Both services run via `docker-compose.yml` locally. Production deployment uses two Cloud Run services via `deploy.sh`:
+
+| Service          | Access  | Image context | Key envs |
+| ---------------- | ------- | ------------- | -------- |
+| `perfride-web`   | Public  | `web/`        | `NEXTAUTH_URL`, `GCS_BUCKET`, `AGENT_API_URL`, `AGENT_AUDIENCE` |
+| `perfride-agent` | Private | `agent/`      | `GCS_BUCKET`, `WEB_API_URL`, `GOOGLE_CLOUD_PROJECT`, `GOOGLE_CLOUD_LOCATION`, `GOOGLE_GENAI_USE_VERTEXAI` |
+
+App-level secrets should be provided through Secret Manager where possible. User-level MyWhoosh credentials are intended to be entered in Settings and stored per user with KMS-backed encryption. In local agent environments, env-based `MYWHOOSH_EMAIL` and `MYWHOOSH_PASSWORD` override saved Settings credentials when both are set; production should leave them unset unless a single shared override is intentional.
+
+The planned multi-user GCS layout is:
+
+```text
+users/{strava_owner_id}/settings.json
+users/{strava_owner_id}/activity_cache.json
+users/{strava_owner_id}/training_plan.json
+users/{strava_owner_id}/integrations/mywhoosh.json
+```
+
+Until the multi-user storage migration is complete, smoke tests should verify the current GCS object behavior as implemented.

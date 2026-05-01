@@ -1,12 +1,5 @@
 export type CoachAutonomy = 'observe' | 'suggest' | 'coach';
-export type PhaseName =
-  | 'base'
-  | 'build1'
-  | 'build2'
-  | 'peak'
-  | 'taper'
-  | 'maintenance'
-  | 'custom';
+export type PhaseName = 'base' | 'build1' | 'build2' | 'peak' | 'taper' | 'maintenance' | 'custom';
 export type DayName = 'mon' | 'tue' | 'wed' | 'thu' | 'fri' | 'sat' | 'sun';
 
 const KNOWN_PHASE_NAMES: readonly PhaseName[] = [
@@ -32,6 +25,7 @@ export type SessionStatus =
 export type SessionOrigin = 'baseline' | 'appended';
 export type WeekStatus = 'draft' | 'pending' | 'modified' | 'approved' | 'applied';
 export type ReviewStatus = 'pending' | 'modified' | 'approved' | 'applied' | 'dismissed' | 'error';
+export type AgentOperationLogStatus = 'triggered' | 'started' | 'completed' | 'error' | 'skipped';
 
 export interface WeeklyScheduleDay {
   available: boolean;
@@ -81,6 +75,13 @@ export interface GCSUserSettings {
       keys: { p256dh: string; auth: string };
     };
     line_user_id?: string;
+  };
+  integrations?: {
+    mywhoosh?: {
+      email: string;
+      configured: boolean;
+      updated_at: string | null;
+    };
   };
   zwift_id: string;
   updated_at: string;
@@ -141,6 +142,19 @@ export interface NotificationLogRecord {
   created_at: string;
   channels_sent: string[];
   status: 'sent' | 'partial' | 'failed';
+}
+
+export interface AgentOperationLogRecord {
+  created_at: string;
+  status: AgentOperationLogStatus;
+  operation: string;
+  trigger: string;
+  message: string;
+  run_id?: string | null;
+  trace_id?: string | null;
+  session_id?: string | null;
+  activity_id?: number | null;
+  metadata?: Record<string, unknown>;
 }
 
 export interface ApprovedWeekPayload {

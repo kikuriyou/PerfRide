@@ -5,6 +5,8 @@
 
 import { StravaActivity } from '@/lib/strava';
 import { JST_OFFSET_MS, jstTimestamp } from '@/lib/jst-clock';
+import type { GCSUserId } from '@/lib/gcs-settings';
+import { userObjectPath } from '@/lib/gcs-settings';
 
 export interface ProcessedActivity {
   id: number;
@@ -155,6 +157,7 @@ export function recomputeFitnessFromProcessed(
 }
 
 export async function writeActivityCache(
+  userId: GCSUserId,
   activities: StravaActivity[],
   ftp: number = 200,
 ): Promise<void> {
@@ -166,12 +169,12 @@ export async function writeActivityCache(
 
   const cacheData: ActivityCacheData = computeFitnessMetrics(activities, ftp);
 
-  const cacheBlob = bucket.file('activity_cache.json');
+  const cacheBlob = bucket.file(userObjectPath(userId, 'activity_cache.json'));
   await cacheBlob.save(JSON.stringify(cacheData, null, 2), {
     contentType: 'application/json',
   });
 
-  const schemaBlob = bucket.file('schema.json');
+  const schemaBlob = bucket.file(userObjectPath(userId, 'schema.json'));
   const schema: SchemaField[] = [
     { name: 'id', type: 'number', description: 'Strava activity ID' },
     { name: 'name', type: 'string', description: 'Activity name' },
@@ -242,13 +245,15 @@ export async function writeActivityCache(
   });
 }
 
-export async function readActivityCache(): Promise<ActivityCacheData | null> {
+export async function readActivityCache(userId?: GCSUserId): Promise<ActivityCacheData | null> {
   try {
     const { Storage } = await import('@google-cloud/storage');
     const storage = new Storage();
     const bucketName = process.env.GCS_BUCKET!;
     const bucket = storage.bucket(bucketName);
-    const blob = bucket.file('activity_cache.json');
+    const blob = bucket.file(
+      userId === undefined ? 'activity_cache.json' : userObjectPath(userId, 'activity_cache.json'),
+    );
     const [exists] = await blob.exists();
     if (!exists) return null;
     const [buf] = await blob.download();

@@ -21,7 +21,7 @@ export async function POST(request: NextRequest) {
 
   try {
     const body: NotificationBody = await request.json();
-    const existing = await readUserSettings();
+    const existing = await readUserSettings(session.user.id, { fallbackLegacy: true });
 
     if (!existing) {
       return NextResponse.json({ error: 'User settings not found' }, { status: 404 });
@@ -42,7 +42,7 @@ export async function POST(request: NextRequest) {
       updated_at: new Date().toISOString(),
     };
 
-    await writeUserSettings(merged);
+    await writeUserSettings(merged, session.user.id);
 
     return NextResponse.json({ ok: true });
   } catch (error) {

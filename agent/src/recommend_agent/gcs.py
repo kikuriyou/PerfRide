@@ -1,7 +1,6 @@
 """Shared GCS read/write utilities for PerfRide agent."""
 
 import json
-import os
 from datetime import datetime
 from typing import TypeVar
 from zoneinfo import ZoneInfo
@@ -9,9 +8,11 @@ from zoneinfo import ZoneInfo
 from google.api_core.exceptions import PreconditionFailed
 from google.cloud import storage
 
+from recommend_agent.config import get_gcs_bucket
+from recommend_agent.tools._request_context import resolve_user_id
+
 T = TypeVar("T")
 
-GCS_BUCKET = os.environ.get("GCS_BUCKET", "perfride-shared")
 JST = ZoneInfo("Asia/Tokyo")
 
 
@@ -21,7 +22,14 @@ class OptimisticLockError(Exception):
 
 def _get_bucket() -> storage.Bucket:
     client = storage.Client()
-    return client.bucket(GCS_BUCKET)
+    return client.bucket(get_gcs_bucket())
+
+
+def user_gcs_path(filename: str, user_id: str | None = None) -> str:
+    clean = filename.lstrip("/")
+    if clean.startswith("users/"):
+        return clean
+    return f"users/{resolve_user_id(user_id)}/{clean}"
 
 
 def read_gcs_json(filename: str) -> dict | None:
@@ -35,6 +43,20 @@ def read_gcs_json(filename: str) -> dict | None:
         return None
 
 
+def read_user_gcs_json(
+    filename: str,
+    *,
+    user_id: str | None = None,
+    fallback_legacy: bool = True,
+) -> dict | None:
+    scoped = user_gcs_path(filename, user_id)
+    data = read_gcs_json(scoped)
+    if data is not None or not fallback_legacy or scoped == filename:
+        return data
+    legacy_filename = "user_settings.json" if filename == "settings.json" else filename
+    return read_gcs_json(legacy_filename)
+
+
 def read_gcs_json_with_generation(filename: str) -> tuple[dict | None, int]:
     """Return (data, generation). Generation is 0 when the object does not exist."""
     bucket = _get_bucket()
@@ -44,6 +66,20 @@ def read_gcs_json_with_generation(filename: str) -> tuple[dict | None, int]:
     text = blob.download_as_text()
     generation = blob.generation or 0
     return json.loads(text), generation
+
+
+def read_user_gcs_json_with_generation(
+    filename: str,
+    *,
+    user_id: str | None = None,
+    fallback_legacy: bool = True,
+) -> tuple[dict | None, int]:
+    scoped = user_gcs_path(filename, user_id)
+    data, generation = read_gcs_json_with_generation(scoped)
+    if data is not None or not fallback_legacy or scoped == filename:
+        return data, generation
+    legacy = read_gcs_json(filename)
+    return legacy, 0
 
 
 def write_gcs_json(
@@ -73,6 +109,20 @@ def write_gcs_json(
             f"GCS precondition failed for {filename} (generation {if_generation_match})"
         ) from exc
     return blob.generation or 0
+
+
+def write_user_gcs_json(
+    filename: str,
+    data: dict | list,
+    *,
+    user_id: str | None = None,
+    if_generation_match: int | None = None,
+) -> int:
+    return write_gcs_json(
+        user_gcs_path(filename, user_id),
+        data,
+        if_generation_match=if_generation_match,
+    )
 
 
 def append_gcs_jsonl(filename: str, record: dict) -> None:
