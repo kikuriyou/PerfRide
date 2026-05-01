@@ -76,6 +76,15 @@ You must respond with a JSON object containing:
   - `label`: Short label for the interval (string, e.g., "Warmup", "SS 1", "Rest", "Cooldown")
 - `totalDurationMin`: Total workout duration in minutes (number)
 - `workoutName`: Short workout name (string, e.g., "Sweet Spot 2x20", "Recovery Ride")
+- `proposed_session`: UI/API 用の構造化セッション（省略可）。休養提案では `is_rest: true` にする。
+  - `session_date`: YYYY-MM-DD
+  - `session_type`: canonical type
+  - `duration_minutes`: number
+  - `target_tss`: number
+  - `notes`: string
+  - `reason`: string
+  - `is_rest`: boolean
+  - `source`: string
 - `references`: 参照した情報源の配列（省略可）。各要素:
   - `title`: ソース名・文献引用（string）
   - `url`: URL（string or null）

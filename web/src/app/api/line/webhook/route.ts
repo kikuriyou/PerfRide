@@ -1,5 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 
+import { parsePostbackData } from '@/lib/notify';
+
 interface LineEvent {
   type: string;
   replyToken: string;
@@ -12,15 +14,15 @@ interface LineWebhookBody {
   events: LineEvent[];
 }
 
-function parsePostbackData(data: string): Record<string, string> {
-  const params: Record<string, string> = {};
-  for (const pair of data.split('&')) {
-    const [key, value] = pair.split('=');
-    if (key && value !== undefined) {
-      params[key] = decodeURIComponent(value);
-    }
+export function resolveLineForwardUrl(
+  request: NextRequest,
+  kind: string | undefined,
+  agentUrl: string,
+): string {
+  if (kind === 'weekly_review') {
+    return new URL('/api/weekly-plan/respond', request.url).toString();
   }
-  return params;
+  return `${agentUrl}/recommend/respond`;
 }
 
 export async function POST(request: NextRequest) {
@@ -31,19 +33,34 @@ export async function POST(request: NextRequest) {
 
     const postbackEvents = body.events.filter((e) => e.type === 'postback' && e.postback?.data);
 
-    for (const event of postbackEvents) {
-      const params = parsePostbackData(event.postback!.data);
-      fetch(`${agentUrl}/recommend/respond`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          line_user_id: event.source.userId,
-          action: params.action,
-          reply_token: event.replyToken,
-          raw_data: params,
-        }),
-      }).catch((e) => console.error('Agent forward failed:', e));
-    }
+    await Promise.all(
+      postbackEvents.map(async (event) => {
+        const params = parsePostbackData(event.postback!.data);
+        const forwardUrl = resolveLineForwardUrl(request, params.kind, agentUrl);
+        if (params.kind === 'weekly_review') {
+          await fetch(forwardUrl, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              review_id: params.review_id,
+              action: params.action,
+              expected_plan_revision: Number(params.plan_revision || '0'),
+            }),
+          });
+          return;
+        }
+        await fetch(forwardUrl, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            line_user_id: event.source.userId,
+            action: params.action,
+            reply_token: event.replyToken,
+            raw_data: params,
+          }),
+        });
+      }),
+    );
 
     return NextResponse.json({ ok: true });
   } catch (error) {

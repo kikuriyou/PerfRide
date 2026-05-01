@@ -5,9 +5,9 @@ import {
   generateTrainingPlan,
   formatDate,
   getIntensityColor,
-  TrainingPlan,
-  WeekSchedule,
-  Workout,
+  type TrainingPlan,
+  type WeekSchedule,
+  type Workout,
 } from '../_lib/planner';
 import WorkoutChart from '@/components/WorkoutChart';
 
@@ -69,18 +69,16 @@ export default function PlannerForm() {
   const [plan, setPlan] = useState<TrainingPlan | null>(initial.plan);
   const [selectedWeek, setSelectedWeek] = useState<WeekSchedule | null>(initial.selectedWeek);
   const [selectedWorkout, setSelectedWorkout] = useState<Workout | null>(initial.selectedWorkout);
-  const isLoaded = true;
 
   useEffect(() => {
-    if (isLoaded && targetDate) {
-      const state: SavedPlannerState = {
-        targetDate,
-        selectedWeekNumber: selectedWeek?.weekNumber || null,
-        selectedWorkoutName: selectedWorkout?.name || null,
-      };
-      localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
-    }
-  }, [isLoaded, targetDate, selectedWeek, selectedWorkout]);
+    if (!targetDate) return;
+    const state: SavedPlannerState = {
+      targetDate,
+      selectedWeekNumber: selectedWeek?.weekNumber ?? null,
+      selectedWorkoutName: selectedWorkout?.name ?? null,
+    };
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
+  }, [targetDate, selectedWeek, selectedWorkout]);
 
   const handleGenerate = () => {
     if (!targetDate) return;
@@ -101,12 +99,13 @@ export default function PlannerForm() {
 
   return (
     <div>
-      {/* Input Section */}
       <div className="card" style={{ marginBottom: '1.5rem' }}>
         <h3 style={{ marginTop: 0, marginBottom: '1rem', fontSize: '1rem' }}>
           Set Your Target Race
         </h3>
-        <div style={{ display: 'flex', gap: '0.75rem', alignItems: 'flex-end', flexWrap: 'wrap' }}>
+        <div
+          style={{ display: 'flex', gap: '0.75rem', alignItems: 'flex-end', flexWrap: 'wrap' }}
+        >
           <div style={{ flex: '1 1 200px' }}>
             <label
               style={{
@@ -151,8 +150,7 @@ export default function PlannerForm() {
         </div>
       </div>
 
-      {/* Plan Display */}
-      {plan && (
+      {plan && plan.weeklySchedule.length > 0 && (
         <div>
           <div
             style={{
@@ -284,61 +282,17 @@ export default function PlannerForm() {
 
               <div style={{ display: 'grid', gap: '0.5rem' }}>
                 {selectedWeek.phase.weeklyWorkouts.map((workout, idx) => (
-                  <div
+                  <WorkoutRow
                     key={idx}
-                    onClick={() => workout.durationMin > 0 && setSelectedWorkout(workout)}
-                    style={{
-                      display: 'flex',
-                      alignItems: 'center',
-                      gap: '0.75rem',
-                      padding: '0.75rem',
-                      background:
-                        selectedWorkout?.name === workout.name
-                          ? 'var(--primary)'
-                          : 'var(--background)',
-                      color: selectedWorkout?.name === workout.name ? 'white' : 'inherit',
-                      borderRadius: 'var(--radius-md)',
-                      cursor: workout.durationMin > 0 ? 'pointer' : 'default',
-                      transition: 'all 0.2s',
+                    workout={workout}
+                    selected={selectedWorkout?.name === workout.name}
+                    onClick={() => {
+                      if (workout.durationMin > 0) setSelectedWorkout(workout);
                     }}
-                  >
-                    <span style={{ fontSize: '1.25rem' }}>{workout.icon}</span>
-                    <div style={{ flex: 1, minWidth: 0 }}>
-                      <div style={{ fontWeight: 600, fontSize: '0.9rem' }}>
-                        <span style={{ opacity: 0.6, marginRight: '0.5rem' }}>{workout.day}</span>
-                        {workout.name}
-                      </div>
-                      <div
-                        style={{
-                          fontSize: '0.75rem',
-                          opacity: 0.7,
-                          overflow: 'hidden',
-                          textOverflow: 'ellipsis',
-                          whiteSpace: 'nowrap',
-                        }}
-                      >
-                        {workout.description}
-                      </div>
-                    </div>
-                    <div style={{ textAlign: 'right', flexShrink: 0 }}>
-                      <div
-                        style={{
-                          fontSize: '0.85rem',
-                          fontWeight: 600,
-                          color:
-                            selectedWorkout?.name === workout.name
-                              ? 'white'
-                              : getIntensityColor(workout.intensity),
-                        }}
-                      >
-                        {workout.duration}
-                      </div>
-                    </div>
-                  </div>
+                  />
                 ))}
               </div>
 
-              {/* Workout Chart */}
               {selectedWorkout && selectedWorkout.intervals.length > 0 && (
                 <div className="chart-container" style={{ marginTop: '1rem' }}>
                   <WorkoutChart
@@ -351,7 +305,7 @@ export default function PlannerForm() {
             </div>
           )}
 
-          {/* Phase Details - Collapsible on mobile */}
+          {/* Phase Details */}
           <details style={{ marginTop: '1rem' }}>
             <summary
               style={{
@@ -393,6 +347,61 @@ export default function PlannerForm() {
           </details>
         </div>
       )}
+    </div>
+  );
+}
+
+interface WorkoutRowProps {
+  workout: Workout;
+  selected: boolean;
+  onClick: () => void;
+}
+
+function WorkoutRow({ workout, selected, onClick }: WorkoutRowProps) {
+  return (
+    <div
+      onClick={onClick}
+      style={{
+        display: 'flex',
+        alignItems: 'center',
+        gap: '0.75rem',
+        padding: '0.75rem',
+        background: selected ? 'var(--primary)' : 'var(--background)',
+        color: selected ? 'white' : 'inherit',
+        borderRadius: 'var(--radius-md)',
+        cursor: workout.durationMin > 0 ? 'pointer' : 'default',
+        transition: 'all 0.2s',
+      }}
+    >
+      <span style={{ fontSize: '1.25rem' }}>{workout.icon}</span>
+      <div style={{ flex: 1, minWidth: 0 }}>
+        <div style={{ fontWeight: 600, fontSize: '0.9rem' }}>
+          <span style={{ opacity: 0.6, marginRight: '0.5rem' }}>{workout.day}</span>
+          {workout.name}
+        </div>
+        <div
+          style={{
+            fontSize: '0.75rem',
+            opacity: 0.7,
+            overflow: 'hidden',
+            textOverflow: 'ellipsis',
+            whiteSpace: 'nowrap',
+          }}
+        >
+          {workout.description}
+        </div>
+      </div>
+      <div style={{ textAlign: 'right', flexShrink: 0 }}>
+        <div
+          style={{
+            fontSize: '0.85rem',
+            fontWeight: 600,
+            color: selected ? 'white' : getIntensityColor(workout.intensity),
+          }}
+        >
+          {workout.duration}
+        </div>
+      </div>
     </div>
   );
 }

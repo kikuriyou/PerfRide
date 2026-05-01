@@ -5,8 +5,11 @@ set -e
 PROJECT_ID="your-gcp-project-id"
 REGION="asia-northeast1"
 SERVICE_NAME="perfride"
+AGENT_SERVICE_NAME="perfride-agent"
+SCHEDULER_JOB_NAME="weekly-plan-trigger"
 REPO_NAME="perfride-repo"
 IMAGE_NAME="${REGION}-docker.pkg.dev/${PROJECT_ID}/${REPO_NAME}/${SERVICE_NAME}"
+SCHEDULER_SERVICE_ACCOUNT="scheduler-invoker@${PROJECT_ID}.iam.gserviceaccount.com"
 
 # Load environment variables from .env.local
 if [ -f .env.local ]; then
@@ -87,8 +90,40 @@ echo ""
 echo "🌐 Service URL: ${SERVICE_URL}"
 echo "🌐 Custom Domain: ${NEXTAUTH_URL_PRODUCTION}"
 echo ""
+echo "⏰ Ensuring weekly scheduler exists..."
+AGENT_SERVICE_URL=$(gcloud run services describe ${AGENT_SERVICE_NAME} --region ${REGION} --project ${PROJECT_ID} --format 'value(status.url)')
+WEEKLY_PLAN_URL="${AGENT_SERVICE_URL}/api/agent/weekly-plan"
+gcloud scheduler jobs describe ${SCHEDULER_JOB_NAME} \
+  --location=${REGION} \
+  --project=${PROJECT_ID} >/dev/null 2>&1 && SCHEDULER_EXISTS=true || SCHEDULER_EXISTS=false
+
+if [ "${SCHEDULER_EXISTS}" = true ]; then
+  gcloud scheduler jobs update http ${SCHEDULER_JOB_NAME} \
+    --location=${REGION} \
+    --project=${PROJECT_ID} \
+    --schedule="0 19 * * 0" \
+    --time-zone="UTC" \
+    --uri="${WEEKLY_PLAN_URL}" \
+    --http-method=POST \
+    --oidc-service-account-email="${SCHEDULER_SERVICE_ACCOUNT}" \
+    --attempt-deadline=600s
+else
+  gcloud scheduler jobs create http ${SCHEDULER_JOB_NAME} \
+    --location=${REGION} \
+    --project=${PROJECT_ID} \
+    --schedule="0 19 * * 0" \
+    --time-zone="UTC" \
+    --uri="${WEEKLY_PLAN_URL}" \
+    --http-method=POST \
+    --oidc-service-account-email="${SCHEDULER_SERVICE_ACCOUNT}" \
+    --attempt-deadline=600s
+fi
+
+echo ""
 echo "📋 Next steps:"
 echo "Verify Strava OAuth callback URLs include:"
 echo "   → https://www.strava.com/settings/api"
 echo "   → ${NEXTAUTH_URL_PRODUCTION}"
+echo "Verify weekly scheduler target:"
+echo "   → ${WEEKLY_PLAN_URL}"
 echo ""

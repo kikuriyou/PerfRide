@@ -46,6 +46,8 @@ Browser (Client Components)
 | `/api/segments/streams`        | Yes  | Segment details + elevation/distance streams   |
 | `/api/geocode`                 | No   | Forward geocoding via Nominatim                |
 | `/api/recommend`               | No   | POST proxy to Python agent                     |
+| `/api/coach-status`            | Yes  | Dashboard banner source for coach status       |
+| `/api/weekly-plan`             | Yes  | Current weekly plan snapshot                   |
 
 ### Core Libraries
 
@@ -71,6 +73,12 @@ Charts use Recharts. Maps use Leaflet (SSR-disabled via `dynamic()`). Styling is
 - **Server vs Client**: All `page.tsx` are Server Components (call `getServerSession()`, fetch data). All interactive UI is `'use client'` components receiving data as props.
 - **Auth vs Public**: Auth enforced at page/route level via `getServerSession()` — no middleware.
 - **Providers**: `web/src/app/providers.tsx` wraps app in `SessionProvider` (NextAuth) + `SettingsProvider`.
+
+### Recommendation and Weekly Plan UI
+
+Dashboard keeps one primary recommendation card. `/api/recommend` prioritizes a valid same-day webhook coach decision, then falls back to the daily generated recommendation. Weekly plan sessions are not returned as `source: "weekly_plan"` recommendations.
+
+Weekly plans are shown separately through the compact dashboard card and `/weekly-plan`. The Monday scheduler applies a new week directly to `training_plan.json` only in `coach` mode. It does not register external workouts; replacing an existing planned workout after a webhook recommendation still goes through user approval.
 
 ## Agent (agent/)
 

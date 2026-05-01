@@ -36,6 +36,7 @@ const sampleRec: Recommendation = {
   detail: 'test detail',
   created_at: '2026-04-10T08:00:00Z',
   from_cache: false,
+  plan_context_key: 'coach:2026-04-07:3:approved',
 };
 
 describe('shouldReadCache', () => {
@@ -77,7 +78,14 @@ describe('cache helpers do not touch localStorage when bypassed', () => {
     const asOf = '2026-04-10T22:00';
     const hasConstraint = false;
     if (shouldWriteCache(asOf, hasConstraint)) {
-      saveCachedRecommendation(sampleRec, 'hybrid', true, 250);
+      saveCachedRecommendation(
+        sampleRec,
+        'hybrid',
+        true,
+        250,
+        'coach',
+        sampleRec.plan_context_key ?? null,
+      );
     }
     expect(storage.setItem).not.toHaveBeenCalled();
     expect(storage.store.size).toBe(0);
@@ -86,7 +94,7 @@ describe('cache helpers do not touch localStorage when bypassed', () => {
   it('loadCachedRecommendation is not invoked when asOf is set', () => {
     const asOf = '2026-04-10T22:00';
     if (shouldReadCache(asOf, false, false)) {
-      loadCachedRecommendation('hybrid', true, 250);
+      loadCachedRecommendation('hybrid', true, 250, 'coach', sampleRec.plan_context_key ?? null);
     }
     expect(storage.getItem).not.toHaveBeenCalled();
   });
@@ -95,7 +103,14 @@ describe('cache helpers do not touch localStorage when bypassed', () => {
     const asOf = null;
     const hasConstraint = false;
     if (shouldWriteCache(asOf, hasConstraint)) {
-      saveCachedRecommendation(sampleRec, 'hybrid', true, 250);
+      saveCachedRecommendation(
+        sampleRec,
+        'hybrid',
+        true,
+        250,
+        'coach',
+        sampleRec.plan_context_key ?? null,
+      );
     }
     expect(storage.setItem).toHaveBeenCalledOnce();
     expect(storage.setItem).toHaveBeenCalledWith(CACHE_KEY, expect.any(String));
@@ -105,7 +120,14 @@ describe('cache helpers do not touch localStorage when bypassed', () => {
     const asOf = null;
     const hasConstraint = true;
     if (shouldWriteCache(asOf, hasConstraint)) {
-      saveCachedRecommendation(sampleRec, 'hybrid', true, 250);
+      saveCachedRecommendation(
+        sampleRec,
+        'hybrid',
+        true,
+        250,
+        'coach',
+        sampleRec.plan_context_key ?? null,
+      );
     }
     expect(storage.setItem).not.toHaveBeenCalled();
   });
@@ -120,18 +142,56 @@ describe('loadCachedRecommendation', () => {
   });
 
   it('returns null when cache is empty', () => {
-    expect(loadCachedRecommendation('hybrid', true, 250)).toBeNull();
+    expect(
+      loadCachedRecommendation('hybrid', true, 250, 'coach', sampleRec.plan_context_key ?? null),
+    ).toBeNull();
   });
 
   it('returns cached entry when fresh and matching signature', () => {
-    saveCachedRecommendation(sampleRec, 'hybrid', true, 250);
-    const loaded = loadCachedRecommendation('hybrid', true, 250);
+    saveCachedRecommendation(
+      sampleRec,
+      'hybrid',
+      true,
+      250,
+      'coach',
+      sampleRec.plan_context_key ?? null,
+    );
+    const loaded = loadCachedRecommendation(
+      'hybrid',
+      true,
+      250,
+      'coach',
+      sampleRec.plan_context_key ?? null,
+    );
     expect(loaded).not.toBeNull();
     expect(loaded?.summary).toBe(sampleRec.summary);
   });
 
   it('returns null when ftp differs (signature mismatch)', () => {
-    saveCachedRecommendation(sampleRec, 'hybrid', true, 250);
-    expect(loadCachedRecommendation('hybrid', true, 300)).toBeNull();
+    saveCachedRecommendation(
+      sampleRec,
+      'hybrid',
+      true,
+      250,
+      'coach',
+      sampleRec.plan_context_key ?? null,
+    );
+    expect(
+      loadCachedRecommendation('hybrid', true, 300, 'coach', sampleRec.plan_context_key ?? null),
+    ).toBeNull();
+  });
+
+  it('returns null when plan_context_key differs', () => {
+    saveCachedRecommendation(
+      sampleRec,
+      'hybrid',
+      true,
+      250,
+      'coach',
+      sampleRec.plan_context_key ?? null,
+    );
+    expect(
+      loadCachedRecommendation('hybrid', true, 250, 'coach', 'coach:2026-04-14:4:approved'),
+    ).toBeNull();
   });
 });

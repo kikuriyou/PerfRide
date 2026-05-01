@@ -1,72 +1,34 @@
-export interface GCSUserSettings {
-  user_id: string;
-  strava_owner_id: number;
-  ftp: number;
-  weight_kg: number;
-  max_hr: number;
-  goal: {
-    type: string;
-    name: string;
-    date: string;
-    priority: string;
-  };
-  training_preference: {
-    mode: 'indoor_preferred' | 'outdoor_possible' | 'outdoor_preferred';
-    location: { lat: number; lon: number };
-    weekly_schedule: Record<
-      string,
-      {
-        available: boolean;
-        max_minutes?: number;
-        time_slot?: string;
-      }
-    >;
-  };
-  strava_auth: {
-    refresh_token: string;
-    access_token: string;
-    expires_at: number;
-  };
-  notification: {
-    channels: ('web_push' | 'line')[];
-    web_push_subscription?: {
-      endpoint: string;
-      keys: { p256dh: string; auth: string };
-    };
-    line_user_id?: string;
-  };
-  zwift_id: string;
-  updated_at: string;
-}
+import type {
+  CoachDecisionRecord,
+  GCSTrainingPlan,
+  GCSUserSettings,
+  NotificationLogRecord,
+  TrainingSession,
+  WeeklyPlanReviewStore,
+} from '@/lib/gcs-schema';
+import { resolvePhaseName } from '@/lib/gcs-schema';
 
-export interface TrainingSession {
-  date: string;
-  type: string;
-  duration_minutes?: number;
-  target_tss?: number;
-  status: 'planned' | 'registered' | 'confirmed' | 'completed' | 'skipped' | 'modified';
-  actual_tss?: number;
-  workout_id?: string;
-}
-
-export interface GCSTrainingPlan {
-  user_id: string;
-  plan_id: string;
-  goal_event: string;
-  current_phase: string;
-  phases: { name: string; start: string; end: string }[];
-  weekly_plan: Record<
-    string,
-    {
-      week_number: number;
-      phase: string;
-      target_tss: number;
-      sessions: TrainingSession[];
-    }
-  >;
-  updated_at: string;
-  updated_by: string;
-}
+export type {
+  ApprovedWeekPayload,
+  CoachDecisionRecord,
+  CoachAutonomy,
+  DayName,
+  GCSTrainingPlan,
+  GCSUserSettings,
+  NotificationLogRecord,
+  PhaseName,
+  ProposedSession,
+  ReviewStatus,
+  SessionStatus,
+  TrainingSession,
+  WeekStatus,
+  WeeklyPlanReviewPayload,
+  WeeklyPlanReviewStore,
+  WeeklyReviewMetadata,
+  WeeklySchedule,
+  WeeklyScheduleDay,
+} from '@/lib/gcs-schema';
+export { resolvePhaseName } from '@/lib/gcs-schema';
 
 async function getGCSBucket() {
   const { Storage } = await import('@google-cloud/storage');
@@ -84,6 +46,24 @@ async function readJSON<T>(path: string): Promise<T | null> {
     return JSON.parse(buf.toString('utf-8')) as T;
   } catch {
     return null;
+  }
+}
+
+async function readJSONL<T>(path: string): Promise<T[]> {
+  try {
+    const bucket = await getGCSBucket();
+    const blob = bucket.file(path);
+    const [exists] = await blob.exists();
+    if (!exists) return [];
+    const [buf] = await blob.download();
+    return buf
+      .toString('utf-8')
+      .split('\n')
+      .map((line) => line.trim())
+      .filter(Boolean)
+      .map((line) => JSON.parse(line) as T);
+  } catch {
+    return [];
   }
 }
 
@@ -121,12 +101,46 @@ export function writeUserSettings(settings: GCSUserSettings): Promise<void> {
   return writeJSON('user_settings.json', settings);
 }
 
-export function readTrainingPlan(): Promise<GCSTrainingPlan | null> {
-  return readJSON<GCSTrainingPlan>('training_plan.json');
+export async function readTrainingPlan(): Promise<GCSTrainingPlan | null> {
+  const raw = await readJSON<GCSTrainingPlan>('training_plan.json');
+  if (!raw) return null;
+  const weeklyPlan = Object.fromEntries(
+    Object.entries(raw.weekly_plan).map(([k, v]) => [
+      k,
+      {
+        ...v,
+        phase: resolvePhaseName(v.phase),
+        sessions: ensureSessionIds(v.sessions, v.week_start),
+      },
+    ]),
+  );
+  return {
+    ...raw,
+    phases: raw.phases.map((p) => ({ ...p, name: resolvePhaseName(p.name) })),
+    weekly_plan: weeklyPlan,
+  };
 }
 
 export function writeTrainingPlan(plan: GCSTrainingPlan): Promise<void> {
   return writeJSON('training_plan.json', plan);
+}
+
+export async function readWeeklyPlanReview(): Promise<WeeklyPlanReviewStore> {
+  const store = await readJSON<WeeklyPlanReviewStore>('weekly_plan_review.json');
+  if (!store) return { reviews: {}, updated_at: new Date().toISOString() };
+  return {
+    ...store,
+    reviews: Object.fromEntries(
+      Object.entries(store.reviews).map(([k, v]) => [
+        k,
+        { ...v, draft: { ...v.draft, phase: resolvePhaseName(v.draft.phase) } },
+      ]),
+    ),
+  };
+}
+
+export function writeWeeklyPlanReview(store: WeeklyPlanReviewStore): Promise<void> {
+  return writeJSON('weekly_plan_review.json', store);
 }
 
 export function appendRecommendLog(record: Record<string, unknown>): Promise<void> {
@@ -135,4 +149,33 @@ export function appendRecommendLog(record: Record<string, unknown>): Promise<voi
 
 export function appendUserResponse(record: Record<string, unknown>): Promise<void> {
   return appendJSONL('user_response.jsonl', record);
+}
+
+export function readCoachDecision(): Promise<CoachDecisionRecord | null> {
+  return readJSON<CoachDecisionRecord>('coach_decision.json');
+}
+
+export function writeCoachDecision(record: CoachDecisionRecord): Promise<void> {
+  return writeJSON('coach_decision.json', record);
+}
+
+export function appendNotificationLog(record: NotificationLogRecord): Promise<void> {
+  return appendJSONL('notification_log.jsonl', record as unknown as Record<string, unknown>);
+}
+
+export async function readNotificationLog(limit = 20): Promise<NotificationLogRecord[]> {
+  const records = await readJSONL<NotificationLogRecord>('notification_log.jsonl');
+  return records.slice(-limit).reverse();
+}
+
+function ensureSessionIds(sessions: TrainingSession[], weekStart: string): TrainingSession[] {
+  return sessions.map((session, index) => {
+    if (session.session_id) return session;
+    const origin = session.origin ?? 'baseline';
+    const sessionId =
+      origin === 'baseline'
+        ? `baseline:${weekStart}:${session.date}`
+        : `appended:${weekStart}:${session.date}:legacy-${index}`;
+    return { ...session, session_id: sessionId };
+  });
 }

@@ -3,12 +3,14 @@
 import asyncio
 import json
 import os
-from datetime import UTC, datetime, timedelta
+from datetime import UTC, date, datetime, timedelta
 from pathlib import Path
+from typing import Any
 from zoneinfo import ZoneInfo
 
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import JSONResponse
 from google.adk.runners import Runner
 from google.adk.sessions import InMemorySessionService
 from google.genai import types
@@ -16,15 +18,39 @@ from pydantic import BaseModel
 
 from recommend_agent.agent import build_agent, build_insight_agent
 from recommend_agent.constants import RECOMMEND_MODE, USE_PERSONAL_DATA
+from recommend_agent.plan_store import (
+    StalePlanRevisionError,
+    WeekPayload,
+    get_current_week,
+    get_review,
+    load_training_plan,
+    replace_current_week,
+    review_id_for_week_start,
+    update_review_status,
+    upsert_review,
+)
 from recommend_agent.tools._request_context import (
     activity_override_var,
     as_of_var,
+    parse_as_of,
+    parse_week_start,
+    reference_date_var,
+    resolve_week_start_and_as_of,
     webhook_trace_id_var,
+    week_start_var,
 )
 from recommend_agent.tools.detect_signals import detect_signals
+from recommend_agent.tools.get_user_profile import get_user_profile
 from recommend_agent.tools.search_latest_knowledge import (
     reset_search_count,
     set_search_limit,
+)
+from recommend_agent.tools.send_notification import send_notification
+from recommend_agent.tools.update_training_plan import update_training_plan
+from recommend_agent.weekly_logic import (
+    build_baseline_week,
+    coerce_weekly_draft,
+    current_session_context,
 )
 
 JST = ZoneInfo("Asia/Tokyo")
@@ -49,7 +75,7 @@ CACHE_FILE = CACHE_DIR / "recommendation_cache.json"
 MAX_GENERATIONS_PER_DAY = 2
 
 # GCS config
-GCS_BUCKET = os.environ["GCS_BUCKET"]
+GCS_BUCKET = os.environ.get("GCS_BUCKET", "perfride-shared")
 
 # ADK session service
 session_service = InMemorySessionService()
@@ -61,6 +87,8 @@ class RecommendRequest(BaseModel):
     goal_custom: str | None = None
     recommend_mode: str | None = None
     use_personal_data: bool | None = None
+    coach_autonomy: str | None = None
+    plan_context_key: str | None = None
     constraint: str | None = None
     mode: str = "recommend"
     as_of: str | None = None
@@ -80,6 +108,20 @@ class InsightResponse(BaseModel):
     items: list[InsightItem]
 
 
+class ProposedSession(BaseModel):
+    session_date: str | None = None
+    session_type: str | None = None
+    duration_minutes: int | None = None
+    target_tss: int | None = None
+    notes: str | None = None
+    reason: str | None = None
+    is_rest: bool = False
+    source: str | None = None
+    activity_id: int | None = None
+    workout_id: str | None = None
+    registered: bool = False
+
+
 class RecommendResponse(BaseModel):
     summary: str
     detail: str
@@ -91,6 +133,87 @@ class RecommendResponse(BaseModel):
     references: list[dict[str, str | None]] | None = None
     why_now: str | None = None
     based_on: str | None = None
+    plan_context_key: str | None = None
+    proposed_session: ProposedSession | None = None
+
+
+class WeeklyPlanRequest(BaseModel):
+    trigger: str = "scheduler"
+    week_start: str | None = None
+    as_of: str | None = None
+    force: bool = False
+
+
+class WeeklyPlanResponse(BaseModel):
+    status: str
+    week_start: str
+    review_id: str | None = None
+    plan_revision: int | None = None
+    sessions_planned: int = 0
+    sessions_registered: int = 0
+    session_id: str | None = None
+    message: str | None = None
+
+
+class WeeklyPlanRespondRequest(BaseModel):
+    review_id: str
+    action: str
+    user_message: str | None = None
+    expected_plan_revision: int
+
+
+class WeeklyPlanAppendRequest(BaseModel):
+    session_date: str
+    session_type: str
+    duration_minutes: int = 0
+    target_tss: int = 0
+    notes: str | None = None
+    expected_plan_revision: int
+
+
+class WeeklyPlanReplaceRequest(BaseModel):
+    target_session_id: str
+    session_date: str
+    session_type: str
+    duration_minutes: int = 0
+    target_tss: int = 0
+    notes: str | None = None
+    workout_id: str | None = None
+    status: str = "planned"
+    expected_plan_revision: int
+
+
+class WeeklyPlanAppendResponse(BaseModel):
+    status: str
+    week_start: str | None = None
+    plan_revision: int | None = None
+    appended_session: dict[str, Any] | None = None
+    current_plan_revision: int | None = None
+    current_sessions: list[dict[str, Any]] | None = None
+    message: str | None = None
+
+
+class WeeklyPlanReplaceResponse(BaseModel):
+    status: str
+    week_start: str | None = None
+    plan_revision: int | None = None
+    updated_session: dict[str, Any] | None = None
+    current_plan_revision: int | None = None
+    current_sessions: list[dict[str, Any]] | None = None
+    message: str | None = None
+
+
+def _conflict_response(payload: dict[str, Any]) -> JSONResponse:
+    current_revision = payload.get("current_plan_revision") or payload.get("plan_revision")
+    body = {
+        "status": "conflict",
+        "message": payload.get("message") or payload.get("error_message") or "stale plan revision",
+        "current_plan_revision": current_revision,
+        "week_start": payload.get("week_start"),
+    }
+    if isinstance(payload.get("current_sessions"), list):
+        body["current_sessions"] = payload["current_sessions"]
+    return JSONResponse(status_code=409, content=body)
 
 
 def _load_cache() -> dict[str, object] | None:
@@ -127,15 +250,7 @@ def _get_activity_cache(override: dict[str, object] | None = None) -> dict | Non
 
 
 def _parse_as_of(as_of_str: str | None) -> datetime | None:
-    if not as_of_str:
-        return None
-    try:
-        dt = datetime.fromisoformat(as_of_str)
-    except ValueError:
-        return None
-    if dt.tzinfo is None:
-        dt = dt.replace(tzinfo=JST)
-    return dt.astimezone(JST)
+    return parse_as_of(as_of_str)
 
 
 def _activity_jst_date(start_date_local: str) -> str | None:
@@ -282,6 +397,155 @@ def _should_regenerate(cache: dict[str, object] | None, use_personal_data: bool)
     return days_elapsed == 7
 
 
+def _parse_agent_json_response(raw_response: str) -> dict[str, Any] | None:
+    text = raw_response.strip()
+    if "```json" in text:
+        text = text.split("```json", 1)[1].split("```", 1)[0].strip()
+    elif text.startswith("```") and "```" in text[3:]:
+        text = text.split("```", 1)[1].split("```", 1)[0].strip()
+    try:
+        parsed = json.loads(text)
+    except json.JSONDecodeError:
+        return None
+    return parsed if isinstance(parsed, dict) else None
+
+
+def _proposed_session_from(value: object, activity_id: int | None = None) -> ProposedSession | None:
+    if not isinstance(value, dict):
+        return None
+    data = dict(value)
+    if activity_id is not None and not isinstance(data.get("activity_id"), int):
+        data["activity_id"] = activity_id
+    try:
+        proposed = ProposedSession.model_validate(data)
+    except Exception:
+        return None
+    if proposed.is_rest:
+        return proposed
+    if not proposed.session_date or not proposed.session_type:
+        return None
+    return proposed
+
+
+def _goal_text(goal: str, goal_custom: str | None) -> str:
+    goal_labels = {
+        "hillclimb_tt": "レース準備（ヒルクライム/TT）",
+        "road_race": "レース準備（ロードレース）",
+        "ftp_improvement": "FTP向上",
+        "fitness_maintenance": "体力維持",
+        "other": goal_custom or "その他",
+    }
+    return goal_labels.get(goal, goal)
+
+
+def _coach_plan_message(now_jst: datetime) -> str:
+    context = current_session_context(now_jst.date())
+    if context is None:
+        return ""
+    week = context.get("week")
+    if not isinstance(week, dict):
+        return ""
+    sessions = context.get("sessions") or []
+    raw_source = context.get("source", "approved")
+    plan_state = "draft" if raw_source == "pending" else "active"
+    phase = week.get("phase", "maintenance")
+    revision = week.get("plan_revision", 1)
+    lines = [
+        "",
+        "## 今週の計画コンテキスト",
+        f"- plan_state: {plan_state}  # 内部メタデータ。出力文章には書かないこと",
+        f"- week_start: {week.get('week_start', now_jst.date().isoformat())}",
+        f"- phase: {phase}",
+        f"- plan_revision: {revision}",
+    ]
+    if sessions:
+        lines.append("- today_sessions:")
+        for session in sessions:
+            if not isinstance(session, dict):
+                continue
+            origin = session.get("origin", "baseline")
+            lines.append(
+                f"  ({origin}) {session.get('type', 'rest')} / "
+                f"{session.get('duration_minutes', 0)}min / "
+                f"TSS {session.get('target_tss', 0)}"
+            )
+    else:
+        lines.append("- today_sessions: rest")
+    return "\n".join(lines)
+
+
+def _count_planned_sessions(week: WeekPayload) -> int:
+    return sum(1 for session in week.get("sessions", []) if session.get("type") != "rest")
+
+
+def _weekly_notification_actions() -> list[dict[str, str]]:
+    return [
+        {"id": "open_weekly_plan", "label": "見る"},
+    ]
+
+
+def _weekly_notification_metadata(
+    review_id: str | None,
+    week: WeekPayload,
+) -> dict[str, object]:
+    metadata: dict[str, object] = {
+        "kind": "weekly_plan",
+        "week_start": week["week_start"],
+        "plan_revision": week["plan_revision"],
+        "page_path": "/weekly-plan",
+    }
+    if review_id is not None:
+        metadata["review_id"] = review_id
+    return metadata
+
+
+def _profile_goal(profile: dict[str, object]) -> dict[str, Any]:
+    goal = profile.get("goal")
+    return dict(goal) if isinstance(goal, dict) else {}
+
+
+def _profile_goal_label(profile: dict[str, object]) -> str:
+    goal = _profile_goal(profile)
+    goal_type = goal.get("type")
+    goal_name = goal.get("name")
+    if isinstance(goal_name, str) and goal_name.strip():
+        return goal_name.strip()
+    return goal_type if isinstance(goal_type, str) else "fitness_maintenance"
+
+
+def _weekly_request_message(
+    profile: dict[str, object],
+    week_start_date: date,
+    effective_as_of: datetime,
+    baseline_week: WeekPayload,
+    user_message: str | None = None,
+) -> str:
+    goal = _profile_goal(profile)
+    goal_date = goal.get("date")
+    weekly_schedule = (
+        profile.get("training_preference", {}).get("weekly_schedule")
+        if isinstance(profile.get("training_preference"), dict)
+        else {}
+    )
+    message = (
+        "今週の週次プラン draft を作成してください。\n"
+        f"- week_start: {week_start_date.isoformat()}\n"
+        f"- as_of: {effective_as_of.isoformat()}\n"
+        f"- goal: {_profile_goal_label(profile)}\n"
+        f"- goal_date: {goal_date if isinstance(goal_date, str) and goal_date else 'unset'}\n"
+        f"- coach_autonomy: {profile.get('coach_autonomy', 'suggest')}\n"
+        "以下の baseline を必要なら安全側に調整してください。\n"
+        f"```json\n{json.dumps(baseline_week, ensure_ascii=False)}\n```"
+    )
+    if weekly_schedule:
+        message += (
+            f"\navailable days:\n```json\n{json.dumps(weekly_schedule, ensure_ascii=False)}\n```"
+        )
+    if user_message:
+        message += f"\nユーザーからの追加要望:\n{user_message}"
+    return message
+
+
 async def _handle_insight(request: RecommendRequest) -> InsightResponse:
     """Detect signals via rules, then use LLM to generate user-facing text."""
     as_of = _parse_as_of(request.as_of)
@@ -390,6 +654,8 @@ async def recommend_training(request: RecommendRequest) -> InsightResponse | Rec
         or cache.get("mode") != effective_mode
         or cache.get("use_personal_data") != effective_personal
         or cache.get("ftp") != request.ftp
+        or cache.get("coach_autonomy") != request.coach_autonomy
+        or cache.get("plan_context_key") != request.plan_context_key
     ):
         cache = None
 
@@ -407,16 +673,11 @@ async def recommend_training(request: RecommendRequest) -> InsightResponse | Rec
             references=cache.get("references"),  # type: ignore[arg-type]
             why_now=cache.get("why_now"),  # type: ignore[arg-type]
             based_on=cache.get("based_on"),  # type: ignore[arg-type]
+            plan_context_key=cache.get("plan_context_key"),  # type: ignore[arg-type]
+            proposed_session=_proposed_session_from(cache.get("proposed_session")),
         )
 
-    goal_labels = {
-        "hillclimb_tt": "レース準備（ヒルクライム/TT）",
-        "road_race": "レース準備（ロードレース）",
-        "ftp_improvement": "FTP向上",
-        "fitness_maintenance": "体力維持",
-        "other": request.goal_custom or "その他",
-    }
-    goal_text = goal_labels.get(request.goal, request.goal)
+    goal_text = _goal_text(request.goal, request.goal_custom)
 
     now_jst = as_of if as_of is not None else datetime.now(JST)
     if effective_personal:
@@ -439,15 +700,25 @@ async def recommend_training(request: RecommendRequest) -> InsightResponse | Rec
 
     if request.constraint:
         user_message += f"\n- 制約: {request.constraint}"
+    if request.coach_autonomy == "coach":
+        user_message += _coach_plan_message(now_jst)
 
     override_token = activity_override_var.set(request.activity_override)
     as_of_token = as_of_var.set(as_of)
+    request_week_start, _ = resolve_week_start_and_as_of(None, request.as_of, now_jst)
+    week_start_token = week_start_var.set(request_week_start)
+    reference_date_token = reference_date_var.set(now_jst.date())
 
     try:
         reset_search_count()
         set_search_limit(effective_mode)
 
-        agent = build_agent(effective_mode, effective_personal)
+        trigger = (
+            "coach_daily"
+            if effective_personal and request.coach_autonomy == "coach"
+            else "dashboard"
+        )
+        agent = build_agent(effective_mode, effective_personal, trigger=trigger)
 
         session = await session_service.create_session(
             app_name="perfride_recommend",
@@ -474,19 +745,10 @@ async def recommend_training(request: RecommendRequest) -> InsightResponse | Rec
             if event.is_final_response() and event.content and event.content.parts:
                 final_response = event.content.parts[0].text
 
-        response_text = final_response.strip()
-        if "```json" in response_text:
-            response_text = response_text.split("```json")[1].split("```")[0].strip()
-        elif "```" in response_text:
-            response_text = response_text.split("```")[1].split("```")[0].strip()
-
-        try:
-            parsed = json.loads(response_text)
-        except json.JSONDecodeError:
-            parsed = {
-                "summary": "今日のおすすめトレーニングです 🚴",
-                "detail": final_response,
-            }
+        parsed = _parse_agent_json_response(final_response) or {
+            "summary": "今日のおすすめトレーニングです 🚴",
+            "detail": final_response,
+        }
 
         if as_of is not None:
             created_at = as_of.astimezone(UTC).isoformat()
@@ -515,12 +777,15 @@ async def recommend_training(request: RecommendRequest) -> InsightResponse | Rec
             "mode": effective_mode,
             "use_personal_data": effective_personal,
             "ftp": request.ftp,
+            "coach_autonomy": request.coach_autonomy,
+            "plan_context_key": request.plan_context_key,
             "workout_intervals": parsed.get("workout_intervals"),
             "totalDurationMin": parsed.get("totalDurationMin"),
             "workoutName": parsed.get("workoutName"),
             "references": parsed.get("references"),
             "why_now": parsed.get("why_now"),
             "based_on": parsed.get("based_on"),
+            "proposed_session": parsed.get("proposed_session"),
         }
         if not bypass_cache:
             _save_cache(cache_data)
@@ -539,6 +804,8 @@ async def recommend_training(request: RecommendRequest) -> InsightResponse | Rec
             references=parsed.get("references"),
             why_now=parsed.get("why_now"),
             based_on=parsed.get("based_on"),
+            plan_context_key=request.plan_context_key,
+            proposed_session=_proposed_session_from(parsed.get("proposed_session")),
         )
 
     except Exception as e:
@@ -549,6 +816,8 @@ async def recommend_training(request: RecommendRequest) -> InsightResponse | Rec
     finally:
         activity_override_var.reset(override_token)
         as_of_var.reset(as_of_token)
+        week_start_var.reset(week_start_token)
+        reference_date_var.reset(reference_date_token)
 
 
 class WebhookRecommendRequest(BaseModel):
@@ -579,12 +848,15 @@ def _save_ambient_state(session_id: str, trigger: str) -> None:
     from recommend_agent.gcs import now_jst_iso, write_gcs_json
 
     activity_mtime = _get_activity_cache_mtime()
-    write_gcs_json("ambient_state.json", {
-        "last_run_at": now_jst_iso(),
-        "activity_cache_mtime": activity_mtime.isoformat() if activity_mtime else None,
-        "session_id": session_id,
-        "trigger": trigger,
-    })
+    write_gcs_json(
+        "ambient_state.json",
+        {
+            "last_run_at": now_jst_iso(),
+            "activity_cache_mtime": activity_mtime.isoformat() if activity_mtime else None,
+            "session_id": session_id,
+            "trigger": trigger,
+        },
+    )
 
 
 def _should_trigger_ambient() -> bool:
@@ -627,11 +899,15 @@ async def _run_ambient_flow() -> None:
         )
         content = types.Content(
             role="user",
-            parts=[types.Part.from_text(text=(
-                "ダッシュボード表示をトリガーとして次回セッションを判断します。\n"
-                "最新のアクティビティデータに基づき、次回セッションを判断し、"
-                "必要に応じてワークアウトプラットフォームに登録してください。"
-            ))],
+            parts=[
+                types.Part.from_text(
+                    text=(
+                        "ダッシュボード表示をトリガーとして次回セッションを判断します。\n"
+                        "最新のアクティビティデータに基づき、次回セッションを判断し、"
+                        "必要に応じてワークアウトプラットフォームに登録してください。"
+                    )
+                )
+            ],
         )
 
         async for _event in runner.run_async(
@@ -647,6 +923,329 @@ async def _run_ambient_flow() -> None:
         print(f"[ambient] Flow failed: {e}")
     finally:
         _ambient_running = False
+
+
+def _require_profile() -> dict[str, Any]:
+    result = get_user_profile()
+    if result.get("status") != "success" or not isinstance(result.get("profile"), dict):
+        raise HTTPException(status_code=500, detail="Failed to load user profile")
+    return dict(result["profile"])
+
+
+async def _run_weekly_agent(
+    *,
+    profile: dict[str, Any],
+    week_start_date: date,
+    effective_as_of: datetime,
+    baseline_week: WeekPayload,
+    user_message: str | None = None,
+) -> tuple[str, str]:
+    as_of_token = as_of_var.set(effective_as_of)
+    week_start_token = week_start_var.set(week_start_date)
+    reference_date_token = reference_date_var.set(week_start_date)
+    try:
+        agent = build_agent(RECOMMEND_MODE, True, trigger="weekly")
+        session = await session_service.create_session(
+            app_name="perfride_weekly_plan",
+            user_id="perfride_user",
+        )
+        runner = Runner(
+            agent=agent,
+            app_name="perfride_weekly_plan",
+            session_service=session_service,
+        )
+        content = types.Content(
+            role="user",
+            parts=[
+                types.Part.from_text(
+                    text=_weekly_request_message(
+                        profile,
+                        week_start_date,
+                        effective_as_of,
+                        baseline_week,
+                        user_message,
+                    )
+                )
+            ],
+        )
+
+        final_response = ""
+        async for event in runner.run_async(
+            user_id="perfride_user",
+            session_id=session.id,
+            new_message=content,
+        ):
+            if event.is_final_response() and event.content and event.content.parts:
+                final_response = event.content.parts[0].text
+        return session.id, final_response
+    finally:
+        as_of_var.reset(as_of_token)
+        week_start_var.reset(week_start_token)
+        reference_date_var.reset(reference_date_token)
+
+
+async def _create_or_update_weekly_review(
+    *,
+    week_start_date: date,
+    effective_as_of: datetime,
+    force: bool,
+    user_message: str | None = None,
+    apply_immediately: bool = True,
+) -> WeeklyPlanResponse:
+    profile = _require_profile()
+    if profile.get("coach_autonomy") != "coach":
+        return WeeklyPlanResponse(
+            status="skipped",
+            week_start=week_start_date.isoformat(),
+            message="coach mode is disabled",
+        )
+
+    review_id = review_id_for_week_start(week_start_date.isoformat())
+    existing_review = None if apply_immediately else get_review(review_id)
+    current_week: WeekPayload | None = None
+    if apply_immediately:
+        training_plan = load_training_plan()
+        weekly_plan = training_plan.get("weekly_plan")
+        if isinstance(weekly_plan, dict):
+            current_week = get_current_week(weekly_plan, week_start_date)
+
+    current_revision = (
+        current_week.get("plan_revision")
+        if isinstance(current_week, dict) and isinstance(current_week.get("plan_revision"), int)
+        else None
+    )
+    if apply_immediately:
+        next_revision = (current_revision + 1) if isinstance(current_revision, int) else 1
+    else:
+        next_revision = (
+            existing_review["plan_revision"] + 1
+            if existing_review and isinstance(existing_review.get("plan_revision"), int)
+            else 1
+        )
+    baseline_week = build_baseline_week(profile, week_start_date, plan_revision=next_revision)
+    session_id, raw_response = await _run_weekly_agent(
+        profile=profile,
+        week_start_date=week_start_date,
+        effective_as_of=effective_as_of,
+        baseline_week=baseline_week,
+        user_message=user_message,
+    )
+    if apply_immediately:
+        draft = coerce_weekly_draft(
+            raw_response,
+            baseline_week=baseline_week,
+            week_start_date=week_start_date,
+            plan_revision=next_revision,
+            status="approved",
+        )
+        try:
+            replace_current_week(
+                draft,
+                user_id=str(profile.get("user_id", "default")),
+                goal_event=_profile_goal_label(profile),
+                current_phase=str(draft.get("phase", "maintenance")),
+                expected_current_revision=current_revision,
+            )
+        except StalePlanRevisionError as exc:
+            return WeeklyPlanResponse(
+                status="conflict",
+                week_start=week_start_date.isoformat(),
+                plan_revision=exc.current_revision,
+                sessions_planned=_count_planned_sessions(draft),
+                session_id=session_id,
+                message="approved week has advanced since the weekly plan was generated",
+            )
+
+        metadata = _weekly_notification_metadata(None, draft)
+        send_notification(
+            user_id=str(profile.get("user_id", "default")),
+            title=(
+                "今週のプランを更新しました"
+                if isinstance(current_revision, int)
+                else "今週のプランを作成しました"
+            ),
+            body=draft.get("summary", "今週のトレーニングプランを作成しました。"),
+            actions=_weekly_notification_actions(),
+            metadata=metadata,
+        )
+
+        return WeeklyPlanResponse(
+            status="applied",
+            week_start=week_start_date.isoformat(),
+            plan_revision=next_revision,
+            sessions_planned=_count_planned_sessions(draft),
+            sessions_registered=0,
+            session_id=session_id,
+        )
+
+    review_status = "modified" if user_message else "pending"
+    draft = coerce_weekly_draft(
+        raw_response,
+        baseline_week=baseline_week,
+        week_start_date=week_start_date,
+        plan_revision=next_revision,
+        status=review_status,
+    )
+    metadata = _weekly_notification_metadata(review_id, draft)
+    review_record = {
+        "review_id": review_id,
+        "week_start": week_start_date.isoformat(),
+        "plan_revision": next_revision,
+        "status": review_status,
+        "draft": draft,
+        "session_id": session_id,
+        "user_message": user_message,
+        "created_at": (
+            existing_review["created_at"]
+            if existing_review and isinstance(existing_review.get("created_at"), str)
+            else effective_as_of.isoformat()
+        ),
+        "notified_at": (
+            existing_review.get("notified_at") if user_message and existing_review else None
+        ),
+        "approved_at": None,
+        "applied_at": None,
+        "dismissed_at": None,
+        "error_message": None,
+        "notification_metadata": metadata,
+    }
+    saved_review = upsert_review(review_record)
+
+    if not user_message:
+        notification = send_notification(
+            user_id=str(profile.get("user_id", "default")),
+            title="今週のプラン案を確認してください",
+            body=draft.get("summary", "今週のトレーニングプラン案を作成しました。"),
+            actions=_weekly_notification_actions(),
+            metadata=metadata,
+        )
+        if notification.get("status") == "success":
+            saved_review = (
+                update_review_status(
+                    review_id,
+                    review_status,
+                    notified_at=effective_as_of.isoformat(),
+                    notification_metadata=metadata,
+                )
+                or saved_review
+            )
+
+    return WeeklyPlanResponse(
+        status="draft_created" if not user_message else "modified",
+        week_start=week_start_date.isoformat(),
+        review_id=review_id,
+        plan_revision=saved_review.get("plan_revision"),
+        sessions_planned=_count_planned_sessions(draft),
+        session_id=session_id,
+    )
+
+
+async def _approve_weekly_review(
+    review_id: str,
+    *,
+    expected_plan_revision: int,
+) -> WeeklyPlanResponse:
+    review = get_review(review_id)
+    if review is None:
+        raise HTTPException(status_code=404, detail="Weekly review not found")
+    current_revision = review.get("plan_revision")
+    if current_revision != expected_plan_revision:
+        return WeeklyPlanResponse(
+            status="conflict",
+            week_start=str(review.get("week_start", "")),
+            review_id=review_id,
+            plan_revision=current_revision if isinstance(current_revision, int) else None,
+            message="stale plan revision",
+        )
+    if isinstance(review.get("applied_at"), str):
+        return WeeklyPlanResponse(
+            status="approved",
+            week_start=str(review.get("week_start", "")),
+            review_id=review_id,
+            plan_revision=current_revision if isinstance(current_revision, int) else None,
+            message="already applied",
+        )
+
+    draft = review.get("draft")
+    if not isinstance(draft, dict):
+        raise HTTPException(status_code=500, detail="Weekly review draft is invalid")
+
+    profile = _require_profile()
+    draft_revision = draft.get("plan_revision")
+    expected_current_revision = int(draft_revision) if isinstance(draft_revision, int) else None
+    try:
+        replace_current_week(
+            draft,
+            user_id=str(profile.get("user_id", "default")),
+            goal_event=_profile_goal_label(profile),
+            current_phase=str(draft.get("phase", "maintenance")),
+            expected_current_revision=expected_current_revision,
+        )
+    except StalePlanRevisionError as exc:
+        # The draft was generated against a now-stale approved week; an
+        # appended session may have been added in the meantime. Surface the
+        # conflict so the client can re-fetch and re-decide.
+        return WeeklyPlanResponse(
+            status="conflict",
+            week_start=str(review.get("week_start", "")),
+            review_id=review_id,
+            plan_revision=exc.current_revision,
+            message="approved week has advanced since the draft was generated",
+        )
+
+    from recommend_agent.tools.build_and_register_workout import build_and_register_workout
+
+    sessions_registered = 0
+    for session in draft.get("sessions", []):
+        if not isinstance(session, dict):
+            continue
+        session_type = session.get("type")
+        if not isinstance(session_type, str) or session_type == "rest":
+            continue
+        duration_minutes = int(session.get("duration_minutes", 0))
+        target_tss = float(session.get("target_tss", 0))
+        built = build_and_register_workout(
+            session_type=session_type,
+            duration_minutes=duration_minutes,
+            ftp=int(profile.get("ftp", 200)),
+            target_tss=target_tss,
+        )
+        if built.get("status") != "success":
+            continue
+        update_training_plan(
+            session_date=str(session.get("date")),
+            session_type=session_type,
+            duration_minutes=duration_minutes,
+            target_tss=int(target_tss),
+            status="registered",
+            workout_id=(
+                str(built["workout_id"]) if isinstance(built.get("workout_id"), str) else None
+            ),
+            mode="replace",
+            target_session_id=(
+                str(session["session_id"]) if isinstance(session.get("session_id"), str) else None
+            ),
+            target_origin="baseline",
+            preserve_plan_revision=True,
+        )
+        sessions_registered += 1
+
+    applied_at = datetime.now(JST).isoformat()
+    update_review_status(
+        review_id,
+        "applied",
+        approved_at=applied_at,
+        applied_at=applied_at,
+        draft=draft,
+    )
+    return WeeklyPlanResponse(
+        status="approved",
+        week_start=str(review.get("week_start", "")),
+        review_id=review_id,
+        plan_revision=current_revision if isinstance(current_revision, int) else None,
+        sessions_planned=_count_planned_sessions(draft),
+        sessions_registered=sessions_registered,
+    )
 
 
 @app.post("/api/agent/recommend")
@@ -684,12 +1283,16 @@ async def recommend_webhook(request: WebhookRecommendRequest):
 
         content = types.Content(
             role="user",
-            parts=[types.Part.from_text(text=(
-                f"アクティビティが完了しました。\n"
-                f"Activity ID: {request.activity_id}\n"
-                f"Trace ID: {trace_id}\n"
-                f"次回セッションを判断し、必要に応じてワークアウトプラットフォームに登録してください。"
-            ))],
+            parts=[
+                types.Part.from_text(
+                    text=(
+                        f"アクティビティが完了しました。\n"
+                        f"Activity ID: {request.activity_id}\n"
+                        f"Trace ID: {trace_id}\n"
+                        f"次回セッションを判断し、必要に応じてワークアウトプラットフォームに登録してください。"
+                    )
+                )
+            ],
         )
 
         final_response = ""
@@ -707,12 +1310,18 @@ async def recommend_webhook(request: WebhookRecommendRequest):
             trace_id,
             f"Runner completed: session_id={session.id} response_chars={len(final_response)}",
         )
+        parsed = _parse_agent_json_response(final_response) or {}
+        proposed = _proposed_session_from(parsed.get("proposed_session"), request.activity_id)
 
         return {
             "status": "ok",
             "session_id": session.id,
             "response": final_response,
             "trace_id": trace_id,
+            "summary": parsed.get("summary"),
+            "detail": parsed.get("detail"),
+            "why_now": parsed.get("why_now"),
+            "proposed_session": proposed.model_dump() if proposed is not None else None,
         }
     except Exception as e:
         _log_webhook_flow(trace_id, f"Flow failed: {e}")
@@ -738,11 +1347,15 @@ async def recommend_respond(request: RespondRequest):
 
     content = types.Content(
         role="user",
-        parts=[types.Part.from_text(text=(
-            f"ユーザーの応答: {request.action}\n"
-            f"メッセージ: {request.user_message or 'なし'}\n"
-            f"修正回数: {request.modification_count}/3"
-        ))],
+        parts=[
+            types.Part.from_text(
+                text=(
+                    f"ユーザーの応答: {request.action}\n"
+                    f"メッセージ: {request.user_message or 'なし'}\n"
+                    f"修正回数: {request.modification_count}/3"
+                )
+            )
+        ],
     )
 
     final_response = ""
@@ -759,6 +1372,147 @@ async def recommend_respond(request: RespondRequest):
         "session_id": request.session_id,
         "response": final_response,
     }
+
+
+@app.post("/api/agent/weekly-plan")
+async def weekly_plan(request: WeeklyPlanRequest) -> WeeklyPlanResponse:
+    if request.week_start is not None and parse_week_start(request.week_start) is None:
+        raise HTTPException(status_code=400, detail="week_start must be a Monday in YYYY-MM-DD")
+    if request.as_of is not None and parse_as_of(request.as_of) is None:
+        raise HTTPException(status_code=400, detail="as_of must be a valid ISO datetime")
+    week_start_date, effective_as_of = resolve_week_start_and_as_of(
+        request.week_start,
+        request.as_of,
+    )
+    return await _create_or_update_weekly_review(
+        week_start_date=week_start_date,
+        effective_as_of=effective_as_of,
+        force=request.force,
+    )
+
+
+@app.post("/api/agent/weekly-plan/respond", response_model=None)
+async def weekly_plan_respond(
+    request: WeeklyPlanRespondRequest,
+) -> WeeklyPlanResponse | JSONResponse:
+    review = get_review(request.review_id)
+    if review is None:
+        raise HTTPException(status_code=404, detail="Weekly review not found")
+
+    if review.get("plan_revision") != request.expected_plan_revision:
+        return _conflict_response(
+            {
+                "week_start": str(review.get("week_start", "")),
+                "plan_revision": review["plan_revision"]
+                if isinstance(review.get("plan_revision"), int)
+                else None,
+                "message": "stale plan revision",
+            }
+        )
+
+    if request.action == "approve":
+        response = await _approve_weekly_review(
+            request.review_id,
+            expected_plan_revision=request.expected_plan_revision,
+        )
+        if response.status == "conflict":
+            return _conflict_response(response.model_dump())
+        return response
+    if request.action == "modify":
+        week_start_value = review.get("week_start")
+        if not isinstance(week_start_value, str):
+            raise HTTPException(status_code=500, detail="Weekly review week_start is invalid")
+        week_start_date = date.fromisoformat(week_start_value)
+        _, effective_as_of = resolve_week_start_and_as_of(week_start_value, None)
+        return await _create_or_update_weekly_review(
+            week_start_date=week_start_date,
+            effective_as_of=effective_as_of,
+            force=True,
+            user_message=request.user_message,
+            apply_immediately=False,
+        )
+    if request.action == "dismiss":
+        dismissed_at = datetime.now(JST).isoformat()
+        update_review_status(
+            request.review_id,
+            "dismissed",
+            dismissed_at=dismissed_at,
+        )
+        return WeeklyPlanResponse(
+            status="dismissed",
+            week_start=str(review.get("week_start", "")),
+            review_id=request.review_id,
+            plan_revision=(
+                review["plan_revision"] if isinstance(review.get("plan_revision"), int) else None
+            ),
+        )
+
+    raise HTTPException(status_code=400, detail=f"Unknown weekly action: {request.action}")
+
+
+@app.post("/api/agent/weekly-plan/append", response_model=None)
+async def weekly_plan_append(
+    request: WeeklyPlanAppendRequest,
+) -> WeeklyPlanAppendResponse | JSONResponse:
+    """Append a session to the existing weekly plan (does not overwrite)."""
+    result = update_training_plan(
+        session_date=request.session_date,
+        session_type=request.session_type,
+        duration_minutes=request.duration_minutes,
+        target_tss=request.target_tss,
+        notes=request.notes,
+        mode="append",
+        expected_plan_revision=request.expected_plan_revision,
+    )
+
+    status = result.get("status")
+    if status == "success":
+        return WeeklyPlanAppendResponse(
+            status="success",
+            week_start=result.get("week_start"),
+            plan_revision=result.get("plan_revision"),
+            appended_session=result.get("updated_session"),
+        )
+    if status == "conflict":
+        return _conflict_response(result)
+
+    error_message = result.get("error_message", "append failed")
+    if "outside" in error_message or "Invalid session_date" in error_message:
+        raise HTTPException(status_code=400, detail=error_message)
+    raise HTTPException(status_code=500, detail=error_message)
+
+
+@app.post("/api/agent/weekly-plan/replace", response_model=None)
+async def weekly_plan_replace(
+    request: WeeklyPlanReplaceRequest,
+) -> WeeklyPlanReplaceResponse | JSONResponse:
+    result = update_training_plan(
+        session_date=request.session_date,
+        session_type=request.session_type,
+        duration_minutes=request.duration_minutes,
+        target_tss=request.target_tss,
+        notes=request.notes,
+        workout_id=request.workout_id,
+        status=request.status,
+        mode="replace",
+        target_session_id=request.target_session_id,
+        expected_plan_revision=request.expected_plan_revision,
+    )
+
+    status = result.get("status")
+    if status == "success":
+        return WeeklyPlanReplaceResponse(
+            status="success",
+            week_start=result.get("week_start"),
+            plan_revision=result.get("plan_revision"),
+            updated_session=result.get("updated_session"),
+        )
+    if status == "conflict":
+        return _conflict_response(result)
+    error_message = result.get("error_message", "replace failed")
+    if "not found" in error_message:
+        raise HTTPException(status_code=404, detail=error_message)
+    raise HTTPException(status_code=500, detail=error_message)
 
 
 @app.get("/health")

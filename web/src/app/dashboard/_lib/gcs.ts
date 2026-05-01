@@ -4,6 +4,7 @@
  */
 
 import { StravaActivity } from '@/lib/strava';
+import { JST_OFFSET_MS, jstTimestamp } from '@/lib/jst-clock';
 
 export interface ProcessedActivity {
   id: number;
@@ -47,19 +48,6 @@ interface SchemaField {
 
 const CTL_DECAY = 42;
 const ATL_DECAY = 7;
-
-const JST_OFFSET_MS = 9 * 60 * 60 * 1000;
-
-function jstTimestamp(dateStr: string): number {
-  const core = dateStr.replace(/(Z|[+-]\d{2}:?\d{2})$/, '');
-  const parsed = Date.parse(core + 'Z');
-  return Number.isNaN(parsed) ? NaN : parsed - JST_OFFSET_MS;
-}
-
-export function parseJstClock(dateStr: string): Date | null {
-  const ts = jstTimestamp(dateStr);
-  return Number.isNaN(ts) ? null : new Date(ts);
-}
 
 function estimateTSS(activity: StravaActivity, ftp: number): number {
   const hours = activity.moving_time / 3600;

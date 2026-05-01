@@ -1,10 +1,10 @@
 import { describe, expect, it } from 'vitest';
 import {
   computeFitnessMetrics,
-  parseJstClock,
   recomputeFitnessFromProcessed,
   type ProcessedActivity,
 } from '../gcs';
+import { parseJstClock } from '@/lib/jst-clock';
 import type { StravaActivity } from '@/lib/strava';
 
 function makeStravaActivity(overrides: Partial<StravaActivity> = {}): StravaActivity {

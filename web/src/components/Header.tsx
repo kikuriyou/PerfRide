@@ -21,7 +21,10 @@ export default function Header() {
   ];
 
   // Protected pages (auth required)
-  const protectedNavItems = [{ href: '/dashboard', label: 'Dashboard', icon: '📊' }];
+  const protectedNavItems = [
+    { href: '/dashboard', label: 'Dashboard', icon: '📊' },
+    { href: '/weekly-plan', label: 'Weekly Plan', icon: '📅' },
+  ];
 
   const navItems = session ? [...protectedNavItems, ...publicNavItems] : publicNavItems;
 

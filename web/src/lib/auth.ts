@@ -1,7 +1,11 @@
 import { NextAuthOptions } from 'next-auth';
 import StravaProvider from 'next-auth/providers/strava';
 import { JWT } from 'next-auth/jwt';
-import { GCSUserSettings, readUserSettings, writeUserSettings } from '@/lib/gcs-settings';
+import { DEFAULT_WEEKLY_SCHEDULE, type GCSUserSettings } from '@/lib/gcs-schema';
+import {
+  readUserSettings,
+  writeUserSettings,
+} from '@/lib/gcs-settings';
 
 async function persistStravaTokens(
   ownerId: number,
@@ -13,14 +17,15 @@ async function persistStravaTokens(
   const settings: GCSUserSettings = existing ?? {
     user_id: String(ownerId),
     strava_owner_id: ownerId,
+    coach_autonomy: 'suggest',
     ftp: 200,
     weight_kg: 70,
     max_hr: 190,
-    goal: { type: '', name: '', date: '', priority: '' },
+    goal: { type: 'fitness_maintenance', name: '', date: null, priority: 'medium' },
     training_preference: {
       mode: 'outdoor_preferred',
       location: { lat: 0, lon: 0 },
-      weekly_schedule: {},
+      weekly_schedule: DEFAULT_WEEKLY_SCHEDULE,
     },
     strava_auth: { access_token: accessToken, refresh_token: refreshToken, expires_at: expiresAt },
     notification: { channels: [] },

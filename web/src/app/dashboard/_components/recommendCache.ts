@@ -1,4 +1,5 @@
-import type { RecommendMode } from '@/lib/settings';
+import type { CoachAutonomy, RecommendMode } from '@/lib/settings';
+import type { ProposedSession } from '@/lib/gcs-schema';
 import type { WorkoutInterval } from '@/types/workout';
 
 export const CACHE_KEY = 'perfride_recommendation_cache';
@@ -15,6 +16,10 @@ export interface Recommendation {
   references?: { title: string; url: string | null }[];
   why_now?: string;
   based_on?: string;
+  plan_context_key?: string | null;
+  proposed_session?: ProposedSession | null;
+  source?: 'webhook' | 'weekly_plan' | 'generated' | string;
+  source_label?: string;
 }
 
 export interface CachedRecommendationEntry extends Recommendation {
@@ -22,6 +27,9 @@ export interface CachedRecommendationEntry extends Recommendation {
   _recommendMode: RecommendMode;
   _usePersonalData: boolean;
   _ftp: number;
+  _coachAutonomy: CoachAutonomy;
+  _planContextKey: string | null;
+  _cacheDate: string;
 }
 
 export function shouldReadCache(
@@ -40,6 +48,8 @@ export function loadCachedRecommendation(
   recommendMode: RecommendMode,
   usePersonalData: boolean,
   ftp: number,
+  coachAutonomy: CoachAutonomy,
+  planContextKey: string | null,
 ): Recommendation | null {
   try {
     const raw = localStorage.getItem(CACHE_KEY);
@@ -47,10 +57,14 @@ export function loadCachedRecommendation(
     const cached = JSON.parse(raw) as Partial<CachedRecommendationEntry>;
     const age = Date.now() - (cached._cachedAt || 0);
     if (age > CACHE_TTL_MS) return null;
+    const today = new Date().toLocaleDateString('en-CA', { timeZone: 'Asia/Tokyo' });
+    if (cached._cacheDate !== today) return null;
     if (
       cached._recommendMode !== recommendMode ||
       cached._usePersonalData !== usePersonalData ||
-      cached._ftp !== ftp
+      cached._ftp !== ftp ||
+      cached._coachAutonomy !== coachAutonomy ||
+      cached._planContextKey !== planContextKey
     ) {
       return null;
     }
@@ -65,6 +79,8 @@ export function saveCachedRecommendation(
   recommendMode: RecommendMode,
   usePersonalData: boolean,
   ftp: number,
+  coachAutonomy: CoachAutonomy,
+  planContextKey: string | null,
 ): void {
   try {
     const entry: CachedRecommendationEntry = {
@@ -73,6 +89,9 @@ export function saveCachedRecommendation(
       _recommendMode: recommendMode,
       _usePersonalData: usePersonalData,
       _ftp: ftp,
+      _coachAutonomy: coachAutonomy,
+      _planContextKey: planContextKey,
+      _cacheDate: new Date().toLocaleDateString('en-CA', { timeZone: 'Asia/Tokyo' }),
     };
     localStorage.setItem(CACHE_KEY, JSON.stringify(entry));
   } catch {

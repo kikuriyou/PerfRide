@@ -3,6 +3,8 @@
 import { useState, useEffect } from 'react';
 import { useSettings } from '@/lib/settings';
 import { logCoachEvent } from '@/lib/coach-events';
+import SafetyAlert from './SafetyAlert';
+import { remainingInsightItems, selectSafetyAlert } from './safety-alert-helpers';
 
 interface InsightItem {
   type: string;
@@ -129,8 +131,6 @@ export default function InsightCards() {
     settings.asOf,
   ]);
 
-  if (loading || items.length === 0) return null;
-
   const toggleExpand = (type: string) => {
     setExpandedTypes((prev) => {
       const next = new Set(prev);
@@ -144,9 +144,15 @@ export default function InsightCards() {
     });
   };
 
+  if (loading || items.length === 0) return null;
+
+  const safetyItem = selectSafetyAlert(items);
+  const insightItems = remainingInsightItems(items, safetyItem).slice(0, MAX_CARDS);
+
   return (
     <div style={{ display: 'grid', gap: '0.75rem', marginBottom: '1rem' }}>
-      {items.map((item) => {
+      {safetyItem && <SafetyAlert item={safetyItem} />}
+      {insightItems.map((item) => {
         const expanded = expandedTypes.has(item.type);
         const icon = PRIORITY_ICON[item.priority] || 'ℹ️';
         const borderColor = PRIORITY_COLOR[item.priority] || '#95a5a6';

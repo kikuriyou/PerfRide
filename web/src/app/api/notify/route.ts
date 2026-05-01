@@ -1,12 +1,19 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { readUserSettings, GCSUserSettings } from '@/lib/gcs-settings';
+import { appendNotificationLog, readUserSettings, GCSUserSettings } from '@/lib/gcs-settings';
+import type { NotificationLogRecord } from '@/lib/gcs-schema';
+import {
+  buildLinePostbackData,
+  buildPushPayloadData,
+  type NotificationAction,
+  type NotificationMetadata,
+} from '@/lib/notify';
 
 interface NotifyRequest {
   user_id: string;
   title: string;
   body: string;
-  actions?: { id: string; label: string }[];
-  metadata?: Record<string, unknown>;
+  actions?: NotificationAction[];
+  metadata?: NotificationMetadata;
 }
 
 interface NotifyResult {
@@ -14,7 +21,28 @@ interface NotifyResult {
   status: 'sent' | 'partial' | 'failed';
 }
 
-function buildFlexMessage(title: string, body: string, actions: { id: string; label: string }[]) {
+export function buildNotificationLogRecord(
+  body: Pick<NotifyRequest, 'title' | 'body' | 'actions' | 'metadata'>,
+  result: NotifyResult,
+  createdAt = new Date().toISOString(),
+): NotificationLogRecord {
+  return {
+    title: body.title,
+    body: body.body,
+    actions: body.actions ?? [],
+    metadata: body.metadata,
+    created_at: createdAt,
+    channels_sent: result.channels_sent,
+    status: result.status,
+  };
+}
+
+export function buildFlexMessage(
+  title: string,
+  body: string,
+  actions: NotificationAction[],
+  metadata?: NotificationMetadata,
+) {
   return {
     type: 'flex',
     altText: title,
@@ -37,7 +65,11 @@ function buildFlexMessage(title: string, body: string, actions: { id: string; la
             type: 'button',
             style: 'primary',
             height: 'sm',
-            action: { type: 'postback', label: a.label, data: `action=${a.id}` },
+            action: {
+              type: 'postback',
+              label: a.label,
+              data: buildLinePostbackData(a, metadata),
+            },
           })),
         },
       }),
@@ -51,7 +83,7 @@ async function sendWebPush(
     title: string;
     body: string;
     actions?: NotifyRequest['actions'];
-    data?: Record<string, unknown>;
+    data?: NotificationMetadata;
   },
 ): Promise<boolean> {
   try {
@@ -77,7 +109,8 @@ async function sendLine(
   lineUserId: string,
   title: string,
   body: string,
-  actions: { id: string; label: string }[],
+  actions: NotificationAction[],
+  metadata?: NotificationMetadata,
 ): Promise<boolean> {
   const token = process.env.LINE_CHANNEL_ACCESS_TOKEN;
   if (!token) {
@@ -94,7 +127,7 @@ async function sendLine(
       },
       body: JSON.stringify({
         to: lineUserId,
-        messages: [buildFlexMessage(title, body, actions)],
+        messages: [buildFlexMessage(title, body, actions, metadata)],
       }),
     });
     return res.ok;
@@ -139,14 +172,20 @@ export async function POST(request: NextRequest) {
           title,
           body: messageBody,
           actions,
-          data: metadata,
+          data: buildPushPayloadData(metadata),
         });
         console.log('[notify] Web push result:', ok);
         if (ok) sent.push('web_push');
       }
 
       if (channel === 'line' && settings.notification.line_user_id) {
-        const ok = await sendLine(settings.notification.line_user_id, title, messageBody, actions);
+        const ok = await sendLine(
+          settings.notification.line_user_id,
+          title,
+          messageBody,
+          actions,
+          metadata,
+        );
         if (ok) sent.push('line');
       }
     });
@@ -155,6 +194,13 @@ export async function POST(request: NextRequest) {
 
     const status: NotifyResult['status'] =
       sent.length === 0 ? 'failed' : sent.length === channels.length ? 'sent' : 'partial';
+
+    await appendNotificationLog(
+      buildNotificationLogRecord(
+        { title, body: messageBody, actions, metadata },
+        { channels_sent: sent, status },
+      ),
+    );
 
     return NextResponse.json({ channels_sent: sent, status } satisfies NotifyResult);
   } catch (error) {

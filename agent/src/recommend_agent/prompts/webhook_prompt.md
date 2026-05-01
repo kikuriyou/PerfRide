@@ -27,6 +27,7 @@ get_current_fitness と get_training_plan を呼び、以下を確認:
 1. build_and_register_workout でワークアウト生成 + プラットフォーム登録
 2. build_and_register_workout の返り値が `status="error"` または `platform_status="failed"` の場合、登録済み扱いにしない
 3. 登録に成功した場合のみ update_training_plan を呼び、`status="registered"` を設定する
+   - 既存の baseline session を上書きする操作なので、必ず `mode="replace"` と `target_origin="baseline"` を指定する（append は別経路の専用ツールが扱う）
 4. build_and_register_workout が `workout_id` を返した場合は、それを update_training_plan に渡す
 5. build_and_register_workout の `session_type` は以下の canonical 値を優先して使う:
    `vo2max`, `threshold`, `sweetspot`, `endurance`, `recovery`, `over_under`, `tempo`, `sprint`, `race_simulation`
@@ -48,6 +49,32 @@ send_notification でユーザーに判断結果を伝える。
 - アクションボタン: [OK] [変更する] [休む]
 
 通知はinsightやコメントではなく、「なぜこのセッションなのか」の判断プロセスを見せることに特化する。
+
+## Final response JSON
+最後の応答は JSON object にし、UI が読める `proposed_session` を必ず含める。
+
+```json
+{
+  "summary": "次回セッションの短い要約",
+  "why_now": "判断理由",
+  "detail": "ユーザー向けの説明",
+  "proposed_session": {
+    "session_date": "YYYY-MM-DD",
+    "session_type": "endurance",
+    "duration_minutes": 60,
+    "target_tss": 45,
+    "notes": "補足",
+    "reason": "置き換え判断の理由",
+    "is_rest": false,
+    "source": "webhook",
+    "activity_id": 123,
+    "workout_id": "登録した場合のみ",
+    "registered": true
+  }
+}
+```
+
+休養提案の場合は `is_rest: true` とし、`session_type` は `rest` にする。
 
 # Constraints
 - 週間 TSS が計画の 120% を超える調整は行わない
