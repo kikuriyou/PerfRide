@@ -28,11 +28,16 @@ const OPERATION_LABELS: Record<string, string> = {
   weekly_plan: 'Weekly plan',
   ambient_flow: 'Ambient flow',
   workout_registration: 'Workout 登録',
+  mywhoosh_settings: 'MyWhoosh 設定',
   insight: 'Insight',
 };
 
 interface AgentLogsResponse {
   logs?: AgentOperationLogRecord[];
+}
+
+interface AgentOperationLogPanelProps {
+  refreshSignal?: number;
 }
 
 export function agentOperationStatusLabel(status: AgentOperationLogStatus): string {
@@ -74,7 +79,7 @@ function statusStyle(status: AgentOperationLogStatus) {
   };
 }
 
-export default function AgentOperationLogPanel() {
+export default function AgentOperationLogPanel({ refreshSignal = 0 }: AgentOperationLogPanelProps) {
   const [logs, setLogs] = useState<AgentOperationLogRecord[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -114,7 +119,7 @@ export default function AgentOperationLogPanel() {
     return () => {
       cancelled = true;
     };
-  }, []);
+  }, [refreshSignal]);
 
   return (
     <div>
@@ -155,7 +160,16 @@ export default function AgentOperationLogPanel() {
         <div style={{ fontSize: '0.9rem', opacity: 0.7 }}>ログはまだありません</div>
       )}
       {!loading && !error && logs.length > 0 && (
-        <div style={{ display: 'grid', gap: '0.65rem' }}>
+        <div
+          style={{
+            display: 'grid',
+            gap: '0.65rem',
+            maxHeight: '420px',
+            overflowY: 'auto',
+            overscrollBehavior: 'contain',
+            paddingRight: '0.25rem',
+          }}
+        >
           {logs.map((log, index) => (
             <div
               key={`${log.created_at}-${log.run_id ?? index}-${log.status}`}

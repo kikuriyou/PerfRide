@@ -249,6 +249,19 @@ def _has_saved_mywhoosh_ciphertext(user_id: str) -> bool:
     )
 
 
+def _format_mywhoosh_failure(message: str, *, sanitize_unknown: bool = False) -> tuple[str, str]:
+    if "already logged in" in message.lower():
+        return (
+            "already_logged_in",
+            "MyWhoosh account is already logged in from another device. Log out there and retry.",
+        )
+    if "mywhoosh login failed" in message.lower():
+        return ("failed", "MyWhoosh login failed. Check the email and password.")
+    if sanitize_unknown:
+        return ("failed", "MyWhoosh login failed. Check the email and password.")
+    return ("failed", message)
+
+
 def test_mywhoosh_login(user_id: str) -> dict[str, str | bool]:
     from mywhoosh.client import MyWhooshClient
 
@@ -261,11 +274,12 @@ def test_mywhoosh_login(user_id: str) -> dict[str, str | bool]:
 
     try:
         MyWhooshClient(credentials=credentials).login()
-    except Exception:
+    except Exception as exc:
+        status, message = _format_mywhoosh_failure(str(exc), sanitize_unknown=True)
         return {
             "ok": False,
-            "status": "failed",
-            "message": "MyWhoosh login failed. Check the email and password.",
+            "status": status,
+            "message": message,
         }
     return {"ok": True, "status": "verified", "message": "MyWhoosh login verified"}
 
@@ -294,7 +308,8 @@ def _deploy_mywhoosh(
         result = client.upload_workout(payload)
         return {"platform_status": result.status, "platform_message": result.message}
     except Exception as e:
-        return {"platform_status": "failed", "platform_message": str(e)}
+        _, message = _format_mywhoosh_failure(str(e))
+        return {"platform_status": "failed", "platform_message": message}
 
 
 def build_and_register_workout(
@@ -409,6 +424,9 @@ def build_and_register_workout(
         f"workout_id={result.get('workout_id')} message={deploy_info.get('platform_message')}"
     )
     result_status = result["status"]
+    operation_message = f"Workout registration {result_status}"
+    if deploy_info.get("platform_message"):
+        operation_message = f"{operation_message}: {deploy_info.get('platform_message')}"
     record_agent_operation(
         status=(
             "completed"
@@ -419,7 +437,7 @@ def build_and_register_workout(
         ),
         operation="workout_registration",
         trigger=trigger,
-        message=f"Workout registration {result_status}",
+        message=operation_message,
         user_id=user_id,
         run_id=operation_run_id,
         trace_id=trace_id,

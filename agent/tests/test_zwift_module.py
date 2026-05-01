@@ -226,6 +226,31 @@ class TestBuildAndRegisterWorkout:
         assert result["platform_status"] == "failed"
         assert "401" in result["platform_message"]
 
+    @patch("recommend_agent.tools.build_and_register_workout.record_agent_operation")
+    @patch("mywhoosh.client.MyWhooshClient.upload_workout")
+    @patch("mywhoosh.client.MyWhooshClient.login")
+    def test_operation_log_includes_mywhoosh_failure(self, mock_login, mock_upload, mock_record):
+        from mywhoosh.client import AuthSession, DeployResult
+
+        message = (
+            "MyWhoosh account is already logged in from another device. Log out there and retry."
+        )
+        mock_login.return_value = AuthSession(access_token="fake", whoosh_id="id123")
+        mock_upload.return_value = DeployResult(status="failed", message=message)
+
+        from recommend_agent.tools.build_and_register_workout import (
+            build_and_register_workout,
+        )
+
+        result = build_and_register_workout(
+            session_type="sweetspot",
+            duration_minutes=90,
+            ftp=260,
+        )
+
+        assert result["status"] == "error"
+        assert "already logged in" in mock_record.call_args_list[-1].kwargs["message"]
+
     def test_invalid_session_type(self):
         from recommend_agent.tools.build_and_register_workout import (
             build_and_register_workout,

@@ -58,6 +58,8 @@ def test_mywhoosh_client_retries_already_logged_in_case_insensitive():
 def test_mywhoosh_client_rejects_missing_credentials(monkeypatch):
     monkeypatch.delenv("MYWHOOSH_EMAIL", raising=False)
     monkeypatch.delenv("MYWHOOSH_PASSWORD", raising=False)
+    monkeypatch.setattr("mywhoosh.client.MYWHOOSH_EMAIL", "")
+    monkeypatch.setattr("mywhoosh.client.MYWHOOSH_PASSWORD", "")
     with pytest.raises(RuntimeError, match="credentials"):
         MyWhooshClient().login()
 
@@ -125,6 +127,27 @@ def test_mywhoosh_login_check_sanitizes_failures(monkeypatch):
     assert result["ok"] is False
     assert result["status"] == "failed"
     assert "secret-password" not in str(result["message"])
+
+
+def test_mywhoosh_login_check_reports_already_logged_in(monkeypatch):
+    from recommend_agent.tools import build_and_register_workout as workout
+
+    monkeypatch.setattr(
+        workout,
+        "_load_mywhoosh_credentials",
+        lambda user_id: MyWhooshCredentials(email="u@example.com", password="pw"),
+    )
+    with patch(
+        "mywhoosh.client.MyWhooshClient.login",
+        side_effect=RuntimeError(
+            "MyWhoosh login failed: You are already logged in from another device."
+        ),
+    ):
+        result = workout.test_mywhoosh_login("123")
+
+    assert result["ok"] is False
+    assert result["status"] == "already_logged_in"
+    assert "already logged in" in str(result["message"])
 
 
 def test_mywhoosh_login_check_reports_decrypt_failure(monkeypatch):

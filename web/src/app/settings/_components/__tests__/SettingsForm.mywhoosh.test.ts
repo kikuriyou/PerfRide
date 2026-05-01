@@ -32,4 +32,18 @@ describe('myWhooshSaveMessage', () => {
       }),
     ).toContain('保存しましたが');
   });
+
+  it('reports already logged in verification distinctly', () => {
+    expect(
+      myWhooshSaveMessage({
+        ...base,
+        verification: {
+          ok: false,
+          status: 'already_logged_in',
+          message: 'MyWhoosh account is already logged in from another device.',
+          checked_at: '2026-05-02T00:00:00Z',
+        },
+      }),
+    ).toContain('別デバイス');
+  });
 });

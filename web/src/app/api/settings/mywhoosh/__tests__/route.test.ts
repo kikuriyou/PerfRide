@@ -1,6 +1,10 @@
 import { describe, expect, it } from 'vitest';
 
-import { resolveMyWhooshSaveError } from '../route';
+import {
+  myWhooshVerificationLogMessage,
+  myWhooshVerificationLogStatus,
+  resolveMyWhooshSaveError,
+} from '../route';
 
 describe('resolveMyWhooshSaveError', () => {
   it('returns an actionable error when KMS_KEY_NAME is missing', () => {
@@ -18,5 +22,20 @@ describe('resolveMyWhooshSaveError', () => {
   it('keeps generic failures terse', () => {
     const result = resolveMyWhooshSaveError(new Error('storage write failed'));
     expect(result).toEqual({ message: 'Failed to save MyWhoosh settings', status: 500 });
+  });
+});
+
+describe('MyWhoosh verification operation logs', () => {
+  it('shows already logged in failures in the log message', () => {
+    const verification = {
+      ok: false,
+      status: 'already_logged_in' as const,
+      message: 'MyWhoosh account is already logged in from another device.',
+      checked_at: '2026-05-02T00:00:00Z',
+    };
+
+    expect(myWhooshVerificationLogStatus(verification)).toBe('error');
+    expect(myWhooshVerificationLogMessage(verification)).toContain('別デバイス');
+    expect(myWhooshVerificationLogMessage(verification)).toContain('already logged in');
   });
 });

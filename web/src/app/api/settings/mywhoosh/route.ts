@@ -9,9 +9,11 @@ import {
   writeGCSJSON,
 } from '@/lib/gcs-settings';
 import { agentFetch } from '@/lib/agent';
+import { recordAgentOperationLog } from '@/lib/agent-operation-log';
+import type { AgentOperationLogStatus, GCSUserId } from '@/lib/gcs-settings';
 import { encryptWithKms, getKmsKeyName, isKmsConfigured } from '@/lib/kms';
 
-type VerificationStatus = 'verified' | 'failed' | 'missing' | 'skipped';
+type VerificationStatus = 'verified' | 'failed' | 'missing' | 'skipped' | 'already_logged_in';
 
 interface MyWhooshVerification {
   ok: boolean;
@@ -61,7 +63,13 @@ function normalizeVerification(data: unknown): MyWhooshVerification {
   const candidate = data as Partial<Omit<MyWhooshVerification, 'checked_at'>> | null;
   const status = candidate?.status;
   const normalizedStatus: VerificationStatus =
-    status === 'verified' || status === 'failed' || status === 'missing' ? status : 'failed';
+    status === 'verified' ||
+    status === 'failed' ||
+    status === 'missing' ||
+    status === 'skipped' ||
+    status === 'already_logged_in'
+      ? status
+      : 'failed';
   return {
     ok: Boolean(candidate?.ok),
     status: normalizedStatus,
@@ -97,6 +105,48 @@ async function verifySavedMyWhooshCredential(userId: string): Promise<MyWhooshVe
       checked_at: new Date().toISOString(),
     };
   }
+}
+
+export function myWhooshVerificationLogStatus(
+  verification: MyWhooshVerification,
+): AgentOperationLogStatus {
+  if (verification.status === 'verified') return 'completed';
+  if (verification.status === 'skipped') return 'skipped';
+  return 'error';
+}
+
+export function myWhooshVerificationLogMessage(verification: MyWhooshVerification): string {
+  if (verification.status === 'verified') {
+    return 'MyWhoosh 設定を保存し、ログイン確認に成功しました';
+  }
+  if (verification.status === 'already_logged_in') {
+    return `MyWhoosh 設定を保存しましたが、別デバイスでログイン中のため確認できませんでした: ${verification.message}`;
+  }
+  if (verification.status === 'missing') {
+    return `MyWhoosh 設定を保存しましたが、認証情報を確認できませんでした: ${verification.message}`;
+  }
+  if (verification.status === 'skipped') {
+    return `MyWhoosh 設定を保存しましたが、ログイン確認は未実行です: ${verification.message}`;
+  }
+  return `MyWhoosh 設定を保存しましたが、ログイン確認に失敗しました: ${verification.message}`;
+}
+
+async function recordMyWhooshVerificationLog(
+  userId: GCSUserId,
+  verification: MyWhooshVerification,
+): Promise<void> {
+  await recordAgentOperationLog(userId, {
+    status: myWhooshVerificationLogStatus(verification),
+    operation: 'mywhoosh_settings',
+    trigger: 'settings_save',
+    message: myWhooshVerificationLogMessage(verification),
+    runId: `mywhoosh-settings-${Date.now().toString(36)}`,
+    metadata: {
+      verification_ok: verification.ok,
+      verification_status: verification.status,
+      checked_at: verification.checked_at,
+    },
+  });
 }
 
 export async function GET() {
@@ -140,6 +190,7 @@ export async function POST(request: Request) {
     const verification = await verifySavedMyWhooshCredential(session.user.id);
     const verifiedRecord = { ...record, verification };
     await writeGCSJSON(credentialPath(session.user.id), verifiedRecord);
+    await recordMyWhooshVerificationLog(session.user.id, verification);
     return NextResponse.json({
       ok: true,
       configured: true,

@@ -1,5 +1,6 @@
 import type {
   AgentOperationLogRecord,
+  ApprovedWeekPayload,
   CoachDecisionRecord,
   GCSTrainingPlan,
   GCSUserSettings,
@@ -150,24 +151,77 @@ export function writeUserSettings(settings: GCSUserSettings, userId?: GCSUserId)
   return writeJSON(objectPath(userId, filename), settings);
 }
 
-export async function readTrainingPlan(userId?: GCSUserId): Promise<GCSTrainingPlan | null> {
-  const raw = await readJSON<GCSTrainingPlan>(objectPath(userId, 'training_plan.json'));
-  if (!raw) return null;
-  const weeklyPlan = Object.fromEntries(
-    Object.entries(raw.weekly_plan).map(([k, v]) => [
-      k,
-      {
-        ...v,
-        phase: resolvePhaseName(v.phase),
-        sessions: ensureSessionIds(v.sessions, v.week_start),
-      },
-    ]),
+type RawTrainingPlan = Partial<Omit<GCSTrainingPlan, 'phases' | 'weekly_plan'>> &
+  Record<string, unknown> & {
+    phases?: unknown;
+    weekly_plan?: unknown;
+  };
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null && !Array.isArray(value);
+}
+
+function normalizeSessions(value: unknown): TrainingSession[] {
+  if (!Array.isArray(value)) return [];
+  return value
+    .filter(isRecord)
+    .filter(
+      (session) => typeof session.date === 'string' && typeof session.type === 'string',
+    ) as unknown as TrainingSession[];
+}
+
+function normalizeWeeklyPlan(value: unknown): GCSTrainingPlan['weekly_plan'] {
+  const entries: ReadonlyArray<readonly [string, unknown]> = Array.isArray(value)
+    ? value.map((entry, index) => {
+        const weekNumber =
+          isRecord(entry) && typeof entry.week_number === 'number' ? entry.week_number : index + 1;
+        return [`week_${weekNumber}`, entry] as const;
+      })
+    : isRecord(value)
+      ? Object.entries(value)
+      : [];
+
+  return Object.fromEntries(
+    entries
+      .filter((entry): entry is readonly [string, Record<string, unknown>] => isRecord(entry[1]))
+      .map(([k, v]) => {
+        const phase = typeof v.phase === 'string' ? v.phase : 'maintenance';
+        const weekStart = typeof v.week_start === 'string' ? v.week_start : k;
+        const sessions = normalizeSessions(v.sessions);
+        return [
+          k,
+          {
+            ...v,
+            phase: resolvePhaseName(phase),
+            sessions: ensureSessionIds(sessions, weekStart),
+          } as ApprovedWeekPayload,
+        ];
+      }),
   );
+}
+
+export function normalizeTrainingPlan(raw: RawTrainingPlan): GCSTrainingPlan {
+  const phases = Array.isArray(raw.phases)
+    ? raw.phases.filter(isRecord).map(
+        (phase) =>
+          ({
+            ...phase,
+            name: resolvePhaseName(typeof phase.name === 'string' ? phase.name : 'custom'),
+          }) as GCSTrainingPlan['phases'][number],
+      )
+    : [];
+
   return {
     ...raw,
-    phases: raw.phases.map((p) => ({ ...p, name: resolvePhaseName(p.name) })),
-    weekly_plan: weeklyPlan,
-  };
+    phases,
+    weekly_plan: normalizeWeeklyPlan(raw.weekly_plan),
+  } as GCSTrainingPlan;
+}
+
+export async function readTrainingPlan(userId?: GCSUserId): Promise<GCSTrainingPlan | null> {
+  const raw = await readJSON<RawTrainingPlan>(objectPath(userId, 'training_plan.json'));
+  if (!raw) return null;
+  return normalizeTrainingPlan(raw);
 }
 
 export function writeTrainingPlan(plan: GCSTrainingPlan, userId?: GCSUserId): Promise<void> {

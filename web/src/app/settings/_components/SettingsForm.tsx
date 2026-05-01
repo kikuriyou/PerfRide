@@ -64,7 +64,7 @@ interface MyWhooshStatus {
   encryption_ready?: boolean;
   verification?: {
     ok: boolean;
-    status: 'verified' | 'failed' | 'missing' | 'skipped';
+    status: 'verified' | 'failed' | 'missing' | 'skipped' | 'already_logged_in';
     message: string;
     checked_at: string;
   } | null;
@@ -74,6 +74,9 @@ export function myWhooshSaveMessage(data: MyWhooshStatus): string {
   const verification = data.verification;
   if (verification?.status === 'verified') {
     return '保存しました。MyWhoosh ログイン確認も成功しました。';
+  }
+  if (verification?.status === 'already_logged_in') {
+    return `保存しましたが、MyWhoosh は別デバイスでログイン中のため確認できませんでした: ${verification.message}`;
   }
   if (verification?.status === 'failed' || verification?.status === 'missing') {
     return `保存しましたが、MyWhoosh ログイン確認に失敗しました: ${verification.message}`;
@@ -123,6 +126,7 @@ export default function SettingsForm() {
   const [myWhooshConfigured, setMyWhooshConfigured] = useState(false);
   const [myWhooshEncryptionReady, setMyWhooshEncryptionReady] = useState(true);
   const [myWhooshMessage, setMyWhooshMessage] = useState<string | null>(null);
+  const [agentLogRefreshSignal, setAgentLogRefreshSignal] = useState(0);
   const isDev = process.env.NODE_ENV === 'development';
 
   const syncLocalSettings = useEffectEvent(() => {
@@ -210,6 +214,7 @@ export default function SettingsForm() {
     }
     setMyWhooshPassword('');
     setMyWhooshMessage(data && 'configured' in data ? myWhooshSaveMessage(data) : '保存しました');
+    setAgentLogRefreshSignal((value) => value + 1);
   };
 
   const handleDeleteMyWhoosh = async () => {
@@ -246,7 +251,7 @@ export default function SettingsForm() {
   return (
     <div style={{ display: 'grid', gap: '2rem' }}>
       <div style={cardStyle}>
-        <AgentOperationLogPanel />
+        <AgentOperationLogPanel refreshSignal={agentLogRefreshSignal} />
       </div>
 
       <div style={cardStyle}>
