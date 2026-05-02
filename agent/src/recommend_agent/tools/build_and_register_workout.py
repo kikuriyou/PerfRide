@@ -273,7 +273,7 @@ def test_mywhoosh_login(user_id: str) -> dict[str, str | bool]:
         return {"ok": False, "status": "missing", "message": message}
 
     try:
-        MyWhooshClient(credentials=credentials).login()
+        MyWhooshClient(credentials=credentials).login(allow_reconnect=False)
     except Exception as exc:
         status, message = _format_mywhoosh_failure(str(exc), sanitize_unknown=True)
         return {

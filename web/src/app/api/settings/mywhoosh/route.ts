@@ -115,31 +115,39 @@ export function myWhooshVerificationLogStatus(
   return 'error';
 }
 
-export function myWhooshVerificationLogMessage(verification: MyWhooshVerification): string {
+export function myWhooshVerificationLogMessage(
+  verification: MyWhooshVerification,
+  action: 'save' | 'test' = 'save',
+): string {
+  const prefix = action === 'save' ? 'MyWhoosh 設定を保存しました' : 'MyWhoosh ログイン確認';
   if (verification.status === 'verified') {
-    return 'MyWhoosh 設定を保存し、ログイン確認に成功しました';
+    return action === 'save'
+      ? 'MyWhoosh 設定を保存し、ログイン確認に成功しました'
+      : 'MyWhoosh ログイン確認に成功しました';
   }
   if (verification.status === 'already_logged_in') {
-    return `MyWhoosh 設定を保存しましたが、別デバイスでログイン中のため確認できませんでした: ${verification.message}`;
+    return `${prefix}は、別デバイスでログイン中のため完了できませんでした: ${verification.message}`;
   }
   if (verification.status === 'missing') {
-    return `MyWhoosh 設定を保存しましたが、認証情報を確認できませんでした: ${verification.message}`;
+    return `${prefix}は、認証情報を確認できませんでした: ${verification.message}`;
   }
   if (verification.status === 'skipped') {
-    return `MyWhoosh 設定を保存しましたが、ログイン確認は未実行です: ${verification.message}`;
+    return `${prefix}は未実行です: ${verification.message}`;
   }
-  return `MyWhoosh 設定を保存しましたが、ログイン確認に失敗しました: ${verification.message}`;
+  return `${prefix}に失敗しました: ${verification.message}`;
 }
 
 async function recordMyWhooshVerificationLog(
   userId: GCSUserId,
   verification: MyWhooshVerification,
+  trigger: string,
+  action: 'save' | 'test',
 ): Promise<void> {
   await recordAgentOperationLog(userId, {
     status: myWhooshVerificationLogStatus(verification),
     operation: 'mywhoosh_settings',
-    trigger: 'settings_save',
-    message: myWhooshVerificationLogMessage(verification),
+    trigger,
+    message: myWhooshVerificationLogMessage(verification, action),
     runId: `mywhoosh-settings-${Date.now().toString(36)}`,
     metadata: {
       verification_ok: verification.ok,
@@ -187,22 +195,46 @@ export async function POST(request: Request) {
       status: 'configured',
     };
     await writeGCSJSON(credentialPath(session.user.id), record);
-    const verification = await verifySavedMyWhooshCredential(session.user.id);
-    const verifiedRecord = { ...record, verification };
-    await writeGCSJSON(credentialPath(session.user.id), verifiedRecord);
-    await recordMyWhooshVerificationLog(session.user.id, verification);
     return NextResponse.json({
       ok: true,
       configured: true,
       email: record.email,
       updated_at: record.updated_at,
-      verification,
+      verification: null,
     });
   } catch (error) {
     console.error('MyWhoosh settings error:', error instanceof Error ? error.message : error);
     const resolved = resolveMyWhooshSaveError(error);
     return NextResponse.json({ error: resolved.message }, { status: resolved.status });
   }
+}
+
+export async function PUT() {
+  const session = await getServerSession(authOptions);
+  if (!session?.user?.id) {
+    return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+  }
+
+  const path = credentialPath(session.user.id);
+  const record = await readGCSJSON<MyWhooshCredentialRecord>(path);
+  if (!record?.password_ciphertext) {
+    return NextResponse.json(
+      { error: 'MyWhoosh credentials are not configured' },
+      { status: 400 },
+    );
+  }
+
+  const verification = await verifySavedMyWhooshCredential(session.user.id);
+  await writeGCSJSON(path, { ...record, verification });
+  await recordMyWhooshVerificationLog(session.user.id, verification, 'settings_test', 'test');
+  return NextResponse.json({
+    ok: true,
+    configured: true,
+    email: record.email,
+    updated_at: record.updated_at,
+    encryption_ready: isKmsConfigured(),
+    verification,
+  });
 }
 
 export async function DELETE() {

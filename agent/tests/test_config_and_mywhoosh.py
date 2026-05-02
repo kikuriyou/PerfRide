@@ -3,8 +3,15 @@ from unittest.mock import Mock, patch
 
 import pytest
 
-from mywhoosh.client import MyWhooshClient, MyWhooshCredentials
+from mywhoosh.client import MyWhooshClient, MyWhooshCredentials, clear_mywhoosh_session_cache
 from recommend_agent.config import ConfigError, get_gcs_bucket, get_web_api_url
+
+
+@pytest.fixture(autouse=True)
+def _clear_mywhoosh_session_cache():
+    clear_mywhoosh_session_cache()
+    yield
+    clear_mywhoosh_session_cache()
 
 
 def test_main_imports_without_runtime_env(monkeypatch):
@@ -53,6 +60,36 @@ def test_mywhoosh_client_retries_already_logged_in_case_insensitive():
     assert mock_post.call_count == 2
     assert mock_post.call_args_list[0].kwargs["json"]["Action"] == 1001
     assert mock_post.call_args_list[1].kwargs["json"]["Action"] == 1002
+
+
+def test_mywhoosh_client_can_skip_already_logged_in_reconnect():
+    client = MyWhooshClient(MyWhooshCredentials(email="u@example.com", password="pw"))
+    first = Mock()
+    first.json.return_value = {"Success": False, "Message": "Already Logged In"}
+    with (
+        patch("mywhoosh.client.httpx.post", return_value=first) as mock_post,
+        pytest.raises(RuntimeError, match="Already Logged In"),
+    ):
+        client.login(allow_reconnect=False)
+
+    assert mock_post.call_count == 1
+    assert mock_post.call_args.kwargs["json"]["Action"] == 1001
+
+
+def test_mywhoosh_client_reuses_cached_session_for_same_credentials():
+    credentials = MyWhooshCredentials(email="u@example.com", password="pw")
+    with patch("mywhoosh.client.httpx.post") as mock_post:
+        mock_post.return_value.json.return_value = {
+            "Success": True,
+            "AccessToken": "token",
+            "WhooshId": "whoosh",
+        }
+
+        first = MyWhooshClient(credentials).login()
+        second = MyWhooshClient(credentials).login()
+
+    assert first == second
+    assert mock_post.call_count == 1
 
 
 def test_mywhoosh_client_rejects_missing_credentials(monkeypatch):
@@ -105,7 +142,7 @@ def test_mywhoosh_login_check_verifies_credentials(monkeypatch):
     with patch("mywhoosh.client.MyWhooshClient.login") as mock_login:
         result = workout.test_mywhoosh_login("123")
 
-    mock_login.assert_called_once()
+    mock_login.assert_called_once_with(allow_reconnect=False)
     assert result == {
         "ok": True,
         "status": "verified",

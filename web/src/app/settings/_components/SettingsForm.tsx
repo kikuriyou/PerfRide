@@ -87,6 +87,23 @@ export function myWhooshSaveMessage(data: MyWhooshStatus): string {
   return '保存しました';
 }
 
+export function myWhooshTestMessage(data: MyWhooshStatus): string {
+  const verification = data.verification;
+  if (verification?.status === 'verified') {
+    return 'MyWhoosh ログイン確認に成功しました。';
+  }
+  if (verification?.status === 'already_logged_in') {
+    return `MyWhoosh は別デバイスでログイン中のため確認できませんでした: ${verification.message}`;
+  }
+  if (verification?.status === 'failed' || verification?.status === 'missing') {
+    return `MyWhoosh ログイン確認に失敗しました: ${verification.message}`;
+  }
+  if (verification?.status === 'skipped') {
+    return `MyWhoosh ログイン確認は未実行です: ${verification.message}`;
+  }
+  return 'MyWhoosh ログイン確認を実行しました';
+}
+
 function normalizeAsOf(raw: string): string | null {
   const trimmed = raw.trim();
   if (!trimmed) return null;
@@ -214,6 +231,26 @@ export default function SettingsForm() {
     }
     setMyWhooshPassword('');
     setMyWhooshMessage(data && 'configured' in data ? myWhooshSaveMessage(data) : '保存しました');
+    setAgentLogRefreshSignal((value) => value + 1);
+  };
+
+  const handleTestMyWhoosh = async () => {
+    setMyWhooshMessage(null);
+    const res = await fetch('/api/settings/mywhoosh', { method: 'PUT' });
+    const data = (await res.json().catch(() => null)) as MyWhooshStatus | { error?: string } | null;
+    if (!res.ok) {
+      setMyWhooshMessage(
+        data && 'error' in data ? data.error || '確認できませんでした' : '確認できませんでした',
+      );
+      return;
+    }
+    if (data && 'configured' in data) {
+      setMyWhooshConfigured(data.configured);
+      setMyWhooshEmail(data.email);
+    }
+    setMyWhooshMessage(
+      data && 'configured' in data ? myWhooshTestMessage(data) : '確認しました',
+    );
     setAgentLogRefreshSignal((value) => value + 1);
   };
 
@@ -592,6 +629,19 @@ export default function SettingsForm() {
               disabled={!myWhooshEmail || !myWhooshPassword || !myWhooshEncryptionReady}
             >
               Save MyWhoosh
+            </button>
+            <button
+              type="button"
+              onClick={handleTestMyWhoosh}
+              className="btn"
+              disabled={!myWhooshConfigured}
+              style={{
+                border: '1px solid var(--border)',
+                background: 'transparent',
+                color: 'var(--foreground)',
+              }}
+            >
+              Test connection
             </button>
             <button
               type="button"
