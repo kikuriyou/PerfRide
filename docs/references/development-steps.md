@@ -38,7 +38,7 @@ GCS_BUCKET=GCSバケット名
 GOOGLE_CLOUD_PROJECT=GCPプロジェクトID
 AGENT_API_URL=http://localhost:8000
 AGENT_AUDIENCE=http://localhost:8000
-KMS_KEY_NAME=projects/GCPプロジェクトID/locations/asia-northeast1/keyRings/perfride/cryptoKeys/mywhoosh-credentials
+KMS_KEY_NAME=projects/GCPプロジェクトID/locations/asia-northeast1/keyRings/perfride/cryptoKeys/user-credentials
 ```
 
 `agent/.env` の主要項目:
@@ -51,19 +51,21 @@ GOOGLE_CLOUD_LOCATION=global
 WEB_API_URL=http://localhost:3000
 RECOMMEND_MODE=hybrid
 USE_PERSONAL_DATA=true
-WORKOUT_PLATFORM=mywhoosh
-KMS_KEY_NAME=projects/GCPプロジェクトID/locations/asia-northeast1/keyRings/perfride/cryptoKeys/mywhoosh-credentials
+WORKOUT_PLATFORM=intervals_icu
+INTERVALS_ICU_API_KEY=
+INTERVALS_ICU_ATHLETE_ID=0
+KMS_KEY_NAME=projects/GCPプロジェクトID/locations/asia-northeast1/keyRings/perfride/cryptoKeys/user-credentials
 ```
 
-通知を使う場合は `NEXT_PUBLIC_VAPID_PUBLIC_KEY` / `VAPID_PRIVATE_KEY` / `LINE_CHANNEL_ACCESS_TOKEN` を追加します。MyWhoosh 認証情報はユーザーが UI で入力し、ユーザー単位で暗号化保存する方針です。ローカル Docker Compose では、`agent/.env` の `MYWHOOSH_EMAIL` / `MYWHOOSH_PASSWORD` が両方設定されている場合、それを Settings UI の保存値より優先します。本番で単一共有 credential として上書きしたい場合以外は、Cloud Run には設定しません。
+通知を使う場合は `NEXT_PUBLIC_VAPID_PUBLIC_KEY` / `VAPID_PRIVATE_KEY` / `LINE_CHANNEL_ACCESS_TOKEN` を追加します。Intervals.icu API key はユーザーが UI で入力し、ユーザー単位で暗号化保存する方針です。ローカル Docker Compose では、`agent/.env` の `INTERVALS_ICU_API_KEY` / `INTERVALS_ICU_ATHLETE_ID` を local fallback として使えます。本番で単一共有 credential として上書きしたい場合以外は、Cloud Run には設定しません。MyWhoosh direct upload の `MYWHOOSH_EMAIL` / `MYWHOOSH_PASSWORD` は legacy fallback です。
 
-MyWhoosh 認証情報を保存するには Cloud KMS key が必要です。まだ作成していない場合は、先に key ring と key を作成します。
+Intervals.icu API key を保存するには Cloud KMS key が必要です。まだ作成していない場合は、先に key ring と key を作成します。
 
 ```bash
 PROJECT_ID=your-gcp-project-id
 KMS_LOCATION=asia-northeast1
 KMS_KEYRING=perfride
-KMS_KEY=mywhoosh-credentials
+KMS_KEY=user-credentials
 
 gcloud services enable cloudkms.googleapis.com --project "$PROJECT_ID"
 
@@ -91,7 +93,7 @@ gcloud kms keys list \
   --keyring "$KMS_KEYRING"
 ```
 
-ローカル Docker Compose で Settings UI から MyWhoosh 保存を試す場合は、ローカルの Google ADC アカウントに dev 用 key の encrypt/decrypt 権限を付与します。
+ローカル Docker Compose で Settings UI から Intervals.icu API key 保存を試す場合は、ローカルの Google ADC アカウントに dev 用 key の encrypt/decrypt 権限を付与します。
 
 ```bash
 gcloud auth application-default login
@@ -186,7 +188,7 @@ WEB_SERVICE=perfride-web
 AGENT_SERVICE=perfride-agent
 KMS_LOCATION=asia-northeast1
 KMS_KEYRING=perfride
-KMS_KEY=mywhoosh-credentials
+KMS_KEY=user-credentials
 
 WEB_SA=$(gcloud run services describe "$WEB_SERVICE" \
   --project "$PROJECT_ID" \

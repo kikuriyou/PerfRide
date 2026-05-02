@@ -8,6 +8,9 @@ describe('GCS user paths', () => {
     expect(userObjectPath('athlete-1', '/integrations/mywhoosh.json')).toBe(
       'users/athlete-1/integrations/mywhoosh.json',
     );
+    expect(userObjectPath('athlete-1', 'integrations/intervals_icu.json')).toBe(
+      'users/athlete-1/integrations/intervals_icu.json',
+    );
   });
 
   it('rejects unsafe user ids', () => {

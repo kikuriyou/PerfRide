@@ -22,6 +22,7 @@ from zwift.zwo_templates import (
 
 @pytest.fixture(autouse=True)
 def _mywhoosh_env(monkeypatch):
+    monkeypatch.setenv("WORKOUT_PLATFORM", "mywhoosh_direct")
     monkeypatch.setenv("MYWHOOSH_EMAIL", "test@example.com")
     monkeypatch.setenv("MYWHOOSH_PASSWORD", "secret")
 

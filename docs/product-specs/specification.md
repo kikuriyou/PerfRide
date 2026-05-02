@@ -55,11 +55,13 @@ GOOGLE_CLOUD_LOCATION=global
 WEB_API_URL=http://localhost:3000
 RECOMMEND_MODE=hybrid
 USE_PERSONAL_DATA=true
-WORKOUT_PLATFORM=mywhoosh
+WORKOUT_PLATFORM=intervals_icu
+INTERVALS_ICU_API_KEY=
+INTERVALS_ICU_ATHLETE_ID=0
 KMS_KEY_NAME=
 ```
 
-通知を使う場合は `NEXT_PUBLIC_VAPID_PUBLIC_KEY` / `VAPID_PRIVATE_KEY` / `LINE_CHANNEL_ACCESS_TOKEN` を web 側に設定します。MyWhoosh の本番認証情報は env ではなく、ユーザーが UI で入力し、ユーザー単位で暗号化保存する方針です。
+通知を使う場合は `NEXT_PUBLIC_VAPID_PUBLIC_KEY` / `VAPID_PRIVATE_KEY` / `LINE_CHANNEL_ACCESS_TOKEN` を web 側に設定します。Intervals.icu API key は env ではなく、ユーザーが UI で入力し、ユーザー単位で暗号化保存する方針です。`INTERVALS_ICU_API_KEY` は local fallback 用です。
 
 ---
 
@@ -184,7 +186,7 @@ Cloud Run では `deploy.sh` が agent service URL を取得し、`AGENT_API_URL
 | `perfride-web` | 512Mi | 1 | 0 | 3 | 8080 |
 | `perfride-agent` | 1Gi | 1 | 0 | 2 | 8000 |
 
-app-level secret は可能な限り Secret Manager から渡します。ユーザーごとの MyWhoosh password は Secret Manager の app-level secret ではなく、KMS で暗号化してユーザー単位 storage に保存する設計です。
+app-level secret は可能な限り Secret Manager から渡します。ユーザーごとの Intervals.icu API key は Secret Manager の app-level secret ではなく、KMS で暗号化してユーザー単位 storage に保存する設計です。MyWhoosh direct upload の password は legacy fallback です。
 
 ---
 

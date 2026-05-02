@@ -90,8 +90,10 @@ Copy `agent/.env.example` to `agent/.env` for local agent development:
 | `WEB_API_URL`             | Web base URL (`http://localhost:3000`, `http://web:3000`, or production URL) |
 | `RECOMMEND_MODE`          | `hybrid`, `web_only`, or `no_grounding`                    |
 | `USE_PERSONAL_DATA`       | `true` or `false`                                          |
-| `WORKOUT_PLATFORM`        | Defaults to `mywhoosh`; `zwift` is a local fallback option |
-| `MYWHOOSH_EMAIL` / `MYWHOOSH_PASSWORD` | Local override. When both are set in the agent environment, they take priority over Settings UI credentials |
+| `WORKOUT_PLATFORM`        | Defaults to `intervals_icu`; valid values are `intervals_icu`, `mywhoosh_direct`, and `zwift` |
+| `INTERVALS_ICU_API_KEY`   | Local fallback only. Production should use Settings UI credentials |
+| `INTERVALS_ICU_ATHLETE_ID` | Intervals.icu athlete id for local fallback, usually `0` |
+| `MYWHOOSH_EMAIL` / `MYWHOOSH_PASSWORD` | Legacy MyWhoosh direct-upload fallback only |
 
 > **Note:** Make sure to add your app's callback URL (`http://localhost:3000/api/auth/callback/strava`) in the [Strava API settings](https://www.strava.com/settings/api).
 
@@ -177,15 +179,17 @@ curl -i https://your-agent-run-url.a.run.app/health
 # Verify Strava OAuth callback and webhook subscription after callback domains are updated.
 ```
 
-For MyWhoosh, production credentials are intended to be entered by each user in the UI and stored per user with KMS-backed encryption. In local Docker Compose, `MYWHOOSH_EMAIL` and `MYWHOOSH_PASSWORD` in `agent/.env` take priority over Settings UI credentials when both are set. Do not set those envs in production unless you intentionally want a single shared override.
+Workout registration now uses Intervals.icu planned workouts by default. Users save an Intervals.icu API key in Settings, PerfRide stores it with KMS-backed encryption, and MyWhoosh receives the workout when the user enables Intervals.icu Read Calendar in MyWhoosh Connections. In local Docker Compose, `INTERVALS_ICU_API_KEY` and `INTERVALS_ICU_ATHLETE_ID` in `agent/.env` act as a local fallback. Do not set those envs in production unless you intentionally want a single shared override.
 
-Before MyWhoosh credentials can be saved, create the KMS key referenced by `KMS_KEY_NAME` and grant IAM:
+MyWhoosh direct upload remains available only as `WORKOUT_PLATFORM=mywhoosh_direct` for legacy fallback. Production should not require `MYWHOOSH_EMAIL` or `MYWHOOSH_PASSWORD`.
+
+Before Intervals.icu API keys can be saved, create the KMS key referenced by `KMS_KEY_NAME` and grant IAM:
 
 ```bash
 PROJECT_ID=your-gcp-project-id
 KMS_LOCATION=asia-northeast1
 KMS_KEYRING=perfride
-KMS_KEY=mywhoosh-credentials
+KMS_KEY=user-credentials
 
 gcloud services enable cloudkms.googleapis.com --project "$PROJECT_ID"
 gcloud kms keyrings create "$KMS_KEYRING" --project "$PROJECT_ID" --location "$KMS_LOCATION"
@@ -207,6 +211,14 @@ gcloud kms keys add-iam-policy-binding "$KMS_KEY" \
   --member "user:$LOCAL_ACCOUNT" \
   --role "roles/cloudkms.cryptoKeyEncrypterDecrypter"
 ```
+
+Intervals.icu setup:
+
+1. Create an API key in [Intervals.icu Settings](https://intervals.icu/settings) > Developer Settings.
+2. Save it in PerfRide Settings and run Test connection.
+3. In [MyWhoosh Profile](https://event.mywhoosh.com/user/profile) > Connections, enable Intervals.icu Read Calendar. See the [MyWhoosh partner connection docs](https://mywhoosh.com/docs/partner-connections/) if the menu is hard to find.
+
+After registration, MyWhoosh calendar sync can take a few minutes.
 
 In Cloud Run, grant `perfride-web` only `roles/cloudkms.cryptoKeyEncrypter` and `perfride-agent` only `roles/cloudkms.cryptoKeyDecrypter`. See [development steps](docs/references/development-steps.md) for full commands.
 

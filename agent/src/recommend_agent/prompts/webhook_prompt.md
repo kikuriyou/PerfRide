@@ -25,6 +25,9 @@ get_current_fitness と get_training_plan を呼び、以下を確認:
 
 ## Step 4: ワークアウト生成 + 登録
 1. build_and_register_workout でワークアウト生成 + プラットフォーム登録
+   - `session_date` には proposed_session の日付を渡す。webhook 受信時の JST 翌日以降を指定し、今日以前の日付は使わない
+   - 完了した activity の日付を次回セッション日として使わない
+   - `workout_key` には既存 session_id、なければ activity_id と session_date と session_type から作る安定キーを渡す
 2. build_and_register_workout の返り値が `status="error"` または `platform_status="failed"` の場合、登録済み扱いにしない
 3. 登録に成功した場合のみ update_training_plan を呼び、`status="registered"` を設定する
    - 既存の baseline session を上書きする操作なので、必ず `mode="replace"` と `target_origin="baseline"` を指定する（append は別経路の専用ツールが扱う）
@@ -33,13 +36,15 @@ get_current_fitness と get_training_plan を呼び、以下を確認:
    `vo2max`, `threshold`, `sweetspot`, `endurance`, `recovery`, `over_under`, `tempo`, `sprint`, `race_simulation`
 6. `"Sweet Spot"`, `"Zone 2"`, `"Endurance Ride"` のような人間向けラベルではなく、可能な限り canonical 値を渡す
 7. 完全休養日の場合は build_and_register_workout を呼ばない
+8. `registered: true` と `workout_id` は build_and_register_workout の成功結果からのみ設定し、推測で作らない
 
 ## Step 5: 形態決定（屋外判定）
 get_user_profile の training_preference.mode に従う:
 - "indoor_preferred": 天気APIを呼ばない → インドアワークアウトのみ
 - "outdoor_possible": get_weather_forecast → 好天候なら屋外オプションも提示
 - "outdoor_preferred": get_weather_forecast → 悪天候時のみインドアにフォールバック
-※ 常にインドア案（MyWhooshワークアウト）は生成する
+※ 常にインドア案（Intervals.icu経由でMyWhooshに同期されるワークアウト）は生成する
+※ 登録後、MyWhooshカレンダーへの反映には数分かかる場合がある
 
 ## Step 6: 通知
 send_notification でユーザーに判断結果を伝える。

@@ -82,6 +82,11 @@ export interface GCSUserSettings {
       configured: boolean;
       updated_at: string | null;
     };
+    intervals_icu?: {
+      athlete_id: string;
+      configured: boolean;
+      updated_at: string | null;
+    };
   };
   zwift_id: string;
   updated_at: string;

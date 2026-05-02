@@ -59,11 +59,14 @@ async def test_approve_registers_non_rest_sessions_once():
         patch(
             "recommend_agent.tools.build_and_register_workout.build_and_register_workout",
             return_value={"status": "success", "workout_id": "wid"},
-        ),
+        ) as mock_build,
     ):
         response = await _approve_weekly_review("weekly_2026-04-06", expected_plan_revision=3)
 
     mock_replace.assert_called_once()
+    mock_build.assert_called_once()
+    assert mock_build.call_args.kwargs["session_date"] == "2026-04-07"
+    assert mock_build.call_args.kwargs["workout_key"] == "weekly:weekly_2026-04-06:2026-04-07:tempo"
     mock_update.assert_called_once()
     assert mock_update.call_args.kwargs["preserve_plan_revision"] is True
     assert response.status == "approved"
@@ -80,6 +83,29 @@ async def test_duplicate_approve_does_not_reapply():
 
     assert response.status == "approved"
     assert response.message == "already applied"
+
+
+@pytest.mark.asyncio
+async def test_approve_uses_session_id_as_workout_key():
+    review = _review()
+    review["draft"]["sessions"][1]["session_id"] = "baseline:2026-04-06:tempo"
+    with (
+        patch("recommend_agent.main.get_review", return_value=review),
+        patch(
+            "recommend_agent.main.get_user_profile",
+            return_value={"status": "success", "profile": {"user_id": "u1", "ftp": 250}},
+        ),
+        patch("recommend_agent.main.replace_current_week"),
+        patch("recommend_agent.main.update_training_plan"),
+        patch("recommend_agent.main.update_review_status"),
+        patch(
+            "recommend_agent.tools.build_and_register_workout.build_and_register_workout",
+            return_value={"status": "success", "workout_id": "wid"},
+        ) as mock_build,
+    ):
+        await _approve_weekly_review("weekly_2026-04-06", expected_plan_revision=3)
+
+    assert mock_build.call_args.kwargs["workout_key"] == "baseline:2026-04-06:tempo"
 
 
 @pytest.mark.asyncio

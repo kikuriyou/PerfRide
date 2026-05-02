@@ -70,6 +70,19 @@ interface MyWhooshStatus {
   } | null;
 }
 
+interface IntervalsIcuStatus {
+  configured: boolean;
+  athlete_id: string;
+  updated_at: string | null;
+  encryption_ready?: boolean;
+  verification?: {
+    ok: boolean;
+    status: 'verified' | 'failed' | 'missing' | 'skipped';
+    message: string;
+    checked_at: string;
+  } | null;
+}
+
 export function myWhooshSaveMessage(data: MyWhooshStatus): string {
   const verification = data.verification;
   if (verification?.status === 'verified') {
@@ -102,6 +115,34 @@ export function myWhooshTestMessage(data: MyWhooshStatus): string {
     return `MyWhoosh ログイン確認は未実行です: ${verification.message}`;
   }
   return 'MyWhoosh ログイン確認を実行しました';
+}
+
+export function intervalsIcuSaveMessage(data: IntervalsIcuStatus): string {
+  const verification = data.verification;
+  if (verification?.status === 'verified') {
+    return '保存しました。Intervals.icu 接続確認も成功しました。';
+  }
+  if (verification?.status === 'failed' || verification?.status === 'missing') {
+    return `保存しましたが、Intervals.icu 接続確認に失敗しました: ${verification.message}`;
+  }
+  if (verification?.status === 'skipped') {
+    return `保存しましたが、Intervals.icu 接続確認は未実行です: ${verification.message}`;
+  }
+  return '保存しました';
+}
+
+export function intervalsIcuTestMessage(data: IntervalsIcuStatus): string {
+  const verification = data.verification;
+  if (verification?.status === 'verified') {
+    return 'Intervals.icu 接続確認に成功しました。MyWhoosh への反映には数分かかることがあります。';
+  }
+  if (verification?.status === 'failed' || verification?.status === 'missing') {
+    return `Intervals.icu 接続確認に失敗しました: ${verification.message}`;
+  }
+  if (verification?.status === 'skipped') {
+    return `Intervals.icu 接続確認は未実行です: ${verification.message}`;
+  }
+  return 'Intervals.icu 接続確認を実行しました';
 }
 
 function normalizeAsOf(raw: string): string | null {
@@ -143,6 +184,11 @@ export default function SettingsForm() {
   const [myWhooshConfigured, setMyWhooshConfigured] = useState(false);
   const [myWhooshEncryptionReady, setMyWhooshEncryptionReady] = useState(true);
   const [myWhooshMessage, setMyWhooshMessage] = useState<string | null>(null);
+  const [intervalsIcuApiKey, setIntervalsIcuApiKey] = useState('');
+  const [intervalsIcuAthleteId, setIntervalsIcuAthleteId] = useState('0');
+  const [intervalsIcuConfigured, setIntervalsIcuConfigured] = useState(false);
+  const [intervalsIcuEncryptionReady, setIntervalsIcuEncryptionReady] = useState(true);
+  const [intervalsIcuMessage, setIntervalsIcuMessage] = useState<string | null>(null);
   const [agentLogRefreshSignal, setAgentLogRefreshSignal] = useState(0);
   const isDev = process.env.NODE_ENV === 'development';
 
@@ -175,6 +221,27 @@ export default function SettingsForm() {
         setMyWhooshEncryptionReady(data.encryption_ready ?? true);
         if (data.encryption_ready === false) {
           setMyWhooshMessage('KMS_KEY_NAME が未設定のため MyWhoosh 認証情報を保存できません。');
+        }
+      })
+      .catch(() => {});
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  useEffect(() => {
+    let cancelled = false;
+    fetch('/api/settings/intervals-icu', { cache: 'no-store' })
+      .then((res) => (res.ok ? res.json() : null))
+      .then((data: IntervalsIcuStatus | null) => {
+        if (!data || cancelled) return;
+        setIntervalsIcuAthleteId(data.athlete_id || '0');
+        setIntervalsIcuConfigured(data.configured);
+        setIntervalsIcuEncryptionReady(data.encryption_ready ?? true);
+        if (data.encryption_ready === false) {
+          setIntervalsIcuMessage(
+            'KMS_KEY_NAME が未設定のため Intervals.icu API key を保存できません。',
+          );
         }
       })
       .catch(() => {});
@@ -248,9 +315,7 @@ export default function SettingsForm() {
       setMyWhooshConfigured(data.configured);
       setMyWhooshEmail(data.email);
     }
-    setMyWhooshMessage(
-      data && 'configured' in data ? myWhooshTestMessage(data) : '確認しました',
-    );
+    setMyWhooshMessage(data && 'configured' in data ? myWhooshTestMessage(data) : '確認しました');
     setAgentLogRefreshSignal((value) => value + 1);
   };
 
@@ -264,6 +329,73 @@ export default function SettingsForm() {
     setMyWhooshConfigured(false);
     setMyWhooshPassword('');
     setMyWhooshMessage('連携を解除しました');
+  };
+
+  const handleSaveIntervalsIcu = async () => {
+    setIntervalsIcuMessage(null);
+    const res = await fetch('/api/settings/intervals-icu', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        api_key: intervalsIcuApiKey,
+        athlete_id: intervalsIcuAthleteId || '0',
+      }),
+    });
+    const data = (await res.json().catch(() => null)) as
+      | IntervalsIcuStatus
+      | { error?: string }
+      | null;
+    if (!res.ok) {
+      setIntervalsIcuMessage(
+        data && 'error' in data ? data.error || '保存できませんでした' : '保存できませんでした',
+      );
+      return;
+    }
+    if (data && 'configured' in data) {
+      setIntervalsIcuConfigured(data.configured);
+      setIntervalsIcuAthleteId(data.athlete_id || '0');
+    }
+    setIntervalsIcuApiKey('');
+    setIntervalsIcuMessage(
+      data && 'configured' in data ? intervalsIcuSaveMessage(data) : '保存しました',
+    );
+    setAgentLogRefreshSignal((value) => value + 1);
+  };
+
+  const handleTestIntervalsIcu = async () => {
+    setIntervalsIcuMessage(null);
+    const res = await fetch('/api/settings/intervals-icu', { method: 'PUT' });
+    const data = (await res.json().catch(() => null)) as
+      | IntervalsIcuStatus
+      | { error?: string }
+      | null;
+    if (!res.ok) {
+      setIntervalsIcuMessage(
+        data && 'error' in data ? data.error || '確認できませんでした' : '確認できませんでした',
+      );
+      return;
+    }
+    if (data && 'configured' in data) {
+      setIntervalsIcuConfigured(data.configured);
+      setIntervalsIcuAthleteId(data.athlete_id || '0');
+    }
+    setIntervalsIcuMessage(
+      data && 'configured' in data ? intervalsIcuTestMessage(data) : '確認しました',
+    );
+    setAgentLogRefreshSignal((value) => value + 1);
+  };
+
+  const handleDeleteIntervalsIcu = async () => {
+    setIntervalsIcuMessage(null);
+    const res = await fetch('/api/settings/intervals-icu', { method: 'DELETE' });
+    if (!res.ok) {
+      setIntervalsIcuMessage('削除できませんでした');
+      return;
+    }
+    setIntervalsIcuConfigured(false);
+    setIntervalsIcuApiKey('');
+    setIntervalsIcuAthleteId('0');
+    setIntervalsIcuMessage('連携を解除しました');
   };
 
   const updateDay = (dayName: DayName, patch: Partial<WeeklySchedule[DayName]>) => {
@@ -589,7 +721,108 @@ export default function SettingsForm() {
       </div>
 
       <div style={cardStyle}>
-        <h3 style={{ marginTop: 0, marginBottom: '1rem' }}>MyWhoosh</h3>
+        <h3 style={{ marginTop: 0, marginBottom: '1rem' }}>Intervals.icu</h3>
+        <div style={{ display: 'grid', gap: '0.75rem' }}>
+          <input
+            type="password"
+            value={intervalsIcuApiKey}
+            onChange={(e) => setIntervalsIcuApiKey(e.target.value)}
+            placeholder={
+              intervalsIcuConfigured ? '保存済み。変更時のみ入力' : 'Intervals.icu API key'
+            }
+            autoComplete="off"
+            style={{
+              padding: '0.75rem 1rem',
+              borderRadius: 'var(--radius-md)',
+              border: '1px solid var(--border)',
+              background: 'var(--background)',
+              color: 'var(--foreground)',
+              fontSize: '1rem',
+            }}
+          />
+          <input
+            type="text"
+            value={intervalsIcuAthleteId}
+            onChange={(e) => setIntervalsIcuAthleteId(e.target.value)}
+            placeholder="athlete id (default 0)"
+            style={{
+              padding: '0.75rem 1rem',
+              borderRadius: 'var(--radius-md)',
+              border: '1px solid var(--border)',
+              background: 'var(--background)',
+              color: 'var(--foreground)',
+              fontSize: '1rem',
+            }}
+          />
+          <div style={{ display: 'flex', gap: '0.75rem', flexWrap: 'wrap' }}>
+            <button
+              type="button"
+              onClick={handleSaveIntervalsIcu}
+              className="btn btn-primary"
+              disabled={!intervalsIcuApiKey || !intervalsIcuEncryptionReady}
+            >
+              Save Intervals.icu
+            </button>
+            <button
+              type="button"
+              onClick={handleTestIntervalsIcu}
+              className="btn"
+              disabled={!intervalsIcuConfigured}
+              style={{
+                border: '1px solid var(--border)',
+                background: 'transparent',
+                color: 'var(--foreground)',
+              }}
+            >
+              Test connection
+            </button>
+            <button
+              type="button"
+              onClick={handleDeleteIntervalsIcu}
+              className="btn"
+              disabled={!intervalsIcuConfigured}
+              style={{
+                border: '1px solid var(--border)',
+                background: 'transparent',
+                color: 'var(--foreground)',
+              }}
+            >
+              Disconnect
+            </button>
+          </div>
+          <div style={{ fontSize: '0.85rem', opacity: 0.75, lineHeight: 1.6 }}>
+            <a href="https://intervals.icu/settings" target="_blank" rel="noreferrer">
+              Intervals.icu Settings
+            </a>
+            {
+              ' > Developer Settings で API key を作成してください。PerfRide は暗号化保存し、planned workout の登録にだけ使います。'
+            }
+            <br />
+            <a href="https://event.mywhoosh.com/user/profile" target="_blank" rel="noreferrer">
+              MyWhoosh Profile
+            </a>
+            {' > Connections で Intervals.icu の Read Calendar を有効にしてください。'}
+            <a
+              href="https://mywhoosh.com/docs/partner-connections/"
+              target="_blank"
+              rel="noreferrer"
+            >
+              公式手順
+            </a>
+            {'も確認できます。MyWhoosh への反映には数分かかることがあります。'}
+          </div>
+          <div style={{ fontSize: '0.85rem', opacity: 0.7 }}>
+            {intervalsIcuMessage ??
+              (intervalsIcuConfigured ? 'Credential configured' : 'Credential not configured')}
+          </div>
+        </div>
+      </div>
+
+      <div style={cardStyle}>
+        <h3 style={{ marginTop: 0, marginBottom: '0.5rem' }}>Legacy MyWhoosh direct upload</h3>
+        <div style={{ marginBottom: '1rem', fontSize: '0.85rem', opacity: 0.7 }}>
+          Intervals.icu 経由が標準です。MyWhoosh 直登録は fallback として残しています。
+        </div>
         <div style={{ display: 'grid', gap: '0.75rem' }}>
           <input
             type="email"

@@ -198,3 +198,94 @@ def test_mywhoosh_login_check_reports_decrypt_failure(monkeypatch):
     assert result["ok"] is False
     assert result["status"] == "missing"
     assert "decrypted" in str(result["message"])
+
+
+def test_intervals_icu_credentials_prefer_agent_env(monkeypatch):
+    from intervals_icu.client import IntervalsIcuCredentials
+    from recommend_agent.tools import build_and_register_workout as workout
+
+    monkeypatch.setenv("INTERVALS_ICU_API_KEY", "env-key")
+    monkeypatch.setenv("INTERVALS_ICU_ATHLETE_ID", "42")
+    read_mock = Mock(return_value={"api_key_ciphertext": "ciphertext"})
+    monkeypatch.setattr(workout, "read_user_gcs_json", read_mock)
+
+    credentials = workout._load_intervals_icu_credentials("123")
+
+    assert credentials == IntervalsIcuCredentials(api_key="env-key", athlete_id="42")
+    read_mock.assert_not_called()
+
+
+def test_intervals_icu_credentials_fall_back_to_saved_settings(monkeypatch):
+    from intervals_icu.client import IntervalsIcuCredentials
+    from recommend_agent.tools import build_and_register_workout as workout
+
+    monkeypatch.delenv("INTERVALS_ICU_API_KEY", raising=False)
+    monkeypatch.delenv("INTERVALS_ICU_ATHLETE_ID", raising=False)
+    monkeypatch.setattr(
+        workout,
+        "read_user_gcs_json",
+        lambda *args, **kwargs: {"athlete_id": "7", "api_key_ciphertext": "ciphertext"},
+    )
+    monkeypatch.setattr(workout, "_decrypt_kms_ciphertext", lambda ciphertext: "saved-key")
+
+    credentials = workout._load_intervals_icu_credentials("123")
+
+    assert credentials == IntervalsIcuCredentials(api_key="saved-key", athlete_id="7")
+
+
+def test_intervals_icu_connection_check_verifies_credentials(monkeypatch):
+    from intervals_icu.client import IntervalsIcuCredentials
+    from recommend_agent.tools import build_and_register_workout as workout
+
+    monkeypatch.setattr(
+        workout,
+        "_load_intervals_icu_credentials",
+        lambda user_id: IntervalsIcuCredentials(api_key="secret"),
+    )
+    with patch("intervals_icu.client.IntervalsIcuClient.test_connection") as mock_test:
+        mock_test.return_value = {
+            "ok": True,
+            "status": "verified",
+            "message": "Intervals.icu API key verified",
+        }
+        result = workout.test_intervals_icu_connection("123")
+
+    mock_test.assert_called_once_with()
+    assert result == {
+        "ok": True,
+        "status": "verified",
+        "message": "Intervals.icu API key verified",
+    }
+
+
+def test_intervals_icu_connection_check_sanitizes_failures(monkeypatch):
+    from intervals_icu.client import IntervalsIcuCredentials
+    from recommend_agent.tools import build_and_register_workout as workout
+
+    monkeypatch.setattr(
+        workout,
+        "_load_intervals_icu_credentials",
+        lambda user_id: IntervalsIcuCredentials(api_key="secret-key"),
+    )
+    with patch(
+        "intervals_icu.client.IntervalsIcuClient.test_connection",
+        side_effect=RuntimeError("secret-key"),
+    ):
+        result = workout.test_intervals_icu_connection("123")
+
+    assert result["ok"] is False
+    assert result["status"] == "failed"
+    assert "secret-key" not in str(result["message"])
+
+
+def test_intervals_icu_connection_check_reports_decrypt_failure(monkeypatch):
+    from recommend_agent.tools import build_and_register_workout as workout
+
+    monkeypatch.setattr(workout, "_load_intervals_icu_credentials", lambda user_id: None)
+    monkeypatch.setattr(workout, "_has_saved_intervals_icu_ciphertext", lambda user_id: True)
+
+    result = workout.test_intervals_icu_connection("123")
+
+    assert result["ok"] is False
+    assert result["status"] == "missing"
+    assert "decrypted" in str(result["message"])

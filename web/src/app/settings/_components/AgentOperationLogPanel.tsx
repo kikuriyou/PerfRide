@@ -29,6 +29,7 @@ const OPERATION_LABELS: Record<string, string> = {
   ambient_flow: 'Ambient flow',
   workout_registration: 'Workout 登録',
   mywhoosh_settings: 'MyWhoosh 設定',
+  intervals_icu_settings: 'Intervals.icu 設定',
   insight: 'Insight',
 };
 

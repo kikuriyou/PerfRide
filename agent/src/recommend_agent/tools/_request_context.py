@@ -22,6 +22,11 @@ webhook_trace_id_var: ContextVar[str | None] = ContextVar(
     default=None,
 )
 
+workout_registration_result_var: ContextVar[dict[str, object] | None] = ContextVar(
+    "perfride_workout_registration_result",
+    default=None,
+)
+
 week_start_var: ContextVar[date | None] = ContextVar(
     "perfride_week_start",
     default=None,

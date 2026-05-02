@@ -42,6 +42,7 @@ from recommend_agent.tools._request_context import (
     user_id_var,
     webhook_trace_id_var,
     week_start_var,
+    workout_registration_result_var,
 )
 from recommend_agent.tools.detect_signals import detect_signals
 from recommend_agent.tools.get_user_profile import get_user_profile
@@ -221,6 +222,16 @@ class MyWhooshTestRequest(BaseModel):
 
 
 class MyWhooshTestResponse(BaseModel):
+    ok: bool
+    status: str
+    message: str
+
+
+class IntervalsIcuTestRequest(BaseModel):
+    user_id: str = "default"
+
+
+class IntervalsIcuTestResponse(BaseModel):
     ok: bool
     status: str
     message: str
@@ -464,6 +475,75 @@ def _proposed_session_from(value: object, activity_id: int | None = None) -> Pro
     if not proposed.session_date or not proposed.session_type:
         return None
     return proposed
+
+
+def _successful_workout_registration(result: object) -> dict[str, object] | None:
+    if not isinstance(result, dict):
+        return None
+    if result.get("status") != "success":
+        return None
+    if result.get("platform_status") in {"failed", "skipped"}:
+        return None
+    return result
+
+
+def _with_workout_registration(
+    proposed: ProposedSession,
+    result: dict[str, object],
+) -> ProposedSession:
+    workout_id = result.get("workout_id")
+    session_date = result.get("session_date")
+    resolved_session_date = session_date if isinstance(session_date, str) else proposed.session_date
+    return proposed.model_copy(
+        update={
+            "session_date": resolved_session_date,
+            "workout_id": str(workout_id) if workout_id else proposed.workout_id,
+            "registered": True,
+        }
+    )
+
+
+def _without_unverified_workout_registration(proposed: ProposedSession) -> ProposedSession:
+    return proposed.model_copy(update={"workout_id": None, "registered": False})
+
+
+def _webhook_workout_key(request: "WebhookRecommendRequest", proposed: ProposedSession) -> str:
+    activity_key = request.activity_id if request.activity_id is not None else "unknown"
+    return f"webhook:{activity_key}:{proposed.session_date}:{proposed.session_type}"
+
+
+def _ensure_webhook_workout_registration(
+    proposed: ProposedSession | None,
+    *,
+    request: "WebhookRecommendRequest",
+    profile: dict[str, Any],
+    tool_result: object,
+) -> ProposedSession | None:
+    if proposed is None:
+        return None
+    if proposed.is_rest or proposed.session_type == "rest":
+        return _without_unverified_workout_registration(proposed)
+
+    registered = _successful_workout_registration(tool_result)
+    if registered is not None:
+        return _with_workout_registration(proposed, registered)
+
+    from recommend_agent.tools.build_and_register_workout import build_and_register_workout
+
+    duration_minutes = proposed.duration_minutes or 60
+    target_tss = float(proposed.target_tss) if proposed.target_tss is not None else None
+    built = build_and_register_workout(
+        session_type=str(proposed.session_type),
+        duration_minutes=int(duration_minutes),
+        ftp=int(profile.get("ftp", 200)),
+        target_tss=target_tss,
+        session_date=proposed.session_date,
+        workout_key=_webhook_workout_key(request, proposed),
+    )
+    registered = _successful_workout_registration(built)
+    if registered is None:
+        return _without_unverified_workout_registration(proposed)
+    return _with_workout_registration(proposed, registered)
 
 
 def _goal_text(goal: str, goal_custom: str | None) -> str:
@@ -1465,11 +1545,20 @@ async def _approve_weekly_review(
             continue
         duration_minutes = int(session.get("duration_minutes", 0))
         target_tss = float(session.get("target_tss", 0))
+        session_date = str(session.get("date"))
+        session_id = session.get("session_id")
+        workout_key = (
+            str(session_id)
+            if isinstance(session_id, str) and session_id
+            else f"weekly:{review_id}:{session_date}:{session_type}"
+        )
         built = build_and_register_workout(
             session_type=session_type,
             duration_minutes=duration_minutes,
             ftp=int(profile.get("ftp", 200)),
             target_tss=target_tss,
+            session_date=session_date,
+            workout_key=workout_key,
         )
         if built.get("status") != "success":
             continue
@@ -1519,6 +1608,7 @@ async def recommend_webhook(request: WebhookRecommendRequest):
     )
     operation_run_id = trace_id
     trace_token = webhook_trace_id_var.set(trace_id)
+    registration_token = workout_registration_result_var.set(None)
     _log_webhook_flow(
         trace_id,
         f"Received request: trigger={request.trigger} activity_id={request.activity_id}",
@@ -1609,6 +1699,12 @@ async def recommend_webhook(request: WebhookRecommendRequest):
         )
         parsed = _parse_agent_json_response(final_response) or {}
         proposed = _proposed_session_from(parsed.get("proposed_session"), request.activity_id)
+        proposed = _ensure_webhook_workout_registration(
+            proposed,
+            request=request,
+            profile=_require_profile(resolved_user_id),
+            tool_result=workout_registration_result_var.get(),
+        )
 
         return {
             "status": "ok",
@@ -1634,6 +1730,7 @@ async def recommend_webhook(request: WebhookRecommendRequest):
         )
         raise
     finally:
+        workout_registration_result_var.reset(registration_token)
         webhook_trace_id_var.reset(trace_token)
         user_id_var.reset(user_token)
 
@@ -1643,6 +1740,13 @@ async def test_mywhoosh_connection(request: MyWhooshTestRequest):
     from recommend_agent.tools.build_and_register_workout import test_mywhoosh_login
 
     return test_mywhoosh_login(resolve_user_id(request.user_id))
+
+
+@app.post("/api/agent/intervals-icu/test", response_model=IntervalsIcuTestResponse)
+async def test_intervals_icu_connection_endpoint(request: IntervalsIcuTestRequest):
+    from recommend_agent.tools.build_and_register_workout import test_intervals_icu_connection
+
+    return test_intervals_icu_connection(resolve_user_id(request.user_id))
 
 
 @app.post("/recommend/respond")

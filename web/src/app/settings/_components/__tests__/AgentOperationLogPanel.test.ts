@@ -15,6 +15,7 @@ describe('AgentOperationLogPanel helpers', () => {
   it('labels known operation names', () => {
     expect(agentOperationLabel('webhook_recommend')).toBe('Webhook 推薦');
     expect(agentOperationLabel('mywhoosh_settings')).toBe('MyWhoosh 設定');
+    expect(agentOperationLabel('intervals_icu_settings')).toBe('Intervals.icu 設定');
     expect(agentOperationLabel('custom_process')).toBe('custom_process');
   });
 

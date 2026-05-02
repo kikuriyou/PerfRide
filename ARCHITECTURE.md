@@ -126,7 +126,7 @@ Both services run via `docker-compose.yml` locally. Production deployment uses t
 | `perfride-web`   | Public  | `web/`        | `NEXTAUTH_URL`, `GCS_BUCKET`, `AGENT_API_URL`, `AGENT_AUDIENCE` |
 | `perfride-agent` | Private | `agent/`      | `GCS_BUCKET`, `WEB_API_URL`, `GOOGLE_CLOUD_PROJECT`, `GOOGLE_CLOUD_LOCATION`, `GOOGLE_GENAI_USE_VERTEXAI` |
 
-App-level secrets should be provided through Secret Manager where possible. User-level MyWhoosh credentials are intended to be entered in Settings and stored per user with KMS-backed encryption. In local agent environments, env-based `MYWHOOSH_EMAIL` and `MYWHOOSH_PASSWORD` override saved Settings credentials when both are set; production should leave them unset unless a single shared override is intentional.
+App-level secrets should be provided through Secret Manager where possible. User-level Intervals.icu API keys are entered in Settings and stored per user with KMS-backed encryption. In local agent environments, env-based `INTERVALS_ICU_API_KEY` and `INTERVALS_ICU_ATHLETE_ID` can override saved Settings credentials for local fallback only. MyWhoosh direct upload credentials are legacy fallback and should stay unset in production.
 
 The planned multi-user GCS layout is:
 
@@ -134,6 +134,7 @@ The planned multi-user GCS layout is:
 users/{strava_owner_id}/settings.json
 users/{strava_owner_id}/activity_cache.json
 users/{strava_owner_id}/training_plan.json
+users/{strava_owner_id}/integrations/intervals_icu.json
 users/{strava_owner_id}/integrations/mywhoosh.json
 ```
 
