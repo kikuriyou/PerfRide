@@ -67,13 +67,13 @@ function statusStyle(status: AgentOperationLogStatus) {
   return {
     display: 'inline-flex',
     alignItems: 'center',
-    minWidth: '74px',
+    minWidth: '58px',
     justifyContent: 'center',
-    padding: '0.25rem 0.5rem',
+    padding: '0.16rem 0.35rem',
     borderRadius: '999px',
     border: `1px solid ${STATUS_COLORS[status] ?? 'var(--border)'}`,
     color: STATUS_COLORS[status] ?? 'var(--foreground)',
-    fontSize: '0.75rem',
+    fontSize: '0.68rem',
     fontWeight: 700,
     lineHeight: 1,
     whiteSpace: 'nowrap' as const,
@@ -130,12 +130,12 @@ export default function AgentOperationLogPanel({ refreshSignal = 0 }: AgentOpera
           alignItems: 'center',
           justifyContent: 'space-between',
           gap: '1rem',
-          marginBottom: '1rem',
+          marginBottom: '0.55rem',
         }}
       >
         <div>
-          <h3 style={{ margin: 0 }}>Agent 動作ログ</h3>
-          <div style={{ marginTop: '0.35rem', fontSize: '0.85rem', opacity: 0.65 }}>
+          <h3 style={{ margin: 0, fontSize: '0.95rem' }}>Agent 動作ログ</h3>
+          <div style={{ marginTop: '0.2rem', fontSize: '0.78rem', opacity: 0.65 }}>
             直近 {logs.length} 件
           </div>
         </div>
@@ -148,7 +148,8 @@ export default function AgentOperationLogPanel({ refreshSignal = 0 }: AgentOpera
             border: '1px solid var(--border)',
             background: 'transparent',
             color: 'var(--foreground)',
-            padding: '0.55rem 0.85rem',
+            padding: '0.38rem 0.65rem',
+            fontSize: '0.82rem',
           }}
         >
           更新
@@ -161,53 +162,23 @@ export default function AgentOperationLogPanel({ refreshSignal = 0 }: AgentOpera
         <div style={{ fontSize: '0.9rem', opacity: 0.7 }}>ログはまだありません</div>
       )}
       {!loading && !error && logs.length > 0 && (
-        <div
-          style={{
-            display: 'grid',
-            gap: '0.65rem',
-            maxHeight: '420px',
-            overflowY: 'auto',
-            overscrollBehavior: 'contain',
-            paddingRight: '0.25rem',
-          }}
-        >
+        <div className="settings-log-list">
           {logs.map((log, index) => (
             <div
               key={`${log.created_at}-${log.run_id ?? index}-${log.status}`}
-              style={{
-                display: 'grid',
-                gridTemplateColumns: '88px 1fr',
-                gap: '0.75rem',
-                alignItems: 'start',
-                padding: '0.75rem',
-                border: '1px solid var(--border)',
-                borderRadius: 'var(--radius-md)',
-                background: 'var(--background)',
-              }}
+              className="settings-log-entry"
             >
-              <div style={{ display: 'grid', gap: '0.45rem' }}>
+              <div>
                 <span style={statusStyle(log.status)}>{agentOperationStatusLabel(log.status)}</span>
-                <span style={{ fontSize: '0.75rem', opacity: 0.6 }}>
-                  {formatAgentLogTime(log.created_at)}
-                </span>
               </div>
-              <div style={{ minWidth: 0 }}>
-                <div style={{ fontWeight: 700, marginBottom: '0.25rem' }}>
-                  {agentOperationLabel(log.operation)}
-                </div>
-                <div style={{ fontSize: '0.9rem', lineHeight: 1.5 }}>{log.message}</div>
-                <div
-                  style={{
-                    marginTop: '0.4rem',
-                    display: 'flex',
-                    gap: '0.5rem',
-                    flexWrap: 'wrap',
-                    fontSize: '0.75rem',
-                    opacity: 0.6,
-                    overflowWrap: 'anywhere',
-                  }}
-                >
-                  <span>trigger: {log.trigger}</span>
+              <div className="settings-log-time">{formatAgentLogTime(log.created_at)}</div>
+              <div className="settings-log-operation">
+                <strong>{agentOperationLabel(log.operation)}</strong>
+                <span>{log.trigger}</span>
+              </div>
+              <div className="settings-log-message">
+                <div>{log.message}</div>
+                <div className="settings-log-meta">
                   {log.trace_id && <span>trace: {log.trace_id}</span>}
                   {log.session_id && <span>session: {log.session_id}</span>}
                 </div>

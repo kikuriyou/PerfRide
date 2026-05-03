@@ -52,11 +52,17 @@ describe('recommend source priority helpers', () => {
       detail: 'fatigue is high',
       created_at: '2026-04-27T10:00:00Z',
       valid_for_date: today,
+      activity_id: 3,
+      trace_id: 'trace-1',
+      session_id: 'session-1',
       proposed_session: { session_date: today, session_type: 'endurance' },
     });
 
     expect(response).toMatchObject({
       source: 'webhook',
+      activity_id: 3,
+      trace_id: 'trace-1',
+      session_id: 'session-1',
       proposed_session: { session_date: today, session_type: 'endurance' },
     });
     expect(response).not.toHaveProperty('source_label');

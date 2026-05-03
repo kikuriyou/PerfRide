@@ -113,6 +113,16 @@ export function approvedWeekForDate(
   );
 }
 
+export function approvedWeeksBefore(
+  trainingPlan: GCSTrainingPlan | null,
+  weekStart: string,
+): ApprovedWeekPayload[] {
+  if (!trainingPlan) return [];
+  return Object.values(trainingPlan.weekly_plan)
+    .filter((week) => typeof week.week_start === 'string' && week.week_start < weekStart)
+    .sort((a, b) => b.week_start.localeCompare(a.week_start));
+}
+
 function pendingWeekForStart(
   reviewStore: WeeklyPlanReviewStore | null,
   weekStart: string,

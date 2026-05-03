@@ -260,7 +260,7 @@ curl -X POST http://localhost:8000/api/agent/weekly-plan \
 - In `coach` mode, the weekly plan is saved directly as the current week in `training_plan.json`
 - In `suggest` / `observe`, the weekly scheduler skips automatic reflection
 - The weekly scheduler does not register external workouts; post-ride replacement still requires user approval
-- `deploy.sh.example` also includes the Cloud Scheduler job definition for the weekly trigger
+- `deploy.sh.example` also includes the Cloud Scheduler job definition for the weekly trigger (`04:00` Monday in `Asia/Tokyo`)
 
 ## Tech Stack
 

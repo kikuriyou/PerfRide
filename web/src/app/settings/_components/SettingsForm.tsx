@@ -20,6 +20,7 @@ const DAY_LABELS: Record<DayName, string> = {
 };
 
 const DAY_NAMES: DayName[] = ['mon', 'tue', 'wed', 'thu', 'fri', 'sat', 'sun'];
+const INTERVALS_ICU_ATHLETE_ID = '0';
 
 const COACH_AUTONOMY_OPTIONS: { value: CoachAutonomy; label: string; description: string }[] = [
   {
@@ -57,19 +58,6 @@ const RECOMMEND_MODE_OPTIONS: { value: RecommendMode; label: string; description
   },
 ];
 
-interface MyWhooshStatus {
-  configured: boolean;
-  email: string;
-  updated_at: string | null;
-  encryption_ready?: boolean;
-  verification?: {
-    ok: boolean;
-    status: 'verified' | 'failed' | 'missing' | 'skipped' | 'already_logged_in';
-    message: string;
-    checked_at: string;
-  } | null;
-}
-
 interface IntervalsIcuStatus {
   configured: boolean;
   athlete_id: string;
@@ -81,40 +69,6 @@ interface IntervalsIcuStatus {
     message: string;
     checked_at: string;
   } | null;
-}
-
-export function myWhooshSaveMessage(data: MyWhooshStatus): string {
-  const verification = data.verification;
-  if (verification?.status === 'verified') {
-    return '保存しました。MyWhoosh ログイン確認も成功しました。';
-  }
-  if (verification?.status === 'already_logged_in') {
-    return `保存しましたが、MyWhoosh は別デバイスでログイン中のため確認できませんでした: ${verification.message}`;
-  }
-  if (verification?.status === 'failed' || verification?.status === 'missing') {
-    return `保存しましたが、MyWhoosh ログイン確認に失敗しました: ${verification.message}`;
-  }
-  if (verification?.status === 'skipped') {
-    return `保存しましたが、MyWhoosh ログイン確認は未実行です: ${verification.message}`;
-  }
-  return '保存しました';
-}
-
-export function myWhooshTestMessage(data: MyWhooshStatus): string {
-  const verification = data.verification;
-  if (verification?.status === 'verified') {
-    return 'MyWhoosh ログイン確認に成功しました。';
-  }
-  if (verification?.status === 'already_logged_in') {
-    return `MyWhoosh は別デバイスでログイン中のため確認できませんでした: ${verification.message}`;
-  }
-  if (verification?.status === 'failed' || verification?.status === 'missing') {
-    return `MyWhoosh ログイン確認に失敗しました: ${verification.message}`;
-  }
-  if (verification?.status === 'skipped') {
-    return `MyWhoosh ログイン確認は未実行です: ${verification.message}`;
-  }
-  return 'MyWhoosh ログイン確認を実行しました';
 }
 
 export function intervalsIcuSaveMessage(data: IntervalsIcuStatus): string {
@@ -179,13 +133,7 @@ export default function SettingsForm() {
   const [localAsOf, setLocalAsOf] = useState<string>(settings.asOf ?? '');
   const [saved, setSaved] = useState(false);
   const [goalDateError, setGoalDateError] = useState<string | null>(null);
-  const [myWhooshEmail, setMyWhooshEmail] = useState('');
-  const [myWhooshPassword, setMyWhooshPassword] = useState('');
-  const [myWhooshConfigured, setMyWhooshConfigured] = useState(false);
-  const [myWhooshEncryptionReady, setMyWhooshEncryptionReady] = useState(true);
-  const [myWhooshMessage, setMyWhooshMessage] = useState<string | null>(null);
   const [intervalsIcuApiKey, setIntervalsIcuApiKey] = useState('');
-  const [intervalsIcuAthleteId, setIntervalsIcuAthleteId] = useState('0');
   const [intervalsIcuConfigured, setIntervalsIcuConfigured] = useState(false);
   const [intervalsIcuEncryptionReady, setIntervalsIcuEncryptionReady] = useState(true);
   const [intervalsIcuMessage, setIntervalsIcuMessage] = useState<string | null>(null);
@@ -212,30 +160,10 @@ export default function SettingsForm() {
 
   useEffect(() => {
     let cancelled = false;
-    fetch('/api/settings/mywhoosh', { cache: 'no-store' })
-      .then((res) => (res.ok ? res.json() : null))
-      .then((data: MyWhooshStatus | null) => {
-        if (!data || cancelled) return;
-        setMyWhooshEmail(data.email);
-        setMyWhooshConfigured(data.configured);
-        setMyWhooshEncryptionReady(data.encryption_ready ?? true);
-        if (data.encryption_ready === false) {
-          setMyWhooshMessage('KMS_KEY_NAME が未設定のため MyWhoosh 認証情報を保存できません。');
-        }
-      })
-      .catch(() => {});
-    return () => {
-      cancelled = true;
-    };
-  }, []);
-
-  useEffect(() => {
-    let cancelled = false;
     fetch('/api/settings/intervals-icu', { cache: 'no-store' })
       .then((res) => (res.ok ? res.json() : null))
       .then((data: IntervalsIcuStatus | null) => {
         if (!data || cancelled) return;
-        setIntervalsIcuAthleteId(data.athlete_id || '0');
         setIntervalsIcuConfigured(data.configured);
         setIntervalsIcuEncryptionReady(data.encryption_ready ?? true);
         if (data.encryption_ready === false) {
@@ -278,59 +206,6 @@ export default function SettingsForm() {
     updateSettings({ asOf: null });
   };
 
-  const handleSaveMyWhoosh = async () => {
-    setMyWhooshMessage(null);
-    const res = await fetch('/api/settings/mywhoosh', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ email: myWhooshEmail, password: myWhooshPassword }),
-    });
-    const data = (await res.json().catch(() => null)) as MyWhooshStatus | { error?: string } | null;
-    if (!res.ok) {
-      setMyWhooshMessage(
-        data && 'error' in data ? data.error || '保存できませんでした' : '保存できませんでした',
-      );
-      return;
-    }
-    if (data && 'configured' in data) {
-      setMyWhooshConfigured(data.configured);
-      setMyWhooshEmail(data.email);
-    }
-    setMyWhooshPassword('');
-    setMyWhooshMessage(data && 'configured' in data ? myWhooshSaveMessage(data) : '保存しました');
-    setAgentLogRefreshSignal((value) => value + 1);
-  };
-
-  const handleTestMyWhoosh = async () => {
-    setMyWhooshMessage(null);
-    const res = await fetch('/api/settings/mywhoosh', { method: 'PUT' });
-    const data = (await res.json().catch(() => null)) as MyWhooshStatus | { error?: string } | null;
-    if (!res.ok) {
-      setMyWhooshMessage(
-        data && 'error' in data ? data.error || '確認できませんでした' : '確認できませんでした',
-      );
-      return;
-    }
-    if (data && 'configured' in data) {
-      setMyWhooshConfigured(data.configured);
-      setMyWhooshEmail(data.email);
-    }
-    setMyWhooshMessage(data && 'configured' in data ? myWhooshTestMessage(data) : '確認しました');
-    setAgentLogRefreshSignal((value) => value + 1);
-  };
-
-  const handleDeleteMyWhoosh = async () => {
-    setMyWhooshMessage(null);
-    const res = await fetch('/api/settings/mywhoosh', { method: 'DELETE' });
-    if (!res.ok) {
-      setMyWhooshMessage('削除できませんでした');
-      return;
-    }
-    setMyWhooshConfigured(false);
-    setMyWhooshPassword('');
-    setMyWhooshMessage('連携を解除しました');
-  };
-
   const handleSaveIntervalsIcu = async () => {
     setIntervalsIcuMessage(null);
     const res = await fetch('/api/settings/intervals-icu', {
@@ -338,7 +213,7 @@ export default function SettingsForm() {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
         api_key: intervalsIcuApiKey,
-        athlete_id: intervalsIcuAthleteId || '0',
+        athlete_id: INTERVALS_ICU_ATHLETE_ID,
       }),
     });
     const data = (await res.json().catch(() => null)) as
@@ -353,7 +228,6 @@ export default function SettingsForm() {
     }
     if (data && 'configured' in data) {
       setIntervalsIcuConfigured(data.configured);
-      setIntervalsIcuAthleteId(data.athlete_id || '0');
     }
     setIntervalsIcuApiKey('');
     setIntervalsIcuMessage(
@@ -377,7 +251,6 @@ export default function SettingsForm() {
     }
     if (data && 'configured' in data) {
       setIntervalsIcuConfigured(data.configured);
-      setIntervalsIcuAthleteId(data.athlete_id || '0');
     }
     setIntervalsIcuMessage(
       data && 'configured' in data ? intervalsIcuTestMessage(data) : '確認しました',
@@ -394,7 +267,6 @@ export default function SettingsForm() {
     }
     setIntervalsIcuConfigured(false);
     setIntervalsIcuApiKey('');
-    setIntervalsIcuAthleteId('0');
     setIntervalsIcuMessage('連携を解除しました');
   };
 
@@ -410,203 +282,154 @@ export default function SettingsForm() {
 
   const estimateAge = 220 - localMaxHR;
 
-  const cardStyle = {
-    background: 'var(--surface)',
-    padding: '1.5rem',
-    borderRadius: 'var(--radius-lg)',
-    border: '1px solid var(--border)',
-  };
-
   return (
-    <div style={{ display: 'grid', gap: '2rem' }}>
-      <div style={cardStyle}>
+    <div className="settings-grid">
+      <div className="settings-card settings-card-full">
         <AgentOperationLogPanel refreshSignal={agentLogRefreshSignal} />
       </div>
 
-      <div style={cardStyle}>
-        <h3 style={{ marginTop: 0, marginBottom: '1rem' }}>⚡ FTP</h3>
-        <div style={{ display: 'flex', gap: '1rem', alignItems: 'center' }}>
+      <div className="settings-card settings-card-row">
+        <h3 className="settings-card-title">⚡ FTP</h3>
+        <div className="settings-value-row">
           <input
             type="number"
             value={localFtp}
             onChange={(e) => setLocalFtp(Number(e.target.value))}
             min={100}
             max={500}
-            style={{
-              padding: '0.75rem 1rem',
-              borderRadius: 'var(--radius-md)',
-              border: '1px solid var(--border)',
-              background: 'var(--background)',
-              color: 'var(--foreground)',
-              fontSize: '1.25rem',
-              fontWeight: 700,
-              width: '120px',
-              textAlign: 'center',
-            }}
+            className="settings-number-input"
           />
-          <span style={{ fontSize: '1.1rem', opacity: 0.8 }}>watts</span>
+          <span className="settings-muted">watts</span>
         </div>
       </div>
 
-      <div style={cardStyle}>
-        <h3 style={{ marginTop: 0, marginBottom: '1rem' }}>⚖️ Body Weight</h3>
-        <div style={{ display: 'flex', gap: '1rem', alignItems: 'center' }}>
+      <div className="settings-card settings-card-row">
+        <h3 className="settings-card-title">⚖️ Body Weight</h3>
+        <div className="settings-value-row">
           <input
             type="number"
             value={localWeight}
             onChange={(e) => setLocalWeight(Number(e.target.value))}
             min={40}
             max={150}
-            style={{
-              padding: '0.75rem 1rem',
-              borderRadius: 'var(--radius-md)',
-              border: '1px solid var(--border)',
-              background: 'var(--background)',
-              color: 'var(--foreground)',
-              fontSize: '1.25rem',
-              fontWeight: 700,
-              width: '120px',
-              textAlign: 'center',
-            }}
+            className="settings-number-input"
           />
-          <span style={{ fontSize: '1.1rem', opacity: 0.8 }}>kg</span>
-        </div>
-        <div
-          style={{
-            marginTop: '1rem',
-            padding: '0.75rem 1rem',
-            background: 'var(--background)',
-            borderRadius: 'var(--radius-md)',
-            display: 'inline-block',
-          }}
-        >
-          <span style={{ opacity: 0.7 }}>W/kg: </span>
-          <strong style={{ color: 'var(--primary)' }}>
-            {(localFtp / localWeight).toFixed(2)} W/kg
-          </strong>
+          <span className="settings-muted">kg</span>
+          <div className="settings-pill">
+            <span style={{ opacity: 0.7 }}>W/kg: </span>
+            <strong style={{ color: 'var(--primary)' }}>
+              {(localFtp / localWeight).toFixed(2)} W/kg
+            </strong>
+          </div>
         </div>
       </div>
 
-      <div style={cardStyle}>
-        <h3 style={{ marginTop: 0, marginBottom: '1rem' }}>❤️ Max Heart Rate</h3>
-        <div style={{ display: 'flex', gap: '1rem', alignItems: 'center' }}>
+      <div className="settings-card settings-card-row">
+        <h3 className="settings-card-title">❤️ Max Heart Rate</h3>
+        <div className="settings-value-row">
           <input
             type="number"
             value={localMaxHR}
             onChange={(e) => setLocalMaxHR(Number(e.target.value))}
             min={140}
             max={220}
-            style={{
-              padding: '0.75rem 1rem',
-              borderRadius: 'var(--radius-md)',
-              border: '1px solid var(--border)',
-              background: 'var(--background)',
-              color: 'var(--foreground)',
-              fontSize: '1.25rem',
-              fontWeight: 700,
-              width: '120px',
-              textAlign: 'center',
-            }}
+            className="settings-number-input"
           />
-          <span style={{ fontSize: '1.1rem', opacity: 0.8 }}>bpm</span>
-        </div>
-        <div style={{ marginTop: '1rem', fontSize: '0.85rem', opacity: 0.6 }}>
-          推定年齢: {estimateAge > 0 ? estimateAge : '?'}
+          <span className="settings-muted">bpm</span>
+          <div className="settings-pill">推定年齢: {estimateAge > 0 ? estimateAge : '?'}</div>
         </div>
       </div>
 
-      <div style={cardStyle}>
-        <h3 style={{ marginTop: 0, marginBottom: '1rem' }}>🎯 Training Goal</h3>
-        <div style={{ display: 'grid', gap: '1rem' }}>
-          <select
-            value={localGoal}
-            onChange={(e) => setLocalGoal(e.target.value as typeof localGoal)}
-            style={{
-              padding: '0.75rem 1rem',
-              borderRadius: 'var(--radius-md)',
-              border: '1px solid var(--border)',
-              background: 'var(--background)',
-              color: 'var(--foreground)',
-              fontSize: '1rem',
-              width: '100%',
-            }}
-          >
-            <option value="hillclimb_tt">🏔️ レース準備（ヒルクライム / TT）</option>
-            <option value="road_race">🏁 レース準備（ロードレース）</option>
-            <option value="ftp_improvement">⚡ FTP向上</option>
-            <option value="fitness_maintenance">💪 体力維持</option>
-            <option value="other">✏️ その他</option>
-          </select>
+      <div className="settings-card settings-card-row">
+        <h3 className="settings-card-title">🎯 Training Goal</h3>
+        <div className="settings-stack">
+          <div className="settings-goal-row">
+            <select
+              value={localGoal}
+              onChange={(e) => setLocalGoal(e.target.value as typeof localGoal)}
+              className="settings-select"
+            >
+              <option value="hillclimb_tt">🏔️ レース準備（ヒルクライム / TT）</option>
+              <option value="road_race">🏁 レース準備（ロードレース）</option>
+              <option value="ftp_improvement">⚡ FTP向上</option>
+              <option value="fitness_maintenance">💪 体力維持</option>
+              <option value="other">✏️ その他</option>
+            </select>
+            <div>
+              <label htmlFor="goalDate" className="settings-field-label">
+                Goal Date
+              </label>
+              <input
+                id="goalDate"
+                type="date"
+                value={localGoalDate}
+                onChange={(e) => setLocalGoalDate(e.target.value)}
+                className="settings-input"
+                style={{ borderColor: goalDateError ? '#e74c3c' : undefined }}
+              />
+              {goalDateError && <div className="settings-error">{goalDateError}</div>}
+            </div>
+          </div>
           {localGoal === 'other' && (
             <input
               type="text"
               value={localGoalCustom}
               onChange={(e) => setLocalGoalCustom(e.target.value)}
               placeholder="例: トライアスロン準備"
-              style={{
-                padding: '0.75rem 1rem',
-                borderRadius: 'var(--radius-md)',
-                border: '1px solid var(--border)',
-                background: 'var(--background)',
-                color: 'var(--foreground)',
-                fontSize: '1rem',
-              }}
+              className="settings-input"
             />
           )}
-          <div>
-            <label
-              htmlFor="goalDate"
-              style={{
-                display: 'block',
-                fontSize: '0.85rem',
-                opacity: 0.7,
-                marginBottom: '0.5rem',
-              }}
-            >
-              Goal Date
-            </label>
-            <input
-              id="goalDate"
-              type="date"
-              value={localGoalDate}
-              onChange={(e) => setLocalGoalDate(e.target.value)}
-              style={{
-                padding: '0.75rem 1rem',
-                borderRadius: 'var(--radius-md)',
-                border: `1px solid ${goalDateError ? '#e74c3c' : 'var(--border)'}`,
-                background: 'var(--background)',
-                color: 'var(--foreground)',
-                fontSize: '1rem',
-              }}
-            />
-            {goalDateError && (
-              <div style={{ marginTop: '0.5rem', color: '#e74c3c', fontSize: '0.8rem' }}>
-                {goalDateError}
-              </div>
-            )}
-          </div>
         </div>
       </div>
 
-      <div style={cardStyle}>
-        <h3 style={{ marginTop: 0, marginBottom: '1rem' }}>🧠 コーチの自律度</h3>
-        <div style={{ display: 'grid', gap: '0.75rem' }}>
+      <div className="settings-card settings-card-row">
+        <h3 className="settings-card-title">📅 Weekly Schedule</h3>
+        <div className="settings-week-strip">
+          {DAY_NAMES.map((dayName) => (
+            <div
+              key={dayName}
+              className={`settings-day-card ${
+                localWeeklySchedule[dayName].available ? 'is-available' : ''
+              }`}
+            >
+              <label className="settings-day-toggle">
+                <input
+                  type="checkbox"
+                  checked={localWeeklySchedule[dayName].available}
+                  onChange={(e) => updateDay(dayName, { available: e.target.checked })}
+                />
+                <strong>{DAY_LABELS[dayName]}</strong>
+              </label>
+              <div className="settings-day-minutes">
+                <input
+                  aria-label={`${DAY_LABELS[dayName]} max minutes`}
+                  type="number"
+                  min={0}
+                  max={600}
+                  value={localWeeklySchedule[dayName].max_minutes ?? 0}
+                  onChange={(e) =>
+                    updateDay(dayName, {
+                      max_minutes: Number(e.target.value) || 0,
+                    })
+                  }
+                  disabled={!localWeeklySchedule[dayName].available}
+                />
+                <span>min</span>
+              </div>
+            </div>
+          ))}
+        </div>
+      </div>
+
+      <div className="settings-card settings-card-row">
+        <h3 className="settings-card-title">🧠 コーチの自律度</h3>
+        <div className="settings-radio-grid">
           {COACH_AUTONOMY_OPTIONS.map((opt) => (
             <label
               key={opt.value}
-              style={{
-                display: 'flex',
-                alignItems: 'flex-start',
-                gap: '0.75rem',
-                cursor: 'pointer',
-                padding: '0.75rem 1rem',
-                borderRadius: 'var(--radius-md)',
-                border: `1px solid ${localCoachAutonomy === opt.value ? 'var(--primary)' : 'var(--border)'}`,
-                background:
-                  localCoachAutonomy === opt.value
-                    ? 'color-mix(in srgb, var(--primary) 8%, transparent)'
-                    : 'transparent',
-              }}
+              className={`settings-radio-option ${
+                localCoachAutonomy === opt.value ? 'is-selected' : ''
+              }`}
             >
               <input
                 type="radio"
@@ -614,79 +437,22 @@ export default function SettingsForm() {
                 value={opt.value}
                 checked={localCoachAutonomy === opt.value}
                 onChange={() => setLocalCoachAutonomy(opt.value)}
-                style={{ marginTop: '0.2rem', accentColor: 'var(--primary)' }}
               />
               <div>
-                <div style={{ fontWeight: 600 }}>{opt.label}</div>
-                <div style={{ fontSize: '0.85rem', opacity: 0.6, marginTop: '0.25rem' }}>
-                  {opt.description}
-                </div>
+                <div className="settings-radio-title">{opt.label}</div>
+                <div className="settings-radio-description">{opt.description}</div>
               </div>
             </label>
           ))}
         </div>
       </div>
 
-      <div style={cardStyle}>
-        <h3 style={{ marginTop: 0, marginBottom: '1rem' }}>📅 Weekly Schedule</h3>
-        <div style={{ display: 'grid', gap: '0.75rem' }}>
-          {DAY_NAMES.map((dayName) => (
-            <div
-              key={dayName}
-              style={{
-                display: 'grid',
-                gridTemplateColumns: '72px 100px 1fr',
-                gap: '0.75rem',
-                alignItems: 'center',
-              }}
-            >
-              <strong>{DAY_LABELS[dayName]}</strong>
-              <label style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
-                <input
-                  type="checkbox"
-                  checked={localWeeklySchedule[dayName].available}
-                  onChange={(e) => updateDay(dayName, { available: e.target.checked })}
-                />
-                <span>available</span>
-              </label>
-              <input
-                type="number"
-                min={0}
-                max={600}
-                value={localWeeklySchedule[dayName].max_minutes ?? 0}
-                onChange={(e) =>
-                  updateDay(dayName, {
-                    max_minutes: Number(e.target.value) || 0,
-                  })
-                }
-                disabled={!localWeeklySchedule[dayName].available}
-                style={{
-                  padding: '0.65rem 0.85rem',
-                  borderRadius: 'var(--radius-md)',
-                  border: '1px solid var(--border)',
-                  background: 'var(--background)',
-                  color: 'var(--foreground)',
-                }}
-              />
-            </div>
-          ))}
-        </div>
-      </div>
-
-      <div style={cardStyle}>
-        <h3 style={{ marginTop: 0, marginBottom: '1rem' }}>🤖 AI推薦モード</h3>
+      <div className="settings-card settings-card-row">
+        <h3 className="settings-card-title">🤖 AI推薦モード</h3>
         <select
           value={localRecommendMode}
           onChange={(e) => setLocalRecommendMode(e.target.value as RecommendMode)}
-          style={{
-            padding: '0.75rem 1rem',
-            borderRadius: 'var(--radius-md)',
-            border: '1px solid var(--border)',
-            background: 'var(--background)',
-            color: 'var(--foreground)',
-            fontSize: '1rem',
-            width: '100%',
-          }}
+          className="settings-select"
         >
           {RECOMMEND_MODE_OPTIONS.map((opt) => (
             <option key={opt.value} value={opt.value}>
@@ -694,67 +460,47 @@ export default function SettingsForm() {
             </option>
           ))}
         </select>
-        <div style={{ marginTop: '0.75rem', fontSize: '0.85rem', opacity: 0.6 }}>
+        <div className="settings-help-text" style={{ marginTop: '0.55rem' }}>
           {RECOMMEND_MODE_OPTIONS.find((o) => o.value === localRecommendMode)?.description}
         </div>
       </div>
 
-      <div style={cardStyle}>
-        <h3 style={{ marginTop: 0, marginBottom: '1rem' }}>📊 パーソナルデータ</h3>
-        <label
-          style={{
-            display: 'flex',
-            alignItems: 'center',
-            gap: '0.75rem',
-            cursor: 'pointer',
-            fontSize: '1rem',
-          }}
-        >
+      <div className="settings-card settings-card-row">
+        <h3 className="settings-card-title">📊 パーソナルデータ</h3>
+        <label className="settings-value-row" style={{ cursor: 'pointer' }}>
           <input
             type="checkbox"
             checked={localUsePersonalData}
             onChange={(e) => setLocalUsePersonalData(e.target.checked)}
-            style={{ width: '1.25rem', height: '1.25rem', accentColor: 'var(--primary)' }}
+            style={{ width: '1.1rem', height: '1.1rem', accentColor: 'var(--primary)' }}
           />
           <span>{localUsePersonalData ? 'ON — Stravaデータを使用' : 'OFF — 汎用推薦'}</span>
         </label>
       </div>
 
-      <div style={cardStyle}>
-        <h3 style={{ marginTop: 0, marginBottom: '1rem' }}>Intervals.icu</h3>
-        <div style={{ display: 'grid', gap: '0.75rem' }}>
-          <input
-            type="password"
-            value={intervalsIcuApiKey}
-            onChange={(e) => setIntervalsIcuApiKey(e.target.value)}
-            placeholder={
-              intervalsIcuConfigured ? '保存済み。変更時のみ入力' : 'Intervals.icu API key'
-            }
-            autoComplete="off"
-            style={{
-              padding: '0.75rem 1rem',
-              borderRadius: 'var(--radius-md)',
-              border: '1px solid var(--border)',
-              background: 'var(--background)',
-              color: 'var(--foreground)',
-              fontSize: '1rem',
-            }}
-          />
-          <input
-            type="text"
-            value={intervalsIcuAthleteId}
-            onChange={(e) => setIntervalsIcuAthleteId(e.target.value)}
-            placeholder="athlete id (default 0)"
-            style={{
-              padding: '0.75rem 1rem',
-              borderRadius: 'var(--radius-md)',
-              border: '1px solid var(--border)',
-              background: 'var(--background)',
-              color: 'var(--foreground)',
-              fontSize: '1rem',
-            }}
-          />
-          <div style={{ display: 'flex', gap: '0.75rem', flexWrap: 'wrap' }}>
+      <div className="settings-card settings-card-row">
+        <h3 className="settings-card-title">🔔 Notifications</h3>
+        <NotificationSettings showTitle={false} />
+      </div>
+
+      <div className="settings-card settings-card-row">
+        <h3 className="settings-card-title">Intervals.icu</h3>
+        <div className="settings-stack">
+          <div>
+            <label htmlFor="intervalsIcuApiKey" className="settings-field-label">
+              API Key（Developer Settings）
+            </label>
+            <input
+              id="intervalsIcuApiKey"
+              type="password"
+              value={intervalsIcuApiKey}
+              onChange={(e) => setIntervalsIcuApiKey(e.target.value)}
+              placeholder={intervalsIcuConfigured ? '保存済み。変更時のみ入力' : 'API key を貼り付け'}
+              autoComplete="off"
+              className="settings-input"
+            />
+          </div>
+          <div className="settings-actions">
             <button
               type="button"
               onClick={handleSaveIntervalsIcu}
@@ -790,12 +536,12 @@ export default function SettingsForm() {
               Disconnect
             </button>
           </div>
-          <div style={{ fontSize: '0.85rem', opacity: 0.75, lineHeight: 1.6 }}>
+          <div className="settings-help-text">
             <a href="https://intervals.icu/settings" target="_blank" rel="noreferrer">
               Intervals.icu Settings
             </a>
             {
-              ' > Developer Settings で API key を作成してください。PerfRide は暗号化保存し、planned workout の登録にだけ使います。'
+              ' > Developer Settings の API Key を貼り付けてください。Athlete ID は内部で 0 を使用します。PerfRide は暗号化保存し、planned workout の登録にだけ使います。'
             }
             <br />
             <a href="https://event.mywhoosh.com/user/profile" target="_blank" rel="noreferrer">
@@ -811,116 +557,32 @@ export default function SettingsForm() {
             </a>
             {'も確認できます。MyWhoosh への反映には数分かかることがあります。'}
           </div>
-          <div style={{ fontSize: '0.85rem', opacity: 0.7 }}>
+          <div className="settings-status-text">
             {intervalsIcuMessage ??
               (intervalsIcuConfigured ? 'Credential configured' : 'Credential not configured')}
           </div>
         </div>
       </div>
 
-      <div style={cardStyle}>
-        <h3 style={{ marginTop: 0, marginBottom: '0.5rem' }}>Legacy MyWhoosh direct upload</h3>
-        <div style={{ marginBottom: '1rem', fontSize: '0.85rem', opacity: 0.7 }}>
-          Intervals.icu 経由が標準です。MyWhoosh 直登録は fallback として残しています。
-        </div>
-        <div style={{ display: 'grid', gap: '0.75rem' }}>
-          <input
-            type="email"
-            value={myWhooshEmail}
-            onChange={(e) => setMyWhooshEmail(e.target.value)}
-            placeholder="email@example.com"
-            autoComplete="username"
-            style={{
-              padding: '0.75rem 1rem',
-              borderRadius: 'var(--radius-md)',
-              border: '1px solid var(--border)',
-              background: 'var(--background)',
-              color: 'var(--foreground)',
-              fontSize: '1rem',
-            }}
-          />
-          <input
-            type="password"
-            value={myWhooshPassword}
-            onChange={(e) => setMyWhooshPassword(e.target.value)}
-            placeholder={myWhooshConfigured ? '保存済み。変更時のみ入力' : 'password'}
-            autoComplete="current-password"
-            style={{
-              padding: '0.75rem 1rem',
-              borderRadius: 'var(--radius-md)',
-              border: '1px solid var(--border)',
-              background: 'var(--background)',
-              color: 'var(--foreground)',
-              fontSize: '1rem',
-            }}
-          />
-          <div style={{ display: 'flex', gap: '0.75rem', flexWrap: 'wrap' }}>
-            <button
-              type="button"
-              onClick={handleSaveMyWhoosh}
-              className="btn btn-primary"
-              disabled={!myWhooshEmail || !myWhooshPassword || !myWhooshEncryptionReady}
-            >
-              Save MyWhoosh
-            </button>
-            <button
-              type="button"
-              onClick={handleTestMyWhoosh}
-              className="btn"
-              disabled={!myWhooshConfigured}
-              style={{
-                border: '1px solid var(--border)',
-                background: 'transparent',
-                color: 'var(--foreground)',
-              }}
-            >
-              Test connection
-            </button>
-            <button
-              type="button"
-              onClick={handleDeleteMyWhoosh}
-              className="btn"
-              disabled={!myWhooshConfigured}
-              style={{
-                border: '1px solid var(--border)',
-                background: 'transparent',
-                color: 'var(--foreground)',
-              }}
-            >
-              Disconnect
-            </button>
-          </div>
-          <div style={{ fontSize: '0.85rem', opacity: 0.7 }}>
-            {myWhooshMessage ??
-              (myWhooshConfigured ? 'Credential configured' : 'Credential not configured')}
-          </div>
-        </div>
-      </div>
-
       {isDev && (
         <div
+          className="settings-card settings-card-row"
           style={{
-            ...cardStyle,
             border: '1px dashed var(--primary)',
             background: 'color-mix(in srgb, var(--primary) 4%, var(--surface))',
           }}
         >
-          <h3 style={{ marginTop: 0, marginBottom: '0.5rem' }}>🧪 確認時刻（開発用）</h3>
-          <div style={{ display: 'flex', gap: '0.75rem', alignItems: 'center', flexWrap: 'wrap' }}>
+          <h3 className="settings-card-title">🧪 確認時刻（開発用）</h3>
+          <div className="settings-inline-controls">
             <input
               type="datetime-local"
               value={localAsOf}
               onChange={(e) => setLocalAsOf(e.target.value)}
-              style={{
-                padding: '0.75rem 1rem',
-                borderRadius: 'var(--radius-md)',
-                border: '1px solid var(--border)',
-                background: 'var(--background)',
-                color: 'var(--foreground)',
-                fontSize: '1rem',
-              }}
+              className="settings-input"
+              style={{ maxWidth: '230px' }}
             />
             <button
+              type="button"
               onClick={handleResetAsOf}
               className="btn"
               style={{
@@ -933,20 +595,18 @@ export default function SettingsForm() {
             </button>
           </div>
           {settings.asOf && (
-            <div style={{ marginTop: '0.75rem', fontSize: '0.85rem', opacity: 0.7 }}>
+            <div className="settings-status-text" style={{ marginTop: '0.55rem' }}>
               現在の確認時刻: <strong>{formatJstClockLabel(settings.asOf)} (JST)</strong>
             </div>
           )}
         </div>
       )}
 
-      <div style={cardStyle}>
-        <NotificationSettings />
+      <div className="settings-save-row">
+        <button type="button" onClick={handleSave} className="btn btn-primary">
+          {saved ? '✓ Saved!' : 'Save Settings'}
+        </button>
       </div>
-
-      <button onClick={handleSave} className="btn btn-primary" style={{ justifySelf: 'start' }}>
-        {saved ? '✓ Saved!' : 'Save Settings'}
-      </button>
     </div>
   );
 }

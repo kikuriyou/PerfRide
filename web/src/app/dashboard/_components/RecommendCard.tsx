@@ -16,11 +16,13 @@ import {
 } from './recommendCache';
 import type { TrainingSession } from '@/lib/gcs-schema';
 import {
+  buildKeepWeeklyPlanMessage,
   buildReplaceConflictMessage,
   buildReplacePreview,
   buildReplaceSuccessMessage,
   buildWebhookDiffLine,
   displaySourceLabel,
+  hasVisibleReplaceChange,
   proposedSessionHeading,
 } from './recommendation-display';
 import { formatSessionBrief } from '@/lib/training-session-display';
@@ -72,6 +74,55 @@ const DURATION_OPTIONS: DurationOption[] = [
   { label: '45分版', minutes: 45 },
   { label: '90分版', minutes: 90 },
 ];
+
+type WebhookDecisionStatus = 'unchanged' | 'replaced';
+
+const WEBHOOK_DECISION_STORAGE_KEY = 'perfride_webhook_recommendation_decisions';
+
+function webhookDecisionStorageId(rec: Recommendation | null | undefined): string | null {
+  if (!rec || rec.source !== 'webhook') return null;
+  const stableId = rec.activity_id ?? rec.trace_id ?? rec.created_at;
+  return stableId ? `webhook:${stableId}` : null;
+}
+
+function readWebhookDecisionStatus(
+  rec: Recommendation | null | undefined,
+): WebhookDecisionStatus | null {
+  const id = webhookDecisionStorageId(rec);
+  if (!id || typeof window === 'undefined') return null;
+  try {
+    const raw = window.localStorage.getItem(WEBHOOK_DECISION_STORAGE_KEY);
+    if (!raw) return null;
+    const parsed = JSON.parse(raw) as Record<string, WebhookDecisionStatus>;
+    const status = parsed[id];
+    return status === 'unchanged' || status === 'replaced' ? status : null;
+  } catch {
+    return null;
+  }
+}
+
+function writeWebhookDecisionStatus(
+  rec: Recommendation | null | undefined,
+  status: WebhookDecisionStatus,
+): void {
+  const id = webhookDecisionStorageId(rec);
+  if (!id || typeof window === 'undefined') return;
+  try {
+    const raw = window.localStorage.getItem(WEBHOOK_DECISION_STORAGE_KEY);
+    const parsed = raw ? (JSON.parse(raw) as Record<string, WebhookDecisionStatus>) : {};
+    window.localStorage.setItem(
+      WEBHOOK_DECISION_STORAGE_KEY,
+      JSON.stringify({ ...parsed, [id]: status }),
+    );
+  } catch {
+    // Ignore localStorage failures; the current UI state still reflects the decision.
+  }
+}
+
+function handledDecisionMessage(status: WebhookDecisionStatus): string {
+  if (status === 'unchanged') return buildKeepWeeklyPlanMessage();
+  return 'この提案は Weekly Plan に反映済みです。';
+}
 
 const chipStyle: CSSProperties = {
   background: 'var(--surface)',
@@ -184,6 +235,8 @@ function RecommendCardInner() {
   const [weeklyPlan, setWeeklyPlan] = useState<WeeklyPlanSnapshot | null>(null);
   const [replaceTargetId, setReplaceTargetId] = useState<string>('');
   const [decisionMessage, setDecisionMessage] = useState<string | null>(null);
+  const [webhookDecisionStatus, setWebhookDecisionStatus] =
+    useState<WebhookDecisionStatus | null>(null);
   const [planContextKey, setPlanContextKey] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -201,6 +254,12 @@ function RecommendCardInner() {
     settings.asOf
       ? `/api/weekly-plan?asOf=${encodeURIComponent(settings.asOf)}`
       : '/api/weekly-plan';
+
+  const applyRecommendationDecisionState = (rec: Recommendation) => {
+    const status = readWebhookDecisionStatus(rec);
+    setWebhookDecisionStatus(status);
+    setDecisionMessage(status ? handledDecisionMessage(status) : null);
+  };
 
   const fetchRecommendation = async (
     forceRefresh = false,
@@ -220,6 +279,7 @@ function RecommendCardInner() {
       if (cached) {
         setRecommendation(cached);
         setPlanContextKey(cached.plan_context_key ?? null);
+        applyRecommendationDecisionState(cached);
         return;
       }
     }
@@ -252,6 +312,7 @@ function RecommendCardInner() {
       const data: Recommendation = await res.json();
       setRecommendation(data);
       setPlanContextKey(data.plan_context_key ?? null);
+      applyRecommendationDecisionState(data);
       if (settings.coachAutonomy === 'coach') {
         fetch(weeklyPlanPath())
           .then((weeklyRes) => (weeklyRes.ok ? weeklyRes.json() : null))
@@ -260,7 +321,10 @@ function RecommendCardInner() {
             const proposedDate = data.proposed_session?.session_date;
             const first = snapshot?.current_week?.sessions.find(
               (session) =>
-                session.date === proposedDate && session.type !== 'rest' && session.session_id,
+                session.date === proposedDate &&
+                session.type !== 'rest' &&
+                (session.origin ?? 'baseline') === 'baseline' &&
+                session.session_id,
             );
             setReplaceTargetId(first?.session_id ?? '');
           })
@@ -333,6 +397,7 @@ function RecommendCardInner() {
       setRecommendation(originalRecommendation);
       setOriginalRecommendation(null);
       setOpenPanels(new Set());
+      applyRecommendationDecisionState(originalRecommendation);
     }
   };
 
@@ -431,28 +496,45 @@ function RecommendCardInner() {
           (session): session is ReplaceCandidate =>
             session.date === proposed.session_date &&
             session.type !== 'rest' &&
+            (session.origin ?? 'baseline') === 'baseline' &&
             !!session.session_id,
         )
       : [];
   const selectedReplaceSession =
     replaceCandidates.find((session) => session.session_id === replaceTargetId) ?? null;
   const replacePreview = buildReplacePreview(selectedReplaceSession, proposed);
-  const sourceBadge = displaySourceLabel(recommendation?.source);
+  const webhookDecisionConfirmed = recommendation?.source === 'webhook' && !!webhookDecisionStatus;
+  const sourceBadge = webhookDecisionConfirmed ? null : displaySourceLabel(recommendation?.source);
   const webhookDiffLine =
-    recommendation?.source === 'webhook'
+    recommendation?.source === 'webhook' && !webhookDecisionConfirmed
       ? buildWebhookDiffLine(selectedReplaceSession, proposed)
       : null;
   const canReplace =
     recommendation?.source === 'webhook' &&
+    !webhookDecisionConfirmed &&
     !!proposed &&
     !proposed.is_rest &&
     !!proposed.session_type &&
     !!selectedReplaceSession &&
     !!replaceTargetId;
 
+  const keepWeeklyPlan = () => {
+    const status: WebhookDecisionStatus = 'unchanged';
+    setWebhookDecisionStatus(status);
+    setDecisionMessage(buildKeepWeeklyPlanMessage());
+    writeWebhookDecisionStatus(recommendation, status);
+  };
+
   const replaceWeeklySession = async () => {
     if (!proposed || !weeklyPlan?.current_week || !replaceTargetId) return;
     setDecisionMessage(null);
+    if (selectedReplaceSession && !hasVisibleReplaceChange(selectedReplaceSession, proposed)) {
+      const status: WebhookDecisionStatus = 'replaced';
+      setWebhookDecisionStatus(status);
+      setDecisionMessage(buildReplaceSuccessMessage(proposed, selectedReplaceSession));
+      writeWebhookDecisionStatus(recommendation, status);
+      return;
+    }
     const res = await fetch('/api/weekly-plan/replace', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -476,7 +558,10 @@ function RecommendCardInner() {
       setDecisionMessage('置き換えに失敗しました。');
       return;
     }
-    setDecisionMessage(buildReplaceSuccessMessage(proposed));
+    const status: WebhookDecisionStatus = 'replaced';
+    setWebhookDecisionStatus(status);
+    setDecisionMessage(buildReplaceSuccessMessage(proposed, selectedReplaceSession));
+    writeWebhookDecisionStatus(recommendation, status);
     const snapshot = await fetch(weeklyPlanPath()).then((weeklyRes) =>
       weeklyRes.ok ? weeklyRes.json() : null,
     );
@@ -803,7 +888,7 @@ function RecommendCardInner() {
                   {decisionMessage}
                 </div>
               )}
-              {!proposed.is_rest && (
+              {!proposed.is_rest && !webhookDecisionConfirmed && (
                 <>
                   {replacePreview ? (
                     <div
@@ -826,7 +911,7 @@ function RecommendCardInner() {
                   <div style={{ display: 'flex', gap: '0.5rem', flexWrap: 'wrap' }}>
                     <button
                       type="button"
-                      onClick={() => setDecisionMessage('Weekly Plan は変更しません。')}
+                      onClick={keepWeeklyPlan}
                       style={chipStyle}
                     >
                       変更なし

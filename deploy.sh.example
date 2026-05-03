@@ -160,8 +160,8 @@ if gcloud scheduler jobs describe "${SCHEDULER_JOB_NAME}" \
   gcloud scheduler jobs update http "${SCHEDULER_JOB_NAME}" \
     --location="${REGION}" \
     --project="${PROJECT_ID}" \
-    --schedule="0 19 * * 0" \
-    --time-zone="UTC" \
+    --schedule="0 4 * * 1" \
+    --time-zone="Asia/Tokyo" \
     --uri="${WEEKLY_PLAN_URL}" \
     --http-method=POST \
     --oidc-service-account-email="${SCHEDULER_SERVICE_ACCOUNT}" \
@@ -171,8 +171,8 @@ else
   gcloud scheduler jobs create http "${SCHEDULER_JOB_NAME}" \
     --location="${REGION}" \
     --project="${PROJECT_ID}" \
-    --schedule="0 19 * * 0" \
-    --time-zone="UTC" \
+    --schedule="0 4 * * 1" \
+    --time-zone="Asia/Tokyo" \
     --uri="${WEEKLY_PLAN_URL}" \
     --http-method=POST \
     --oidc-service-account-email="${SCHEDULER_SERVICE_ACCOUNT}" \

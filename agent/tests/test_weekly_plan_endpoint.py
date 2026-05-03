@@ -6,9 +6,11 @@ from fastapi import HTTPException
 
 from recommend_agent.main import (
     WeeklyPlanAppendRequest,
+    WeeklyPlanReplaceRequest,
     WeeklyPlanRequest,
     weekly_plan,
     weekly_plan_append,
+    weekly_plan_replace,
 )
 
 
@@ -188,6 +190,43 @@ async def test_weekly_plan_append_returns_success_payload():
     assert response.week_start == "2026-04-20"
     assert response.plan_revision == 4
     assert response.appended_session == appended_session
+
+
+@pytest.mark.asyncio
+async def test_weekly_plan_replace_uses_replace_mode_and_target_session():
+    updated_session = {
+        "session_id": "baseline:2026-04-20:2026-04-25",
+        "date": "2026-04-25",
+        "type": "endurance",
+        "duration_minutes": 60,
+        "target_tss": 40,
+        "origin": "baseline",
+    }
+    with patch(
+        "recommend_agent.main.update_training_plan",
+        return_value={
+            "status": "success",
+            "updated_session": updated_session,
+            "plan_revision": 4,
+            "week_start": "2026-04-20",
+        },
+    ) as mock_update:
+        response = await weekly_plan_replace(
+            WeeklyPlanReplaceRequest(
+                target_session_id="baseline:2026-04-20:2026-04-25",
+                session_date="2026-04-25",
+                session_type="endurance",
+                duration_minutes=60,
+                target_tss=40,
+                expected_plan_revision=3,
+            )
+        )
+
+    kwargs = mock_update.call_args.kwargs
+    assert kwargs["mode"] == "replace"
+    assert kwargs["target_session_id"] == "baseline:2026-04-20:2026-04-25"
+    assert response.status == "success"
+    assert response.updated_session == updated_session
 
 
 @pytest.mark.asyncio

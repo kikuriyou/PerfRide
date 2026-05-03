@@ -88,6 +88,9 @@ export function decisionResponse(decision: CoachDecisionRecord): Record<string, 
     based_on: 'アクティビティ完了後のコーチ判断',
     plan_context_key: decision.plan_context_key ?? null,
     proposed_session: decision.proposed_session ?? null,
+    activity_id: decision.activity_id ?? null,
+    trace_id: decision.trace_id ?? null,
+    session_id: decision.session_id ?? null,
     source: decision.source,
   };
 }

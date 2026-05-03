@@ -20,6 +20,9 @@ export interface Recommendation {
   proposed_session?: ProposedSession | null;
   source?: 'webhook' | 'weekly_plan' | 'generated' | string;
   source_label?: string;
+  activity_id?: number | null;
+  trace_id?: string | null;
+  session_id?: string | null;
 }
 
 export interface CachedRecommendationEntry extends Recommendation {

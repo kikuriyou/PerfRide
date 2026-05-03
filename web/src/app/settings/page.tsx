@@ -10,19 +10,10 @@ export default async function SettingsPage() {
   }
 
   return (
-    <div
-      className="container"
-      style={{ paddingTop: '2rem', paddingBottom: '2rem', maxWidth: '600px' }}
-    >
-      <header
-        style={{
-          marginBottom: '2rem',
-          borderBottom: '1px solid var(--border)',
-          paddingBottom: '1rem',
-        }}
-      >
-        <h1 style={{ fontSize: '2rem', fontWeight: 700 }}>Settings</h1>
-        <p style={{ opacity: 0.7 }}>Configure your rider profile for accurate calculations.</p>
+    <div className="container settings-page">
+      <header className="settings-header">
+        <h1>Settings</h1>
+        <p>Configure your rider profile for accurate calculations.</p>
       </header>
 
       <SettingsForm />

@@ -3,10 +3,11 @@ import { getServerSession } from 'next-auth/next';
 import { cookies } from 'next/headers';
 import { authOptions } from '@/lib/auth';
 import { readTrainingPlan, readUserSettings } from '@/lib/gcs-settings';
-import { approvedWeekForDate, mondayOfWeek, isoDate } from '@/lib/weekly-plan';
+import { approvedWeekForDate, approvedWeeksBefore, mondayOfWeek, isoDate } from '@/lib/weekly-plan';
 import {
   decodeAsOfCookie,
   formatJstClockLabel,
+  formatJstInstantLabel,
   resolveWeeklyPlanReference,
 } from '@/lib/weekly-plan-reference';
 import type { ApprovedWeekPayload } from '@/lib/gcs-schema';
@@ -23,6 +24,59 @@ function statusLabel(status: string): string {
   if (status === 'approved') return '現在のプラン';
   if (status === 'draft') return '下書き';
   return status;
+}
+
+function PastPlanArchive({ weeks, today }: { weeks: ApprovedWeekPayload[]; today: string }) {
+  if (weeks.length === 0) return null;
+
+  return (
+    <section style={{ marginTop: '1.5rem', opacity: 0.78 }}>
+      <details>
+        <summary
+          style={{
+            cursor: 'pointer',
+            fontWeight: 700,
+            fontSize: '0.9rem',
+            padding: '0.65rem 0',
+          }}
+        >
+          過去のプラン ({weeks.length})
+        </summary>
+        <div style={{ display: 'grid', gap: '0.75rem', paddingTop: '0.35rem' }}>
+          {weeks.map((week) => (
+            <details
+              key={`${week.week_start}-${week.plan_revision}`}
+              style={{
+                border: '1px solid var(--border)',
+                borderRadius: 'var(--radius-md)',
+                background: 'var(--surface)',
+                padding: '0.75rem',
+              }}
+            >
+              <summary
+                style={{
+                  cursor: 'pointer',
+                  display: 'flex',
+                  justifyContent: 'space-between',
+                  gap: '0.75rem',
+                  alignItems: 'center',
+                  fontSize: '0.82rem',
+                }}
+              >
+                <span style={{ fontWeight: 700 }}>Week of {week.week_start}</span>
+                <span style={{ opacity: 0.7, textTransform: 'capitalize' }}>
+                  {week.phase} · TSS {week.target_tss} · rev {week.plan_revision}
+                </span>
+              </summary>
+              <div style={{ marginTop: '0.75rem' }}>
+                <WeekView week={week} today={today} />
+              </div>
+            </details>
+          ))}
+        </div>
+      </details>
+    </section>
+  );
 }
 
 export default async function WeeklyPlanPage({ searchParams }: WeeklyPlanPageProps) {
@@ -49,6 +103,7 @@ export default async function WeeklyPlanPage({ searchParams }: WeeklyPlanPagePro
 
   const currentWeek: ApprovedWeekPayload | null = approvedWeekForDate(plan, today);
   const displayWeek: ApprovedWeekPayload | null = currentWeek;
+  const pastWeeks = approvedWeeksBefore(plan, weekStart);
 
   return (
     <main style={{ padding: '1.5rem 1rem', maxWidth: '1100px', margin: '0 auto' }}>
@@ -131,7 +186,8 @@ export default async function WeeklyPlanPage({ searchParams }: WeeklyPlanPagePro
               color: '#00796b',
             }}
           >
-            Weekly Plan updated · revision {displayWeek.plan_revision} · {displayWeek.updated_at}
+            Weekly Plan updated · revision {displayWeek.plan_revision} ·{' '}
+            {formatJstInstantLabel(displayWeek.updated_at)} JST
           </div>
           <WeekView week={displayWeek} today={today} />
           <AddSessionForm
@@ -141,6 +197,8 @@ export default async function WeeklyPlanPage({ searchParams }: WeeklyPlanPagePro
           />
         </section>
       )}
+
+      {coachAutonomy === 'coach' && <PastPlanArchive weeks={pastWeeks} today={today} />}
     </main>
   );
 }

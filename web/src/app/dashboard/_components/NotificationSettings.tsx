@@ -4,11 +4,17 @@ import { useState, useEffect, type CSSProperties } from 'react';
 
 type PushState = 'default' | 'granted' | 'denied' | 'unsupported' | 'subscribed';
 
+interface NotificationSettingsProps {
+  showTitle?: boolean;
+}
+
 const rowStyle: CSSProperties = {
   display: 'flex',
   alignItems: 'center',
   justifyContent: 'space-between',
-  padding: '0.75rem 0',
+  gap: '0.75rem',
+  flexWrap: 'wrap',
+  padding: '0.55rem 0',
   borderBottom: '1px solid var(--border)',
 };
 
@@ -16,12 +22,12 @@ const labelStyle: CSSProperties = {
   display: 'flex',
   alignItems: 'center',
   gap: '0.5rem',
-  fontSize: '0.9rem',
+  fontSize: '0.85rem',
 };
 
 const statusStyle = (active: boolean): CSSProperties => ({
-  fontSize: '0.78rem',
-  padding: '0.2rem 0.6rem',
+  fontSize: '0.75rem',
+  padding: '0.18rem 0.55rem',
   borderRadius: '1rem',
   background: active ? 'rgba(46, 204, 113, 0.15)' : 'var(--surface)',
   color: active ? '#2ecc71' : 'var(--foreground)',
@@ -34,8 +40,8 @@ const buttonStyle: CSSProperties = {
   color: '#fff',
   border: 'none',
   borderRadius: 'var(--radius-md)',
-  padding: '0.5rem 1rem',
-  fontSize: '0.85rem',
+  padding: '0.45rem 0.85rem',
+  fontSize: '0.82rem',
   cursor: 'pointer',
 };
 
@@ -50,7 +56,7 @@ function urlBase64ToUint8Array(base64String: string): Uint8Array {
   return array;
 }
 
-export default function NotificationSettings() {
+export default function NotificationSettings({ showTitle = true }: NotificationSettingsProps) {
   const [pushState, setPushState] = useState<PushState>('default');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -139,7 +145,7 @@ export default function NotificationSettings() {
 
   return (
     <div>
-      <h3 style={{ marginTop: 0, marginBottom: '1rem' }}>🔔 Notifications</h3>
+      {showTitle && <h3 style={{ marginTop: 0, marginBottom: '0.75rem' }}>🔔 Notifications</h3>}
 
       <div style={rowStyle}>
         <div style={labelStyle}>

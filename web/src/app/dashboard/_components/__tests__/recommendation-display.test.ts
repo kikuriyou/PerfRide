@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import {
+  buildKeepWeeklyPlanMessage,
   buildReplaceConflictMessage,
   buildReplacePreview,
   buildReplaceSuccessMessage,
@@ -25,10 +26,38 @@ describe('recommendation display helpers', () => {
       duration_minutes: 50,
     };
     expect(buildReplaceSuccessMessage(proposed)).toBe(
-      '4/28 の予定を Sweetspot 50min に変更しました。',
+      '4/28 の Weekly Plan を Sweetspot 50min に更新しました。',
     );
     expect(buildReplaceConflictMessage(proposed)).toBe(
       '4/28 のプランが更新されています。再読み込みしてからもう一度選んでください。',
+    );
+  });
+
+  it('makes no-op replace results explicit', () => {
+    expect(
+      buildReplaceSuccessMessage(
+        {
+          session_date: '2026-04-28',
+          session_type: 'endurance',
+          duration_minutes: 60,
+          target_tss: 40,
+        },
+        {
+          date: '2026-04-28',
+          type: 'endurance',
+          duration_minutes: 60,
+          target_tss: 40,
+          status: 'planned',
+        },
+      ),
+    ).toBe(
+      '4/28 の Weekly Plan はすでに Endurance 60min です。変更はありません。この提案は対応済みです。',
+    );
+  });
+
+  it('explains unchanged decisions as handled', () => {
+    expect(buildKeepWeeklyPlanMessage()).toBe(
+      '変更なしを確定しました。Weekly Plan は更新していません。この提案は対応済みです。',
     );
   });
 

@@ -3,6 +3,7 @@ import { describe, expect, it } from 'vitest';
 import type { GCSTrainingPlan, WeeklyPlanReviewStore } from '@/lib/gcs-schema';
 import {
   approvedWeekForDate,
+  approvedWeeksBefore,
   buildPlanContextKey,
   getCurrentPlanContext,
   isoDate,
@@ -149,6 +150,42 @@ describe('approvedWeekForDate', () => {
     };
     const week = approvedWeekForDate(sparsePlan, '2026-04-22');
     expect(week?.week_start).toBe('2026-04-20');
+  });
+});
+
+describe('approvedWeeksBefore', () => {
+  it('returns only previous weeks in newest-first order', () => {
+    const plan: GCSTrainingPlan = {
+      ...approvedPlan,
+      weekly_plan: {
+        week_14: {
+          ...approvedPlan.weekly_plan.week_15,
+          week_start: '2026-03-30',
+          week_number: 14,
+        },
+        week_15: approvedPlan.weekly_plan.week_15,
+        week_16: {
+          ...approvedPlan.weekly_plan.week_15,
+          week_start: '2026-04-13',
+          week_number: 16,
+        },
+        week_17: {
+          ...approvedPlan.weekly_plan.week_15,
+          week_start: '2026-04-20',
+          week_number: 17,
+        },
+      },
+    };
+
+    expect(approvedWeeksBefore(plan, '2026-04-20').map((week) => week.week_start)).toEqual([
+      '2026-04-13',
+      '2026-04-06',
+      '2026-03-30',
+    ]);
+  });
+
+  it('returns an empty list when no plan is available', () => {
+    expect(approvedWeeksBefore(null, '2026-04-20')).toEqual([]);
   });
 });
 

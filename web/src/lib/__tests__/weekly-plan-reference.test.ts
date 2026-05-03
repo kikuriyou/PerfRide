@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import {
   decodeAsOfCookie,
   formatJstClockLabel,
+  formatJstInstantLabel,
   resolveWeeklyPlanReference,
 } from '@/lib/weekly-plan-reference';
 import { isoDate } from '@/lib/weekly-plan';
@@ -32,5 +33,10 @@ describe('weekly plan reference helpers', () => {
   it('formats JST clock labels without reinterpreting them as browser-local time', () => {
     expect(formatJstClockLabel('2026-04-27T23:30')).toBe('2026-04-27 23:30');
     expect(formatJstClockLabel('2026-04-27T23:30:00+09:00')).toBe('2026-04-27 23:30');
+  });
+
+  it('formats stored instants in JST', () => {
+    expect(formatJstInstantLabel('2026-05-03T19:00:00.000Z')).toContain('2026/05/04');
+    expect(formatJstInstantLabel('2026-05-04T04:00:00+09:00')).toContain('2026/05/04');
   });
 });

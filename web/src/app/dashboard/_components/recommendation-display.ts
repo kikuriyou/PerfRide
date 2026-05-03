@@ -25,6 +25,21 @@ export function buildReplacePreview(
   })} に変更します`;
 }
 
+export function hasVisibleReplaceChange(
+  target: TrainingSession | null | undefined,
+  proposed: ProposedSession | null | undefined,
+): boolean {
+  if (!target || !proposed || proposed.is_rest) return true;
+  const proposedStatus = proposed.registered ? 'registered' : 'planned';
+  return (
+    target.type !== proposed.session_type ||
+    (target.duration_minutes ?? 0) !== (proposed.duration_minutes ?? 0) ||
+    (target.target_tss ?? target.planned_tss ?? 0) !== (proposed.target_tss ?? 0) ||
+    target.status !== proposedStatus ||
+    (proposed.workout_id !== undefined && target.workout_id !== proposed.workout_id)
+  );
+}
+
 export function buildWebhookDiffLine(
   target: TrainingSession | null | undefined,
   proposed: ProposedSession | null | undefined,
@@ -46,11 +61,26 @@ export function buildWebhookDiffLine(
   return `軽めに調整: ${before} → ${after}`;
 }
 
-export function buildReplaceSuccessMessage(proposed: ProposedSession): string {
-  return `${formatShortDate(proposed.session_date)} の予定を ${formatSessionBrief({
+export function buildKeepWeeklyPlanMessage(): string {
+  return '変更なしを確定しました。Weekly Plan は更新していません。この提案は対応済みです。';
+}
+
+export function buildReplaceSuccessMessage(
+  proposed: ProposedSession,
+  target?: TrainingSession | null,
+): string {
+  const after = formatSessionBrief({
     type: proposed.session_type,
     duration_minutes: proposed.duration_minutes,
-  })} に変更しました。`;
+  });
+  if (target && !hasVisibleReplaceChange(target, proposed)) {
+    return `${formatShortDate(
+      proposed.session_date,
+    )} の Weekly Plan はすでに ${after} です。変更はありません。この提案は対応済みです。`;
+  }
+
+  const before = target ? `${formatSessionBrief(target)} から ` : '';
+  return `${formatShortDate(proposed.session_date)} の Weekly Plan を ${before}${after} に更新しました。`;
 }
 
 export function buildReplaceConflictMessage(proposed: ProposedSession): string {
