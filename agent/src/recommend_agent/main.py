@@ -507,6 +507,201 @@ def _without_unverified_workout_registration(proposed: ProposedSession) -> Propo
     return proposed.model_copy(update={"workout_id": None, "registered": False})
 
 
+_RECOVERY_SIGNAL_TYPES = {
+    "tsb_critical",
+    "weekly_tss_spike",
+    "recent_intensity_high",
+    "weekly_tss_front_loaded",
+}
+
+
+def _as_number(value: object) -> float | None:
+    if isinstance(value, bool):
+        return None
+    if isinstance(value, int | float):
+        return float(value)
+    return None
+
+
+def _recommendation_recovery_policy(signals: list[dict]) -> dict[str, object] | None:
+    """Translate insight safety signals into a deterministic recovery/rest cap."""
+    for signal in signals:
+        if signal.get("type") != "tsb_critical":
+            continue
+        data = signal.get("data")
+        tsb = _as_number(data.get("tsb") if isinstance(data, dict) else None)
+        if tsb is not None and tsb <= -30:
+            return {
+                "session_type": "rest",
+                "reason": f"TSBが{tsb:g}まで低下しているため",
+                "signal_types": ["tsb_critical"],
+            }
+
+    fatigue_signals = [
+        signal
+        for signal in signals
+        if signal.get("type") in _RECOVERY_SIGNAL_TYPES and signal.get("priority") == "high"
+    ]
+    if not fatigue_signals:
+        return None
+
+    signal_types = [str(signal.get("type")) for signal in fatigue_signals]
+    primary = signal_types[0]
+    reason_by_signal = {
+        "tsb_critical": "TSBが疲労域に入っているため",
+        "weekly_tss_spike": "週間TSSが急増しているため",
+        "recent_intensity_high": "直近3日で高強度が重なっているため",
+        "weekly_tss_front_loaded": "週前半の高負荷が重なっているため",
+    }
+    return {
+        "session_type": "recovery",
+        "reason": reason_by_signal.get(primary, "疲労アラートが出ているため"),
+        "signal_types": signal_types,
+    }
+
+
+def _recommendation_safety_context(signals: list[dict], policy: dict[str, object] | None) -> str:
+    if policy is None:
+        return ""
+    return (
+        "\n\n## 安全アラート（事前検知済み）\n"
+        f"```json\n{json.dumps(signals, ensure_ascii=False)}\n```\n"
+        "上記の疲労アラートは、週間プランや目標レース向けメニューより優先してください。"
+        "次回提案は完全休養またはリカバリーに制限し、Threshold / VO2max / Sweet Spot / "
+        "Tempo / Sprint / Race Simulation は提案しないでください。"
+    )
+
+
+def _max_power_percent(payload: dict[str, object]) -> float | None:
+    intervals = payload.get("workout_intervals")
+    if not isinstance(intervals, list):
+        return None
+    values: list[float] = []
+    for interval in intervals:
+        if not isinstance(interval, dict):
+            continue
+        value = _as_number(interval.get("powerPercent"))
+        if value is not None:
+            values.append(value)
+    return max(values) if values else None
+
+
+def _payload_is_recovery_aligned(payload: dict[str, object]) -> bool:
+    proposed = payload.get("proposed_session")
+    if not isinstance(proposed, dict):
+        return False
+    session_type = proposed.get("session_type")
+    if proposed.get("is_rest") is True or session_type == "rest":
+        return True
+    if session_type != "recovery":
+        return False
+    max_power = _max_power_percent(payload)
+    return max_power is None or max_power <= 70
+
+
+def _target_session_date(payload: dict[str, object], fallback: str) -> str:
+    proposed = payload.get("proposed_session")
+    if isinstance(proposed, dict):
+        session_date = proposed.get("session_date")
+        if isinstance(session_date, str) and session_date:
+            return session_date
+    return fallback
+
+
+def _policy_signal_label(policy: dict[str, object]) -> str:
+    signal_types = policy.get("signal_types")
+    if not isinstance(signal_types, list):
+        return "安全アラート"
+    labels = [str(signal_type) for signal_type in signal_types]
+    return f"安全アラート（{', '.join(labels)}）"
+
+
+def _recovery_guard_payload(policy: dict[str, object], session_date: str) -> dict[str, object]:
+    session_type = str(policy.get("session_type", "recovery"))
+    reason = str(policy.get("reason", "疲労アラートが出ているため"))
+    based_on = f"{_policy_signal_label(policy)}と直近のフィットネス指標を踏まえた提案です"
+
+    if session_type == "rest":
+        return {
+            "summary": "疲労アラートが出ているため、次回は高強度ではなく完全休養を優先しましょう。",
+            "why_now": f"{reason}、トレーニング効果より回復を優先する局面です。",
+            "based_on": based_on,
+            "detail": (
+                "## 完全休養\n\n"
+                "- 今日はバイクに乗らず、睡眠・補給・軽いストレッチを優先してください。\n"
+                "- 脚の重さや安静時心拍が戻るまで、Threshold や VO2max は避けましょう。\n"
+                "- どうしても動きたい場合は、散歩やモビリティ程度に留めてください。"
+            ),
+            "workout_intervals": [],
+            "totalDurationMin": 0,
+            "workoutName": "Rest Day",
+            "proposed_session": {
+                "session_date": session_date,
+                "session_type": "rest",
+                "duration_minutes": 0,
+                "target_tss": 0,
+                "notes": "疲労アラートにより完全休養へ変更",
+                "reason": reason,
+                "is_rest": True,
+                "source": "safety_guard",
+            },
+        }
+
+    return {
+        "summary": (
+            "疲労アラートが出ているため、次回は高強度ではなく"
+            "45分のリカバリーに抑えましょう。"
+        ),
+        "why_now": f"{reason}、強い刺激を入れるより疲労を抜く方が優先です。",
+        "based_on": based_on,
+        "detail": (
+            "## リカバリーライド（45分）\n\n"
+            "### ウォームアップ（10分）\n"
+            "- FTPの45-55%で軽く回します。\n\n"
+            "### メイン（25分）\n"
+            "- FTPの55-60%を上限に、会話できる強度を保ちます。\n"
+            "- 脚が重い場合は途中で切り上げて問題ありません。\n\n"
+            "### クールダウン（10分）\n"
+            "- FTPの45-50%まで落として終了します。"
+        ),
+        "workout_intervals": [
+            {"startMin": 0, "endMin": 10, "powerPercent": 50, "label": "Warmup"},
+            {"startMin": 10, "endMin": 35, "powerPercent": 58, "label": "Recovery"},
+            {"startMin": 35, "endMin": 45, "powerPercent": 45, "label": "Cooldown"},
+        ],
+        "totalDurationMin": 45,
+        "workoutName": "Recovery Ride",
+        "proposed_session": {
+            "session_date": session_date,
+            "session_type": "recovery",
+            "duration_minutes": 45,
+            "target_tss": 20,
+            "notes": "疲労アラートにより高強度を回避",
+            "reason": reason,
+            "is_rest": False,
+            "source": "safety_guard",
+        },
+    }
+
+
+def _apply_recovery_guard(
+    payload: dict[str, object],
+    policy: dict[str, object] | None,
+    fallback_session_date: str,
+) -> dict[str, object]:
+    if policy is None or _payload_is_recovery_aligned(payload):
+        return payload
+    session_date = _target_session_date(payload, fallback_session_date)
+    guarded = dict(payload)
+    guarded.update(_recovery_guard_payload(policy, session_date))
+    return guarded
+
+
+def _is_safety_guard_payload(payload: dict[str, object]) -> bool:
+    proposed = payload.get("proposed_session")
+    return isinstance(proposed, dict) and proposed.get("source") == "safety_guard"
+
+
 def _webhook_workout_key(request: "WebhookRecommendRequest", proposed: ProposedSession) -> str:
     activity_key = request.activity_id if request.activity_id is not None else "unknown"
     return f"webhook:{activity_key}:{proposed.session_date}:{proposed.session_type}"
@@ -829,7 +1024,15 @@ async def recommend_training(request: RecommendRequest) -> InsightResponse | Rec
     )
 
     as_of = _parse_as_of(request.as_of)
+    now_jst = as_of if as_of is not None else datetime.now(JST)
+    today_str = now_jst.strftime("%Y-%m-%d")
     bypass_cache = as_of is not None or request.constraint is not None
+    safety_signals = (
+        detect_signals(override=request.activity_override, as_of=as_of, user_id=resolved_user_id)
+        if effective_personal
+        else []
+    )
+    recovery_policy = _recommendation_recovery_policy(safety_signals)
 
     if as_of is not None:
         print(f"[DEV as_of={as_of.isoformat()}]")
@@ -869,26 +1072,26 @@ async def recommend_training(request: RecommendRequest) -> InsightResponse | Rec
                 run_id=operation_run_id,
                 metadata={"from_cache": True},
             )
+            guarded_cache = _apply_recovery_guard(dict(cache), recovery_policy, today_str)
             return RecommendResponse(
-                summary=str(cache.get("summary", "")),
-                detail=str(cache.get("detail", "")),
-                created_at=str(cache.get("created_at", "")),
+                summary=str(guarded_cache.get("summary", "")),
+                detail=str(guarded_cache.get("detail", "")),
+                created_at=str(guarded_cache.get("created_at", "")),
                 from_cache=True,
-                workout_intervals=cache.get("workout_intervals"),  # type: ignore[arg-type]
-                totalDurationMin=cache.get("totalDurationMin"),  # type: ignore[arg-type]
-                workoutName=cache.get("workoutName"),  # type: ignore[arg-type]
-                references=cache.get("references"),  # type: ignore[arg-type]
-                why_now=cache.get("why_now"),  # type: ignore[arg-type]
-                based_on=cache.get("based_on"),  # type: ignore[arg-type]
-                plan_context_key=cache.get("plan_context_key"),  # type: ignore[arg-type]
-                proposed_session=_proposed_session_from(cache.get("proposed_session")),
+                workout_intervals=guarded_cache.get("workout_intervals"),  # type: ignore[arg-type]
+                totalDurationMin=guarded_cache.get("totalDurationMin"),  # type: ignore[arg-type]
+                workoutName=guarded_cache.get("workoutName"),  # type: ignore[arg-type]
+                references=guarded_cache.get("references"),  # type: ignore[arg-type]
+                why_now=guarded_cache.get("why_now"),  # type: ignore[arg-type]
+                based_on=guarded_cache.get("based_on"),  # type: ignore[arg-type]
+                plan_context_key=guarded_cache.get("plan_context_key"),  # type: ignore[arg-type]
+                proposed_session=_proposed_session_from(guarded_cache.get("proposed_session")),
             )
         finally:
             user_id_var.reset(user_token)
 
     goal_text = _goal_text(request.goal, request.goal_custom)
 
-    now_jst = as_of if as_of is not None else datetime.now(JST)
     if effective_personal:
         user_message = (
             f"今日のおすすめトレーニングを提案してください。\n"
@@ -911,6 +1114,7 @@ async def recommend_training(request: RecommendRequest) -> InsightResponse | Rec
         user_message += f"\n- 制約: {request.constraint}"
     if request.coach_autonomy == "coach":
         user_message += _coach_plan_message(now_jst)
+    user_message += _recommendation_safety_context(safety_signals, recovery_policy)
 
     override_token = activity_override_var.set(request.activity_override)
     as_of_token = as_of_var.set(as_of)
@@ -959,11 +1163,11 @@ async def recommend_training(request: RecommendRequest) -> InsightResponse | Rec
         else:
             created_at = datetime.now(UTC).isoformat()
 
-        today_str = now_jst.strftime("%Y-%m-%d")
         prev_count = 0
         if cache and cache.get("generation_date") == today_str:
             count = cache.get("generation_count", 0)
             prev_count = count if isinstance(count, int) else 0
+        parsed = _apply_recovery_guard(parsed, recovery_policy, today_str)
 
         activity_mtime = (
             _get_activity_cache_mtime()
@@ -1655,6 +1859,8 @@ async def recommend_webhook(request: WebhookRecommendRequest):
             app_name="perfride_webhook",
             session_service=session_service,
         )
+        safety_signals = detect_signals(user_id=resolved_user_id)
+        recovery_policy = _recommendation_recovery_policy(safety_signals)
 
         content = types.Content(
             role="user",
@@ -1665,6 +1871,7 @@ async def recommend_webhook(request: WebhookRecommendRequest):
                         f"Activity ID: {request.activity_id}\n"
                         f"Trace ID: {trace_id}\n"
                         f"次回セッションを判断し、必要に応じてワークアウトプラットフォームに登録してください。"
+                        f"{_recommendation_safety_context(safety_signals, recovery_policy)}"
                     )
                 )
             ],
@@ -1698,12 +1905,17 @@ async def recommend_webhook(request: WebhookRecommendRequest):
             metadata={"response_chars": len(final_response)},
         )
         parsed = _parse_agent_json_response(final_response) or {}
+        fallback_session_date = (datetime.now(JST).date() + timedelta(days=1)).isoformat()
+        parsed = _apply_recovery_guard(parsed, recovery_policy, fallback_session_date)
         proposed = _proposed_session_from(parsed.get("proposed_session"), request.activity_id)
+        tool_result = (
+            None if _is_safety_guard_payload(parsed) else workout_registration_result_var.get()
+        )
         proposed = _ensure_webhook_workout_registration(
             proposed,
             request=request,
             profile=_require_profile(resolved_user_id),
-            tool_result=workout_registration_result_var.get(),
+            tool_result=tool_result,
         )
 
         return {

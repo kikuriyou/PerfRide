@@ -5,7 +5,13 @@ from zoneinfo import ZoneInfo
 
 import pytest
 
-from recommend_agent.main import RecommendRequest, _coach_plan_message, recommend_training
+from recommend_agent.main import (
+    RecommendRequest,
+    _apply_recovery_guard,
+    _coach_plan_message,
+    _recommendation_recovery_policy,
+    recommend_training,
+)
 
 JST = ZoneInfo("Asia/Tokyo")
 
@@ -174,3 +180,107 @@ def test_coach_plan_message_returns_empty_when_no_context():
         message = _coach_plan_message(datetime(2026, 4, 25, 6, 0, tzinfo=JST))
 
     assert message == ""
+
+
+def test_recovery_guard_caps_threshold_when_fatigue_alert_is_active():
+    policy = _recommendation_recovery_policy(
+        [{"type": "tsb_critical", "priority": "high", "data": {"tsb": -25}}]
+    )
+    guarded = _apply_recovery_guard(
+        {
+            "summary": "明日はThreshold",
+            "detail": "hard",
+            "workoutName": "Threshold 75min",
+            "workout_intervals": [
+                {"startMin": 0, "endMin": 75, "powerPercent": 95, "label": "Threshold"}
+            ],
+            "proposed_session": {
+                "session_date": "2026-05-08",
+                "session_type": "threshold",
+                "duration_minutes": 75,
+                "target_tss": 75,
+            },
+        },
+        policy,
+        "2026-05-08",
+    )
+
+    assert guarded["workoutName"] == "Recovery Ride"
+    assert guarded["proposed_session"]["session_type"] == "recovery"  # type: ignore[index]
+    assert max(i["powerPercent"] for i in guarded["workout_intervals"]) <= 60  # type: ignore[index]
+
+
+def test_recovery_guard_uses_rest_when_tsb_is_severely_fatigued():
+    policy = _recommendation_recovery_policy(
+        [{"type": "tsb_critical", "priority": "high", "data": {"tsb": -31}}]
+    )
+    guarded = _apply_recovery_guard(
+        {
+            "summary": "明日はVO2max",
+            "proposed_session": {
+                "session_date": "2026-05-08",
+                "session_type": "vo2max",
+            },
+        },
+        policy,
+        "2026-05-08",
+    )
+
+    assert guarded["workoutName"] == "Rest Day"
+    assert guarded["proposed_session"]["session_type"] == "rest"  # type: ignore[index]
+    assert guarded["totalDurationMin"] == 0
+
+
+@pytest.mark.asyncio
+async def test_recommend_training_caps_generated_threshold_when_safety_signal_active():
+    request = RecommendRequest(
+        goal="ftp_improvement",
+        ftp=250,
+        use_personal_data=True,
+        activity_override={
+            "activities": [],
+            "fitness_metrics": {"ctl": 40, "atl": 65, "tsb": -25, "weekly_tss": 300},
+            "last_updated": "2026-05-07T22:00:00+09:00",
+            "schema": None,
+        },
+    )
+    llm_json = json.dumps(
+        {
+            "summary": "明日はThreshold",
+            "detail": "hard",
+            "workoutName": "Threshold 75min",
+            "workout_intervals": [
+                {"startMin": 0, "endMin": 75, "powerPercent": 95, "label": "Threshold"}
+            ],
+            "proposed_session": {
+                "session_date": "2026-05-08",
+                "session_type": "threshold",
+                "duration_minutes": 75,
+                "target_tss": 75,
+            },
+        },
+        ensure_ascii=False,
+    )
+    fake_runner = MagicMock()
+    fake_runner.run_async.return_value = _async_iter([_make_runner_event(llm_json)])
+    fake_session = MagicMock()
+    fake_session.id = "sid"
+
+    with (
+        patch("recommend_agent.main._load_cache", return_value=None),
+        patch("recommend_agent.main._save_cache"),
+        patch("recommend_agent.main._should_trigger_ambient", return_value=False),
+        patch("recommend_agent.main._get_activity_cache_mtime", return_value=None),
+        patch("recommend_agent.main.build_agent"),
+        patch(
+            "recommend_agent.main.session_service.create_session",
+            new=AsyncMock(return_value=fake_session),
+        ),
+        patch("recommend_agent.main.Runner", return_value=fake_runner),
+    ):
+        response = await recommend_training(request)
+
+    assert response.workoutName == "Recovery Ride"
+    assert response.proposed_session is not None
+    assert response.proposed_session.session_type == "recovery"
+    assert response.totalDurationMin == 45
