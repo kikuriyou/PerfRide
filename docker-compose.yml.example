@@ -59,3 +59,25 @@ services:
       timeout: 5s
       retries: 3
       start_period: 10s
+
+  local-weekly-scheduler:
+    profiles:
+      - scheduler
+    build:
+      context: ./agent
+    env_file:
+      - ./agent/.env
+    volumes:
+      - ./agent/src:/app/src
+      - local-weekly-scheduler-state:/app/.local-scheduler
+    environment:
+      LOCAL_WEEKLY_PLAN_AGENT_URL: http://agent:8000
+      LOCAL_WEEKLY_PLAN_STATE_FILE: /app/.local-scheduler/weekly-plan-state.json
+    command: ['uv', 'run', 'python', '-m', 'recommend_agent.local_scheduler']
+    depends_on:
+      agent:
+        condition: service_healthy
+    restart: unless-stopped
+
+volumes:
+  local-weekly-scheduler-state:

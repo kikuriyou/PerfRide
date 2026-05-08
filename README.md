@@ -262,6 +262,41 @@ curl -X POST http://localhost:8000/api/agent/weekly-plan \
 - The weekly scheduler does not register external workouts; post-ride replacement still requires user approval
 - `deploy.sh.example` also includes the Cloud Scheduler job definition for the weekly trigger (`04:00` Monday in `Asia/Tokyo`)
 
+### Local Weekly Scheduler
+
+Local development can run the same weekly endpoint from Docker Compose. This is separate from Google Cloud Scheduler and is opt-in:
+
+```bash
+# Start the full local stack plus the local weekly scheduler profile.
+docker compose --profile scheduler up -d --build
+
+# Or set a temporary verification time, for example Monday 10:00 JST, and start it.
+scripts/local-weekly-scheduler.sh up 10:00
+
+# Verify on another weekday, for example Thursday 12:15 JST.
+scripts/local-weekly-scheduler.sh up thu 12:15
+
+# Change the configured local time without starting containers.
+scripts/local-weekly-scheduler.sh set mon 04:00
+
+# Watch scheduler logs.
+scripts/local-weekly-scheduler.sh logs
+```
+
+The scheduler reads these optional values from `agent/.env`:
+
+```bash
+LOCAL_WEEKLY_PLAN_DAY_OF_WEEK=mon
+LOCAL_WEEKLY_PLAN_HOUR=4
+LOCAL_WEEKLY_PLAN_MINUTE=0
+LOCAL_WEEKLY_PLAN_TIME_ZONE=Asia/Tokyo
+LOCAL_WEEKLY_PLAN_USER_ID=default
+LOCAL_WEEKLY_PLAN_RUN_MISSED_ON_STARTUP=true
+LOCAL_WEEKLY_PLAN_FORCE=false
+```
+
+`LOCAL_WEEKLY_PLAN_DAY_OF_WEEK` accepts `mon`, `tue`, `wed`, `thu`, `fri`, `sat`, or `sun`. Set `LOCAL_WEEKLY_PLAN_USER_ID` to the logged-in Strava athlete id when you want the generated plan to appear in the local web UI. It waits for the local agent to become healthy, catches up the current week after the configured weekday/time if that exact scheduled run has not already completed, and stores its local state in the Compose volume `local-weekly-scheduler-state`. The generated weekly plan still uses Monday as `week_start` for the target week.
+
 ## Tech Stack
 
 | Category           | Technology                                                                         |

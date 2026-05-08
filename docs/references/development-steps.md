@@ -132,6 +132,20 @@ uv run uvicorn recommend_agent.main:app --host 0.0.0.0 --port 8000
 
 Docker Compose では `AGENT_API_URL=http://agent:8000` と `WEB_API_URL=http://web:3000` を使います。
 
+ローカル weekly plan scheduler も起動する場合:
+
+```bash
+docker compose --profile scheduler up -d --build
+
+# 動作確認用に 10:00 JST へ変更して起動
+scripts/local-weekly-scheduler.sh up 10:00
+
+# 木曜 12:15 JST で確認したい場合
+scripts/local-weekly-scheduler.sh up thu 12:15
+```
+
+`agent/.env` の `LOCAL_WEEKLY_PLAN_DAY_OF_WEEK` / `LOCAL_WEEKLY_PLAN_HOUR` / `LOCAL_WEEKLY_PLAN_MINUTE` で曜日と時刻を更新できます。ローカル web UI に表示したい場合は `LOCAL_WEEKLY_PLAN_USER_ID` をログイン中の Strava athlete id に合わせます。
+
 ---
 
 ## 2. 機能実装
