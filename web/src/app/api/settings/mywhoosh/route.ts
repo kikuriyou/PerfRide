@@ -2,12 +2,7 @@ import { NextResponse } from 'next/server';
 import { getServerSession } from 'next-auth/next';
 
 import { authOptions } from '@/lib/auth';
-import {
-  deleteGCSObject,
-  readGCSJSON,
-  userObjectPath,
-  writeGCSJSON,
-} from '@/lib/gcs-settings';
+import { deleteGCSObject, readGCSJSON, userObjectPath, writeGCSJSON } from '@/lib/gcs-settings';
 import { agentFetch } from '@/lib/agent';
 import { recordAgentOperationLog } from '@/lib/agent-operation-log';
 import type { AgentOperationLogStatus, GCSUserId } from '@/lib/gcs-settings';
@@ -49,7 +44,10 @@ export function resolveMyWhooshSaveError(error: unknown): { message: string; sta
       status: 503,
     };
   }
-  if (message.includes('KMS encrypt failed') || message.includes('Failed to get KMS access token')) {
+  if (
+    message.includes('KMS encrypt failed') ||
+    message.includes('Failed to get KMS access token')
+  ) {
     return {
       message:
         'KMS 暗号化に失敗しました。KMS_KEY_NAME と web service account の Cloud KMS CryptoKey Encrypter 権限を確認してください。',
@@ -218,10 +216,7 @@ export async function PUT() {
   const path = credentialPath(session.user.id);
   const record = await readGCSJSON<MyWhooshCredentialRecord>(path);
   if (!record?.password_ciphertext) {
-    return NextResponse.json(
-      { error: 'MyWhoosh credentials are not configured' },
-      { status: 400 },
-    );
+    return NextResponse.json({ error: 'MyWhoosh credentials are not configured' }, { status: 400 });
   }
 
   const verification = await verifySavedMyWhooshCredential(session.user.id);

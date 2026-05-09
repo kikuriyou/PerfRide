@@ -59,7 +59,10 @@ export function WeekView({ week, today }: WeekViewProps) {
               <div style={{ display: 'grid', gap: '0.4rem' }}>
                 {sessions.map((session, index) => (
                   <SessionCard
-                    key={session.session_id ?? `${session.date}-${session.origin ?? 'baseline'}-${index}`}
+                    key={
+                      session.session_id ??
+                      `${session.date}-${session.origin ?? 'baseline'}-${index}`
+                    }
                     session={session}
                   />
                 ))}

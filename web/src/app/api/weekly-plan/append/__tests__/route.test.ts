@@ -1,9 +1,5 @@
 import { describe, expect, it, vi } from 'vitest';
-import {
-  forwardAppendToAgent,
-  isAppendRequestBody,
-  type AppendRequestBody,
-} from '../route';
+import { forwardAppendToAgent, isAppendRequestBody, type AppendRequestBody } from '../route';
 
 function makeResponse(init: { ok: boolean; status?: number; body: unknown }): Response {
   return {

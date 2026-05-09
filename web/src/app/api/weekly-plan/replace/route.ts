@@ -32,7 +32,10 @@ export function isReplaceRequestBody(value: unknown): value is ReplaceRequestBod
   );
 }
 
-function normalizeAgentPayload(status: number, payload: unknown): { status: number; payload: unknown } {
+function normalizeAgentPayload(
+  status: number,
+  payload: unknown,
+): { status: number; payload: unknown } {
   if (status === 409) {
     const detail =
       payload && typeof payload === 'object' && 'detail' in payload

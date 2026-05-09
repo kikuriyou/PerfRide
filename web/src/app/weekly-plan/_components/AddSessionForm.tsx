@@ -94,9 +94,7 @@ export function AddSessionForm({ weekStart, today, planRevision }: AddSessionFor
         background: 'var(--surface)',
       }}
     >
-      <div style={{ fontSize: '0.9rem', fontWeight: 600, marginBottom: '0.6rem' }}>
-        Add session
-      </div>
+      <div style={{ fontSize: '0.9rem', fontWeight: 600, marginBottom: '0.6rem' }}>Add session</div>
       {error && (
         <div
           role="alert"

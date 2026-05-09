@@ -235,8 +235,9 @@ function RecommendCardInner() {
   const [weeklyPlan, setWeeklyPlan] = useState<WeeklyPlanSnapshot | null>(null);
   const [replaceTargetId, setReplaceTargetId] = useState<string>('');
   const [decisionMessage, setDecisionMessage] = useState<string | null>(null);
-  const [webhookDecisionStatus, setWebhookDecisionStatus] =
-    useState<WebhookDecisionStatus | null>(null);
+  const [webhookDecisionStatus, setWebhookDecisionStatus] = useState<WebhookDecisionStatus | null>(
+    null,
+  );
   const [planContextKey, setPlanContextKey] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -909,11 +910,7 @@ function RecommendCardInner() {
                     </div>
                   )}
                   <div style={{ display: 'flex', gap: '0.5rem', flexWrap: 'wrap' }}>
-                    <button
-                      type="button"
-                      onClick={keepWeeklyPlan}
-                      style={chipStyle}
-                    >
+                    <button type="button" onClick={keepWeeklyPlan} style={chipStyle}>
                       変更なし
                     </button>
                     {replaceCandidates.length > 1 && (

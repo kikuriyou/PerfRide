@@ -103,9 +103,7 @@ export default function PlannerForm() {
         <h3 style={{ marginTop: 0, marginBottom: '1rem', fontSize: '1rem' }}>
           Set Your Target Race
         </h3>
-        <div
-          style={{ display: 'flex', gap: '0.75rem', alignItems: 'flex-end', flexWrap: 'wrap' }}
-        >
+        <div style={{ display: 'flex', gap: '0.75rem', alignItems: 'flex-end', flexWrap: 'wrap' }}>
           <div style={{ flex: '1 1 200px' }}>
             <label
               style={{

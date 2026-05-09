@@ -2,10 +2,7 @@ import { NextAuthOptions } from 'next-auth';
 import StravaProvider from 'next-auth/providers/strava';
 import { JWT } from 'next-auth/jwt';
 import { DEFAULT_WEEKLY_SCHEDULE, type GCSUserSettings } from '@/lib/gcs-schema';
-import {
-  readUserSettings,
-  writeUserSettings,
-} from '@/lib/gcs-settings';
+import { readUserSettings, writeUserSettings } from '@/lib/gcs-settings';
 
 async function persistStravaTokens(
   ownerId: number,

@@ -36,9 +36,11 @@ describe('buildRespondBody', () => {
 
 describe('submitWeeklyResponse', () => {
   it('returns ok on a successful 2xx response', async () => {
-    const fetchMock = vi.fn().mockResolvedValue(
-      makeResponse({ ok: true, body: { status: 'approved', plan_revision: 4 } }),
-    );
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValue(
+        makeResponse({ ok: true, body: { status: 'approved', plan_revision: 4 } }),
+      );
 
     const result = await submitWeeklyResponse(
       buildRespondBody('weekly_2026-04-20', 3, 'approve'),
@@ -91,9 +93,9 @@ describe('submitWeeklyResponse', () => {
   });
 
   it('returns error with the API-provided message on non-2xx', async () => {
-    const fetchMock = vi.fn().mockResolvedValue(
-      makeResponse({ ok: false, status: 500, body: { error: 'agent down' } }),
-    );
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValue(makeResponse({ ok: false, status: 500, body: { error: 'agent down' } }));
 
     const result = await submitWeeklyResponse(
       buildRespondBody('weekly_2026-04-20', 3, 'approve'),

@@ -495,7 +495,9 @@ export default function SettingsForm() {
               type="password"
               value={intervalsIcuApiKey}
               onChange={(e) => setIntervalsIcuApiKey(e.target.value)}
-              placeholder={intervalsIcuConfigured ? '保存済み。変更時のみ入力' : 'API key を貼り付け'}
+              placeholder={
+                intervalsIcuConfigured ? '保存済み。変更時のみ入力' : 'API key を貼り付け'
+              }
               autoComplete="off"
               className="settings-input"
             />
