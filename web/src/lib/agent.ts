@@ -1,10 +1,26 @@
 type FetchLike = (input: string, init?: RequestInit) => Promise<Response>;
 type HeaderRecord = Record<string, string | string[] | undefined>;
+type HeaderSource = Headers | HeaderRecord | { get: (name: string) => string | null | undefined };
 
-function readHeader(headers: Headers | HeaderRecord, name: string): string | null {
-  if (headers instanceof Headers) return headers.get(name);
-  const value = headers[name] ?? headers[name.toLowerCase()];
+function headerValue(value: string | string[] | null | undefined): string | null {
   return Array.isArray(value) ? (value[0] ?? null) : (value ?? null);
+}
+
+function readHeader(headers: HeaderSource, name: string): string | null {
+  const maybeGet = (headers as { get?: unknown }).get;
+  if (typeof maybeGet === 'function') {
+    const value =
+      maybeGet.call(headers, name) ??
+      maybeGet.call(headers, name.toLowerCase()) ??
+      maybeGet.call(headers, name.toUpperCase());
+    return headerValue(value);
+  }
+
+  const record = headers as HeaderRecord;
+  const requested = name.toLowerCase();
+  const matchedKey = Object.keys(record).find((key) => key.toLowerCase() === requested);
+  const value = matchedKey ? record[matchedKey] : undefined;
+  return headerValue(value);
 }
 
 export function getAgentApiUrl(): string {
@@ -23,7 +39,7 @@ async function getAgentAuthorizationHeader(): Promise<string | null> {
   const { GoogleAuth } = await import('google-auth-library');
   const auth = new GoogleAuth();
   const client = await auth.getIdTokenClient(audience);
-  const headers = (await client.getRequestHeaders(audience)) as Headers | HeaderRecord;
+  const headers = (await client.getRequestHeaders(audience)) as HeaderSource;
   return readHeader(headers, 'authorization');
 }
 

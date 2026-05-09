@@ -8,6 +8,7 @@ REPO_NAME="perfride-repo"
 WEB_SERVICE_NAME="perfride-web"
 AGENT_SERVICE_NAME="perfride-agent"
 SCHEDULER_JOB_NAME="weekly-plan-trigger"
+SCHEDULER_USER_ID="${SCHEDULER_USER_ID:-default}"
 
 WEB_ENV_FILE="web/.env.local"
 AGENT_ENV_FILE="agent/.env"
@@ -53,6 +54,55 @@ append_optional_flag() {
   if [ -n "${value}" ]; then
     target+=("${flag}" "${value}")
   fi
+}
+
+project_number() {
+  gcloud projects describe "${PROJECT_ID}" --format='value(projectNumber)'
+}
+
+cloud_run_service_account() {
+  local service="$1"
+  local service_account
+  service_account="$(gcloud run services describe "${service}" \
+    --platform managed \
+    --region "${REGION}" \
+    --project "${PROJECT_ID}" \
+    --format='value(spec.template.spec.serviceAccountName)' 2>/dev/null || true)"
+  if [ -n "${service_account}" ]; then
+    echo "${service_account}"
+    return
+  fi
+  echo "$(project_number)-compute@developer.gserviceaccount.com"
+}
+
+ensure_service_account() {
+  local email="$1"
+  local display_name="$2"
+  if gcloud iam service-accounts describe "${email}" --project "${PROJECT_ID}" >/dev/null 2>&1; then
+    return
+  fi
+
+  local account_id="${email%@*}"
+  local expected_email="${account_id}@${PROJECT_ID}.iam.gserviceaccount.com"
+  if [ "${email}" != "${expected_email}" ]; then
+    echo "Missing service account ${email}; create it first or use a ${PROJECT_ID}.iam.gserviceaccount.com account."
+    exit 1
+  fi
+
+  gcloud iam service-accounts create "${account_id}" \
+    --project "${PROJECT_ID}" \
+    --display-name "${display_name}"
+}
+
+grant_run_invoker() {
+  local member_email="$1"
+  local label="$2"
+  echo "Granting ${label} permission to invoke ${AGENT_SERVICE_NAME}"
+  gcloud run services add-iam-policy-binding "${AGENT_SERVICE_NAME}" \
+    --region "${REGION}" \
+    --project "${PROJECT_ID}" \
+    --member "serviceAccount:${member_email}" \
+    --role roles/run.invoker >/dev/null
 }
 
 load_env_file "${WEB_ENV_FILE}"
@@ -121,7 +171,10 @@ AGENT_SERVICE_URL=$(gcloud run services describe "${AGENT_SERVICE_NAME}" \
   --format 'value(status.url)')
 
 echo "Building and pushing web image"
-docker build -t "${WEB_IMAGE}:latest" ./web
+docker build \
+  --build-arg NEXT_PUBLIC_ENV=production \
+  --build-arg NEXT_PUBLIC_VAPID_PUBLIC_KEY="${NEXT_PUBLIC_VAPID_PUBLIC_KEY:-}" \
+  -t "${WEB_IMAGE}:latest" ./web
 docker push "${WEB_IMAGE}:latest"
 
 echo "Deploying public web service"
@@ -154,6 +207,9 @@ WEB_SERVICE_URL=$(gcloud run services describe "${WEB_SERVICE_NAME}" \
 
 echo "Ensuring weekly scheduler exists"
 WEEKLY_PLAN_URL="${AGENT_SERVICE_URL}/api/agent/weekly-plan"
+SCHEDULER_BODY="$(printf '{"user_id":"%s","trigger":"scheduler"}' "${SCHEDULER_USER_ID}")"
+ensure_service_account "${SCHEDULER_SERVICE_ACCOUNT}" "PerfRide scheduler invoker"
+grant_run_invoker "${SCHEDULER_SERVICE_ACCOUNT}" "Cloud Scheduler service account"
 if gcloud scheduler jobs describe "${SCHEDULER_JOB_NAME}" \
   --location="${REGION}" \
   --project="${PROJECT_ID}" >/dev/null 2>&1; then
@@ -164,6 +220,8 @@ if gcloud scheduler jobs describe "${SCHEDULER_JOB_NAME}" \
     --time-zone="Asia/Tokyo" \
     --uri="${WEEKLY_PLAN_URL}" \
     --http-method=POST \
+    --headers="Content-Type=application/json" \
+    --message-body="${SCHEDULER_BODY}" \
     --oidc-service-account-email="${SCHEDULER_SERVICE_ACCOUNT}" \
     --oidc-token-audience="${AGENT_SERVICE_URL}" \
     --attempt-deadline=600s
@@ -175,10 +233,15 @@ else
     --time-zone="Asia/Tokyo" \
     --uri="${WEEKLY_PLAN_URL}" \
     --http-method=POST \
+    --headers="Content-Type=application/json" \
+    --message-body="${SCHEDULER_BODY}" \
     --oidc-service-account-email="${SCHEDULER_SERVICE_ACCOUNT}" \
     --oidc-token-audience="${AGENT_SERVICE_URL}" \
     --attempt-deadline=600s
 fi
+
+WEB_RUNTIME_SA="$(cloud_run_service_account "${WEB_SERVICE_NAME}")"
+grant_run_invoker "${WEB_RUNTIME_SA}" "web runtime service account"
 
 echo ""
 echo "Deployment complete"
@@ -187,6 +250,5 @@ echo "Agent service URL: ${AGENT_SERVICE_URL}"
 echo "Custom web URL: ${NEXTAUTH_URL_PRODUCTION}"
 echo ""
 echo "Post-deploy checks:"
-echo "- Grant the web service account roles/run.invoker on ${AGENT_SERVICE_NAME}."
-echo "- Grant ${SCHEDULER_SERVICE_ACCOUNT} roles/run.invoker on ${AGENT_SERVICE_NAME}."
+echo "- Set SCHEDULER_USER_ID to the production Strava athlete id if weekly plans should appear in that user's UI."
 echo "- Add the production Strava callback domain without protocol or path."

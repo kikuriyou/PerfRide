@@ -28,7 +28,10 @@ RUN npm ci
 COPY . .
 
 # Set public env for production build
-ENV NEXT_PUBLIC_ENV=production
+ARG NEXT_PUBLIC_ENV=production
+ARG NEXT_PUBLIC_VAPID_PUBLIC_KEY=
+ENV NEXT_PUBLIC_ENV=$NEXT_PUBLIC_ENV
+ENV NEXT_PUBLIC_VAPID_PUBLIC_KEY=$NEXT_PUBLIC_VAPID_PUBLIC_KEY
 
 # Build the Next.js app
 RUN npm run build

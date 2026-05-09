@@ -192,6 +192,7 @@ scripts/local-weekly-scheduler.sh up thu 12:15
 - `GCS_BUCKET` / `GOOGLE_CLOUD_PROJECT` / `GOOGLE_CLOUD_LOCATION` / `GOOGLE_GENAI_USE_VERTEXAI`: web と agent で整合させます。
 - `KMS_KEY_NAME`: web と agent に同じ KMS key resource name を設定します。
 - Secret Manager: `STRAVA_CLIENT_SECRET`、`NEXTAUTH_SECRET`、`VAPID_PRIVATE_KEY`、`LINE_CHANNEL_ACCESS_TOKEN` などの app-level secret は可能なら `--set-secrets` で渡します。
+- 週間プランを本番ユーザーの UI に表示する場合は、デプロイ前に `SCHEDULER_USER_ID` を対象 Strava athlete id に設定します。
 
 本番 IAM は、web と agent の runtime service account に分けて付与します。
 
@@ -238,10 +239,11 @@ gcloud kms keys add-iam-policy-binding "$KMS_KEY" \
 3. Artifact Registry (`asia-northeast1`) へのプッシュ。
 4. `perfride-agent` を private Cloud Run service としてデプロイ。
 5. agent URL を `AGENT_API_URL` / `AGENT_AUDIENCE` として `perfride-web` に注入。
-6. Cloud Scheduler の週間プラン trigger を agent endpoint に設定。
+6. web / Scheduler service account に agent への `roles/run.invoker` を付与。
+7. Cloud Scheduler の週間プラン trigger を agent endpoint に JSON body 付きで設定。
 
 ```bash
-./deploy.sh
+SCHEDULER_USER_ID=your_strava_athlete_id ./deploy.sh all
 ```
 
 ### Step 3: Strava API 設定 (本番用)
@@ -257,7 +259,7 @@ gcloud kms keys add-iam-policy-binding "$KMS_KEY" \
 - web service account から agent を呼べること。
 - Strava OAuth callback が通ること。
 - `POST web /api/recommend` が agent 経由で通ること。
-- 週間プラン scheduler の target が `perfride-agent` の `/api/agent/weekly-plan` になっていること。
+- 週間プラン scheduler の target が `perfride-agent` の `/api/agent/weekly-plan` で、JSON body に本番 `user_id` が入っていること。
 
 ## 4. 保守・更新
 

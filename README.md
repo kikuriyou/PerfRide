@@ -151,11 +151,17 @@ PerfRide is deployed as two Cloud Run services:
 ```bash
 # Copy and configure deploy script
 cp deploy.sh.example deploy.sh
-# Edit PROJECT_ID, REGION, service accounts, and optional Secret Manager mappings
+# Edit PROJECT_ID, REGION, service names, service accounts, and optional Secret Manager mappings
+
+# Optional but recommended for the weekly Cloud Scheduler job:
+# use the production Strava athlete id whose weekly plan should be generated.
+export SCHEDULER_USER_ID=your_strava_athlete_id
 
 # Deploy
-./deploy.sh
+./deploy.sh all
 ```
+
+`deploy.sh` also accepts `web` or `agent` when you only want to redeploy one service. For the current project deployment, the local script keeps the existing Cloud Run service names (`perfride` and `perfride-agent`); override `WEB_SERVICE_NAME` or `AGENT_SERVICE_NAME` if your project uses different names.
 
 The deploy script will:
 
@@ -164,7 +170,8 @@ The deploy script will:
 3. Push both images to Artifact Registry
 4. Deploy the private agent service
 5. Deploy the public web service with `AGENT_API_URL` and `AGENT_AUDIENCE`
-6. Create or update the weekly Cloud Scheduler job against the agent endpoint
+6. Grant the web runtime service account and Scheduler service account `roles/run.invoker` on the private agent service
+7. Create or update the weekly Cloud Scheduler job against the agent endpoint with a JSON request body
 
 Post-deploy smoke tests:
 
@@ -261,6 +268,7 @@ curl -X POST http://localhost:8000/api/agent/weekly-plan \
 - In `suggest` / `observe`, the weekly scheduler skips automatic reflection
 - The weekly scheduler does not register external workouts; post-ride replacement still requires user approval
 - `deploy.sh.example` also includes the Cloud Scheduler job definition for the weekly trigger (`04:00` Monday in `Asia/Tokyo`)
+- Set `SCHEDULER_USER_ID` before deployment if the scheduler should generate a plan for a specific production athlete id.
 
 ### Local Weekly Scheduler
 
