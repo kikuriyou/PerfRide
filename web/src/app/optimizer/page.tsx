@@ -3,6 +3,7 @@ import { authOptions } from '@/lib/auth';
 import { getCachedStarredSegments } from '@/lib/strava-cached';
 import PaceOptimizerForm from './_components/PaceOptimizerForm';
 import Link from 'next/link';
+import ExperimentalBadge, { ExperimentalNotice } from '@/components/ExperimentalBadge';
 
 export default async function OptimizerPage() {
   const session = await getServerSession(authOptions);
@@ -33,10 +34,17 @@ export default async function OptimizerPage() {
   return (
     <div className="container" style={{ paddingTop: '1.5rem', paddingBottom: '2rem' }}>
       <header style={{ marginBottom: '1.5rem' }}>
-        <h1>🎯 Pace Optimizer</h1>
+        <h1 style={{ display: 'flex', alignItems: 'center', gap: '0.65rem', flexWrap: 'wrap' }}>
+          <span>🎯 Pace Optimizer</span>
+          <ExperimentalBadge />
+        </h1>
         <p style={{ opacity: 0.7, marginTop: '0.25rem', fontSize: '0.9rem' }}>
           コースプロファイルに基づいて最適なペース配分を計算します
         </p>
+        <ExperimentalNotice>
+          This tool is experimental. Pacing recommendations are estimates and should be validated
+          against your condition, course, and race-day constraints.
+        </ExperimentalNotice>
       </header>
 
       {/* Login prompt if not logged in */}

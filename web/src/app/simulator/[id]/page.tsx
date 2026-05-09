@@ -4,6 +4,7 @@ import { getSegmentDetails, StravaSegment } from '@/lib/strava';
 import { redirect } from 'next/navigation';
 import Link from 'next/link';
 import SimulatorForm from '../_components/SimulatorForm';
+import ExperimentalBadge, { ExperimentalNotice } from '@/components/ExperimentalBadge';
 
 type Props = {
   params: Promise<{ id: string }>;
@@ -45,8 +46,19 @@ export default async function SegmentSimulatorPage({ params }: Props) {
       </Link>
 
       <header style={{ marginBottom: '1rem' }}>
-        <h1 style={{ fontSize: '1.75rem', fontWeight: 700, marginBottom: '0.5rem' }}>
-          {segment.name}
+        <h1
+          style={{
+            display: 'flex',
+            alignItems: 'center',
+            gap: '0.65rem',
+            flexWrap: 'wrap',
+            fontSize: '1.75rem',
+            fontWeight: 700,
+            marginBottom: '0.5rem',
+          }}
+        >
+          <span>{segment.name}</span>
+          <ExperimentalBadge />
         </h1>
         <div
           style={{
@@ -64,6 +76,7 @@ export default async function SegmentSimulatorPage({ params }: Props) {
             {segment.city}, {segment.country}
           </span>
         </div>
+        <ExperimentalNotice />
       </header>
 
       <div className="card">

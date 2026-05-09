@@ -6,6 +6,7 @@ import SegmentCard from './_components/SegmentCard';
 import SimulatorForm from './_components/SimulatorForm';
 import SegmentSearchWrapper from './_components/SegmentSearchWrapper';
 import Link from 'next/link';
+import ExperimentalBadge, { ExperimentalNotice } from '@/components/ExperimentalBadge';
 
 export default async function SimulatorPage() {
   const session = await getServerSession(authOptions);
@@ -22,10 +23,14 @@ export default async function SimulatorPage() {
   return (
     <div className="container" style={{ paddingTop: '1.5rem', paddingBottom: '2rem' }}>
       <header style={{ marginBottom: '1.5rem' }}>
-        <h1>Climb Simulator</h1>
+        <h1 style={{ display: 'flex', alignItems: 'center', gap: '0.65rem', flexWrap: 'wrap' }}>
+          <span>Climb Simulator</span>
+          <ExperimentalBadge />
+        </h1>
         <p style={{ opacity: 0.7, marginTop: '0.25rem', fontSize: '0.9rem' }}>
           Predict your climbing time based on power and weight
         </p>
+        <ExperimentalNotice />
       </header>
 
       {/* Manual Input Mode - Always available */}

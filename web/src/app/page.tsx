@@ -2,6 +2,7 @@ import { getServerSession } from 'next-auth/next';
 import { authOptions } from '@/lib/auth';
 import Link from 'next/link';
 import LoginButton from '@/components/LoginButton';
+import ExperimentalBadge from '@/components/ExperimentalBadge';
 
 export default async function Home() {
   const session = await getServerSession(authOptions).catch(() => null);
@@ -26,7 +27,7 @@ export default async function Home() {
         </p>
       </div>
 
-      {/* Feature Cards */}
+      {/* Core Feature Cards */}
       <div
         style={{
           display: 'grid',
@@ -73,42 +74,141 @@ export default async function Home() {
           </div>
         )}
 
-        {/* Simulator Card - Second */}
-        <Link href="/simulator" style={{ textDecoration: 'none' }}>
-          <div
-            className="card"
-            style={{
-              padding: '2rem',
-              transition: 'transform 0.2s, box-shadow 0.2s',
-              cursor: 'pointer',
-            }}
-          >
-            <div style={{ fontSize: '2.5rem', marginBottom: '1rem' }}>🏔️</div>
-            <h2 style={{ marginBottom: '0.5rem' }}>Climb Simulator</h2>
-            <p style={{ opacity: 0.7, fontSize: '0.9rem' }}>
-              Predict your climbing times based on power, weight, and segment data
-            </p>
-          </div>
-        </Link>
-
-        {/* Planner Card - Third */}
-        <Link href="/planner" style={{ textDecoration: 'none' }}>
-          <div
-            className="card"
-            style={{
-              padding: '2rem',
-              transition: 'transform 0.2s, box-shadow 0.2s',
-              cursor: 'pointer',
-            }}
-          >
-            <div style={{ fontSize: '2.5rem', marginBottom: '1rem' }}>📅</div>
-            <h2 style={{ marginBottom: '0.5rem' }}>Training Planner</h2>
-            <p style={{ opacity: 0.7, fontSize: '0.9rem' }}>
-              Generate periodized training plans with structured workouts
-            </p>
-          </div>
-        </Link>
+        {session && (
+          <Link href="/weekly-plan" style={{ textDecoration: 'none' }}>
+            <div
+              className="card"
+              style={{
+                padding: '2rem',
+                transition: 'transform 0.2s, box-shadow 0.2s',
+                cursor: 'pointer',
+              }}
+            >
+              <div style={{ fontSize: '2.5rem', marginBottom: '1rem' }}>📅</div>
+              <h2 style={{ marginBottom: '0.5rem' }}>Weekly Plan</h2>
+              <p style={{ opacity: 0.7, fontSize: '0.9rem' }}>
+                Review and adjust your coach-mode weekly training plan
+              </p>
+            </div>
+          </Link>
+        )}
       </div>
+
+      {/* Experimental Tools */}
+      <section style={{ maxWidth: '900px', margin: '2rem auto 0' }}>
+        <div
+          style={{
+            display: 'flex',
+            justifyContent: 'space-between',
+            alignItems: 'flex-start',
+            gap: '1rem',
+            marginBottom: '1rem',
+          }}
+        >
+          <div>
+            <h2 style={{ marginBottom: '0.35rem' }}>Experimental Labs</h2>
+            <p style={{ opacity: 0.7, fontSize: '0.9rem', margin: 0 }}>
+              Preview tools. Outputs are estimates and may change.
+            </p>
+          </div>
+          <ExperimentalBadge />
+        </div>
+
+        <div
+          style={{
+            display: 'grid',
+            gridTemplateColumns: 'repeat(auto-fit, minmax(240px, 1fr))',
+            gap: '1rem',
+          }}
+        >
+          <Link href="/simulator" style={{ textDecoration: 'none' }}>
+            <div
+              className="card"
+              style={{
+                padding: '1.5rem',
+                transition: 'transform 0.2s, box-shadow 0.2s',
+                cursor: 'pointer',
+                minHeight: '180px',
+              }}
+            >
+              <div
+                style={{
+                  display: 'flex',
+                  justifyContent: 'space-between',
+                  alignItems: 'flex-start',
+                  gap: '0.75rem',
+                  marginBottom: '1rem',
+                }}
+              >
+                <div style={{ fontSize: '2rem' }}>🏔️</div>
+                <ExperimentalBadge />
+              </div>
+              <h3 style={{ marginBottom: '0.5rem' }}>Climb Simulator</h3>
+              <p style={{ opacity: 0.7, fontSize: '0.9rem' }}>
+                Predict climbing times based on power, weight, and segment data
+              </p>
+            </div>
+          </Link>
+
+          <Link href="/optimizer" style={{ textDecoration: 'none' }}>
+            <div
+              className="card"
+              style={{
+                padding: '1.5rem',
+                transition: 'transform 0.2s, box-shadow 0.2s',
+                cursor: 'pointer',
+                minHeight: '180px',
+              }}
+            >
+              <div
+                style={{
+                  display: 'flex',
+                  justifyContent: 'space-between',
+                  alignItems: 'flex-start',
+                  gap: '0.75rem',
+                  marginBottom: '1rem',
+                }}
+              >
+                <div style={{ fontSize: '2rem' }}>🎯</div>
+                <ExperimentalBadge />
+              </div>
+              <h3 style={{ marginBottom: '0.5rem' }}>Pace Optimizer</h3>
+              <p style={{ opacity: 0.7, fontSize: '0.9rem' }}>
+                Estimate course-aware pacing strategies for climbs and time trials
+              </p>
+            </div>
+          </Link>
+
+          <Link href="/planner" style={{ textDecoration: 'none' }}>
+            <div
+              className="card"
+              style={{
+                padding: '1.5rem',
+                transition: 'transform 0.2s, box-shadow 0.2s',
+                cursor: 'pointer',
+                minHeight: '180px',
+              }}
+            >
+              <div
+                style={{
+                  display: 'flex',
+                  justifyContent: 'space-between',
+                  alignItems: 'flex-start',
+                  gap: '0.75rem',
+                  marginBottom: '1rem',
+                }}
+              >
+                <div style={{ fontSize: '2rem' }}>📅</div>
+                <ExperimentalBadge />
+              </div>
+              <h3 style={{ marginBottom: '0.5rem' }}>Training Planner</h3>
+              <p style={{ opacity: 0.7, fontSize: '0.9rem' }}>
+                Generate periodized training plans with structured workouts
+              </p>
+            </div>
+          </Link>
+        </div>
+      </section>
 
       {/* Settings Link */}
       <div style={{ textAlign: 'center', marginTop: '2rem' }}>
