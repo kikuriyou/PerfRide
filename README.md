@@ -275,8 +275,8 @@ curl -X POST http://localhost:8000/api/agent/weekly-plan \
 Local development can run the same weekly endpoint from Docker Compose. This is separate from Google Cloud Scheduler and is opt-in:
 
 ```bash
-# Start the full local stack plus the local weekly scheduler profile.
-docker compose --profile scheduler up -d --build
+# Start the full local stack, including the local weekly scheduler.
+docker compose up -d --build
 
 # Or set a temporary verification time, for example Monday 10:00 JST, and start it.
 scripts/local-weekly-scheduler.sh up 10:00
@@ -302,6 +302,8 @@ LOCAL_WEEKLY_PLAN_USER_ID=default
 LOCAL_WEEKLY_PLAN_RUN_MISSED_ON_STARTUP=true
 LOCAL_WEEKLY_PLAN_FORCE=false
 ```
+
+The scheduler is a regular Compose service, so plain `docker compose up` starts it with the local stack and plain `docker compose down` stops and removes it.
 
 `LOCAL_WEEKLY_PLAN_DAY_OF_WEEK` accepts `mon`, `tue`, `wed`, `thu`, `fri`, `sat`, or `sun`. Set `LOCAL_WEEKLY_PLAN_USER_ID` to the logged-in Strava athlete id when you want the generated plan to appear in the local web UI. It waits for the local agent to become healthy, catches up the current week after the configured weekday/time if that exact scheduled run has not already completed, and stores its local state in the Compose volume `local-weekly-scheduler-state`. The generated weekly plan still uses Monday as `week_start` for the target week.
 

@@ -63,7 +63,7 @@ Examples:
   scripts/local-weekly-scheduler.sh up thu 12:15
   scripts/local-weekly-scheduler.sh set 04:00
   scripts/local-weekly-scheduler.sh set mon 04:00
-  docker compose --profile scheduler up -d
+  docker compose up -d
 USAGE
 }
 
@@ -118,7 +118,7 @@ case "$command" in
       usage
       exit 2
     fi
-    (cd "$ROOT_DIR" && compose --profile scheduler up -d --build local-weekly-scheduler)
+    (cd "$ROOT_DIR" && compose up -d --build local-weekly-scheduler)
     ;;
   set)
     if [[ $# -eq 2 ]]; then

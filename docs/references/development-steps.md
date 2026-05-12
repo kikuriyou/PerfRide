@@ -135,7 +135,7 @@ Docker Compose では `AGENT_API_URL=http://agent:8000` と `WEB_API_URL=http://
 ローカル weekly plan scheduler も起動する場合:
 
 ```bash
-docker compose --profile scheduler up -d --build
+docker compose up -d --build
 
 # 動作確認用に 10:00 JST へ変更して起動
 scripts/local-weekly-scheduler.sh up 10:00
@@ -143,6 +143,8 @@ scripts/local-weekly-scheduler.sh up 10:00
 # 木曜 12:15 JST で確認したい場合
 scripts/local-weekly-scheduler.sh up thu 12:15
 ```
+
+`local-weekly-scheduler` は Compose の通常 service として定義されるため、通常の `docker compose up` で一緒に起動し、`docker compose down` で停止・削除されます。
 
 `agent/.env` の `LOCAL_WEEKLY_PLAN_DAY_OF_WEEK` / `LOCAL_WEEKLY_PLAN_HOUR` / `LOCAL_WEEKLY_PLAN_MINUTE` で曜日と時刻を更新できます。ローカル web UI に表示したい場合は `LOCAL_WEEKLY_PLAN_USER_ID` をログイン中の Strava athlete id に合わせます。
 

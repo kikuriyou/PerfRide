@@ -61,8 +61,6 @@ services:
       start_period: 10s
 
   local-weekly-scheduler:
-    profiles:
-      - scheduler
     build:
       context: ./agent
     env_file:
