@@ -21,12 +21,12 @@ const DISTANCE_OPTIONS = [
 
 // Category filter options
 const CATEGORY_OPTIONS = [
-  { value: 0, label: 'すべて' },
+  { value: 0, label: 'All' },
   { value: 1, label: 'Cat4+' },
   { value: 2, label: 'Cat3+' },
   { value: 3, label: 'Cat2+' },
   { value: 4, label: 'Cat1+' },
-  { value: 5, label: 'HCのみ' },
+  { value: 5, label: 'HC only' },
 ];
 
 // Component to handle map movement and segment loading
@@ -231,7 +231,7 @@ export default function SegmentMap({ onSegmentSelect }: SegmentMapProps) {
           value={searchQuery}
           onChange={(e) => setSearchQuery(e.target.value)}
           onKeyDown={handleKeyDown}
-          placeholder="場所を検索 (例: 富士山, ヤビツ峠)"
+          placeholder="Search location (example: Mt. Fuji, Yabitsu Pass)"
           style={{
             flex: 1,
             padding: '0.75rem 1rem',
@@ -247,7 +247,7 @@ export default function SegmentMap({ onSegmentSelect }: SegmentMapProps) {
           className="btn btn-primary"
           style={{ padding: '0.75rem 1.25rem' }}
         >
-          🔍 検索
+          🔍 Search
         </button>
       </div>
 
@@ -262,7 +262,7 @@ export default function SegmentMap({ onSegmentSelect }: SegmentMapProps) {
         }}
       >
         <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
-          <label style={{ fontSize: '0.85rem', opacity: 0.8 }}>距離:</label>
+          <label style={{ fontSize: '0.85rem', opacity: 0.8 }}>Distance:</label>
           <select
             value={minDistance}
             onChange={(e) => setMinDistance(Number(e.target.value))}
@@ -276,7 +276,7 @@ export default function SegmentMap({ onSegmentSelect }: SegmentMapProps) {
           </select>
         </div>
         <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
-          <label style={{ fontSize: '0.85rem', opacity: 0.8 }}>カテゴリ:</label>
+          <label style={{ fontSize: '0.85rem', opacity: 0.8 }}>Category:</label>
           <select
             value={minCategory}
             onChange={(e) => setMinCategory(Number(e.target.value))}
@@ -291,7 +291,7 @@ export default function SegmentMap({ onSegmentSelect }: SegmentMapProps) {
         </div>
         <div style={{ fontSize: '0.8rem', opacity: 0.6 }}>
           {effectiveMinDistance > minDistance && (
-            <span>※ ズームアウト時は {effectiveMinDistance / 1000}km+ を表示</span>
+            <span>Showing {effectiveMinDistance / 1000}km+ while zoomed out</span>
           )}
         </div>
       </div>
@@ -320,7 +320,7 @@ export default function SegmentMap({ onSegmentSelect }: SegmentMapProps) {
               boxShadow: '0 2px 8px rgba(0,0,0,0.2)',
             }}
           >
-            読み込み中...
+            Loading...
           </div>
         )}
         {/* Segment count indicator */}
@@ -337,7 +337,7 @@ export default function SegmentMap({ onSegmentSelect }: SegmentMapProps) {
             boxShadow: '0 2px 8px rgba(0,0,0,0.2)',
           }}
         >
-          {filteredSegments.length} / {segments.length} セグメント
+          {filteredSegments.length} / {segments.length} segments
         </div>
         <MapContainer
           center={center}
@@ -387,7 +387,7 @@ export default function SegmentMap({ onSegmentSelect }: SegmentMapProps) {
           opacity: 0.8,
         }}
       >
-        <span>カテゴリ:</span>
+        <span>Category:</span>
         <span style={{ color: '#8B0000' }}>● HC</span>
         <span style={{ color: '#DC143C' }}>● Cat1</span>
         <span style={{ color: '#FF4500' }}>● Cat2</span>
@@ -439,7 +439,7 @@ export default function SegmentMap({ onSegmentSelect }: SegmentMapProps) {
               className="btn btn-primary"
               style={{ padding: '0.5rem 1rem', fontSize: '0.9rem' }}
             >
-              このセグメントでシミュレート →
+              Simulate this segment →
             </button>
           </div>
           <div
@@ -459,7 +459,7 @@ export default function SegmentMap({ onSegmentSelect }: SegmentMapProps) {
       {/* Instructions */}
       {!selectedSegment && filteredSegments.length > 0 && (
         <p style={{ marginTop: '1rem', fontSize: '0.85rem', opacity: 0.7, textAlign: 'center' }}>
-          地図上のセグメント（色付きの線）をクリックして選択
+          Click a colored segment on the map to select it.
         </p>
       )}
     </div>

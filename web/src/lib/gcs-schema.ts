@@ -1,4 +1,5 @@
 export type CoachAutonomy = 'observe' | 'suggest' | 'coach';
+export type UserLocale = 'ja' | 'en';
 export type PhaseName = 'base' | 'build1' | 'build2' | 'peak' | 'taper' | 'maintenance' | 'custom';
 export type DayName = 'mon' | 'tue' | 'wed' | 'thu' | 'fri' | 'sat' | 'sun';
 
@@ -48,6 +49,8 @@ export const DEFAULT_WEEKLY_SCHEDULE: WeeklySchedule = {
 export interface GCSUserSettings {
   user_id: string;
   strava_owner_id: number;
+  locale?: UserLocale;
+  timezone?: string;
   coach_autonomy?: CoachAutonomy;
   ftp: number;
   weight_kg: number;

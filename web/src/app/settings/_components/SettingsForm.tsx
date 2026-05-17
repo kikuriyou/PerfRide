@@ -5,18 +5,18 @@ import { useEffect, useEffectEvent, useState } from 'react';
 import NotificationSettings from '@/app/dashboard/_components/NotificationSettings';
 import type { DayName, WeeklySchedule } from '@/lib/gcs-schema';
 import { useSettings } from '@/lib/settings';
-import type { CoachAutonomy, RecommendMode } from '@/lib/settings';
+import type { CoachAutonomy, RecommendMode, UserLocale } from '@/lib/settings';
 import { formatJstClockLabel } from '@/lib/weekly-plan-reference';
 import AgentOperationLogPanel from './AgentOperationLogPanel';
 
 const DAY_LABELS: Record<DayName, string> = {
-  mon: '月',
-  tue: '火',
-  wed: '水',
-  thu: '木',
-  fri: '金',
-  sat: '土',
-  sun: '日',
+  mon: 'Mon',
+  tue: 'Tue',
+  wed: 'Wed',
+  thu: 'Thu',
+  fri: 'Fri',
+  sat: 'Sat',
+  sun: 'Sun',
 };
 
 const DAY_NAMES: DayName[] = ['mon', 'tue', 'wed', 'thu', 'fri', 'sat', 'sun'];
@@ -25,36 +25,36 @@ const INTERVALS_ICU_ATHLETE_ID = '0';
 const COACH_AUTONOMY_OPTIONS: { value: CoachAutonomy; label: string; description: string }[] = [
   {
     value: 'observe',
-    label: 'データの変化だけ教えて',
-    description: 'トレーニングデータの変化を通知します。ワークアウト提案は表示しません。',
+    label: 'Insights only',
+    description: 'Notify training data changes without workout recommendations.',
   },
   {
     value: 'suggest',
-    label: 'トレーニングも提案して',
-    description: 'データ通知に加えて、今日のワークアウトを提案します。',
+    label: 'Suggest workouts',
+    description: "Show today's workout recommendation in addition to data insights.",
   },
   {
     value: 'coach',
-    label: '週間プランまで任せたい',
-    description: '毎週の draft plan を作成し、承認後に今週の計画へ反映します。',
+    label: 'Coach weekly plan',
+    description: 'Create weekly draft plans and apply them after approval.',
   },
 ];
 
 const RECOMMEND_MODE_OPTIONS: { value: RecommendMode; label: string; description: string }[] = [
   {
     value: 'hybrid',
-    label: '🔬 ハイブリッド',
-    description: '知識ファイル + Web検索で根拠のある推薦',
+    label: '🔬 Hybrid',
+    description: 'Use local knowledge files plus web search for grounded recommendations.',
   },
   {
     value: 'web_only',
-    label: '🌐 Web検索のみ',
-    description: 'Web検索のみで最新情報を重視した推薦',
+    label: '🌐 Web search only',
+    description: 'Prefer current web information for recommendations.',
   },
   {
     value: 'no_grounding',
-    label: '💭 AIの知識のみ',
-    description: '外部情報を使わずAIモデルの知識で推薦',
+    label: '💭 Model knowledge only',
+    description: 'Use model knowledge without external grounding.',
   },
 ];
 
@@ -74,29 +74,29 @@ interface IntervalsIcuStatus {
 export function intervalsIcuSaveMessage(data: IntervalsIcuStatus): string {
   const verification = data.verification;
   if (verification?.status === 'verified') {
-    return '保存しました。Intervals.icu 接続確認も成功しました。';
+    return 'Saved. Intervals.icu verification succeeded.';
   }
   if (verification?.status === 'failed' || verification?.status === 'missing') {
-    return `保存しましたが、Intervals.icu 接続確認に失敗しました: ${verification.message}`;
+    return `Saved, but Intervals.icu verification failed: ${verification.message}`;
   }
   if (verification?.status === 'skipped') {
-    return `保存しましたが、Intervals.icu 接続確認は未実行です: ${verification.message}`;
+    return `Saved, but Intervals.icu verification was skipped: ${verification.message}`;
   }
-  return '保存しました';
+  return 'Saved';
 }
 
 export function intervalsIcuTestMessage(data: IntervalsIcuStatus): string {
   const verification = data.verification;
   if (verification?.status === 'verified') {
-    return 'Intervals.icu 接続確認に成功しました。MyWhoosh への反映には数分かかることがあります。';
+    return 'Intervals.icu verification succeeded. MyWhoosh may take a few minutes to sync.';
   }
   if (verification?.status === 'failed' || verification?.status === 'missing') {
-    return `Intervals.icu 接続確認に失敗しました: ${verification.message}`;
+    return `Intervals.icu verification failed: ${verification.message}`;
   }
   if (verification?.status === 'skipped') {
-    return `Intervals.icu 接続確認は未実行です: ${verification.message}`;
+    return `Intervals.icu verification was skipped: ${verification.message}`;
   }
-  return 'Intervals.icu 接続確認を実行しました';
+  return 'Intervals.icu verification ran';
 }
 
 function normalizeAsOf(raw: string): string | null {
@@ -127,6 +127,8 @@ export default function SettingsForm() {
   const [localCoachAutonomy, setLocalCoachAutonomy] = useState<CoachAutonomy>(
     settings.coachAutonomy,
   );
+  const [localLocale, setLocalLocale] = useState<UserLocale>(settings.locale);
+  const [localTimezone, setLocalTimezone] = useState(settings.timezone);
   const [localWeeklySchedule, setLocalWeeklySchedule] = useState<WeeklySchedule>(
     settings.weeklySchedule,
   );
@@ -150,6 +152,8 @@ export default function SettingsForm() {
     setLocalRecommendMode(settings.recommendMode);
     setLocalUsePersonalData(settings.usePersonalData);
     setLocalCoachAutonomy(settings.coachAutonomy);
+    setLocalLocale(settings.locale);
+    setLocalTimezone(settings.timezone);
     setLocalWeeklySchedule(settings.weeklySchedule);
     setLocalAsOf(settings.asOf ?? '');
   });
@@ -168,7 +172,7 @@ export default function SettingsForm() {
         setIntervalsIcuEncryptionReady(data.encryption_ready ?? true);
         if (data.encryption_ready === false) {
           setIntervalsIcuMessage(
-            'KMS_KEY_NAME が未設定のため Intervals.icu API key を保存できません。',
+            'KMS_KEY_NAME is not set, so Intervals.icu API keys cannot be saved.',
           );
         }
       })
@@ -180,7 +184,7 @@ export default function SettingsForm() {
 
   const handleSave = () => {
     if (!isValidGoalDate(localGoalDate)) {
-      setGoalDateError('goal date は YYYY-MM-DD 形式で入力してください。');
+      setGoalDateError('Goal date must use YYYY-MM-DD format.');
       return;
     }
     setGoalDateError(null);
@@ -194,6 +198,8 @@ export default function SettingsForm() {
       recommendMode: localRecommendMode,
       usePersonalData: localUsePersonalData,
       coachAutonomy: localCoachAutonomy,
+      locale: localLocale,
+      timezone: localTimezone,
       weeklySchedule: localWeeklySchedule,
       asOf: normalizeAsOf(localAsOf),
     });
@@ -222,7 +228,7 @@ export default function SettingsForm() {
       | null;
     if (!res.ok) {
       setIntervalsIcuMessage(
-        data && 'error' in data ? data.error || '保存できませんでした' : '保存できませんでした',
+        data && 'error' in data ? data.error || 'Could not save' : 'Could not save',
       );
       return;
     }
@@ -230,9 +236,7 @@ export default function SettingsForm() {
       setIntervalsIcuConfigured(data.configured);
     }
     setIntervalsIcuApiKey('');
-    setIntervalsIcuMessage(
-      data && 'configured' in data ? intervalsIcuSaveMessage(data) : '保存しました',
-    );
+    setIntervalsIcuMessage(data && 'configured' in data ? intervalsIcuSaveMessage(data) : 'Saved');
     setAgentLogRefreshSignal((value) => value + 1);
   };
 
@@ -245,7 +249,7 @@ export default function SettingsForm() {
       | null;
     if (!res.ok) {
       setIntervalsIcuMessage(
-        data && 'error' in data ? data.error || '確認できませんでした' : '確認できませんでした',
+        data && 'error' in data ? data.error || 'Could not verify' : 'Could not verify',
       );
       return;
     }
@@ -253,7 +257,7 @@ export default function SettingsForm() {
       setIntervalsIcuConfigured(data.configured);
     }
     setIntervalsIcuMessage(
-      data && 'configured' in data ? intervalsIcuTestMessage(data) : '確認しました',
+      data && 'configured' in data ? intervalsIcuTestMessage(data) : 'Verified',
     );
     setAgentLogRefreshSignal((value) => value + 1);
   };
@@ -262,12 +266,12 @@ export default function SettingsForm() {
     setIntervalsIcuMessage(null);
     const res = await fetch('/api/settings/intervals-icu', { method: 'DELETE' });
     if (!res.ok) {
-      setIntervalsIcuMessage('削除できませんでした');
+      setIntervalsIcuMessage('Could not disconnect');
       return;
     }
     setIntervalsIcuConfigured(false);
     setIntervalsIcuApiKey('');
-    setIntervalsIcuMessage('連携を解除しました');
+    setIntervalsIcuMessage('Disconnected');
   };
 
   const updateDay = (dayName: DayName, patch: Partial<WeeklySchedule[DayName]>) => {
@@ -280,7 +284,7 @@ export default function SettingsForm() {
     }));
   };
 
-  const estimateAge = 220 - localMaxHR;
+  const estimatedAge = 220 - localMaxHR;
 
   return (
     <div className="settings-grid">
@@ -336,7 +340,9 @@ export default function SettingsForm() {
             className="settings-number-input"
           />
           <span className="settings-muted">bpm</span>
-          <div className="settings-pill">推定年齢: {estimateAge > 0 ? estimateAge : '?'}</div>
+          <div className="settings-pill">
+            Estimated age: {estimatedAge > 0 ? estimatedAge : '?'}
+          </div>
         </div>
       </div>
 
@@ -349,11 +355,11 @@ export default function SettingsForm() {
               onChange={(e) => setLocalGoal(e.target.value as typeof localGoal)}
               className="settings-select"
             >
-              <option value="hillclimb_tt">🏔️ レース準備（ヒルクライム / TT）</option>
-              <option value="road_race">🏁 レース準備（ロードレース）</option>
-              <option value="ftp_improvement">⚡ FTP向上</option>
-              <option value="fitness_maintenance">💪 体力維持</option>
-              <option value="other">✏️ その他</option>
+              <option value="hillclimb_tt">🏔️ Race prep (hill climb / TT)</option>
+              <option value="road_race">🏁 Race prep (road race)</option>
+              <option value="ftp_improvement">⚡ FTP improvement</option>
+              <option value="fitness_maintenance">💪 Fitness maintenance</option>
+              <option value="other">✏️ Other</option>
             </select>
             <div>
               <label htmlFor="goalDate" className="settings-field-label">
@@ -375,10 +381,46 @@ export default function SettingsForm() {
               type="text"
               value={localGoalCustom}
               onChange={(e) => setLocalGoalCustom(e.target.value)}
-              placeholder="例: トライアスロン準備"
+              placeholder="Example: triathlon prep"
               className="settings-input"
             />
           )}
+        </div>
+      </div>
+
+      <div className="settings-card settings-card-row">
+        <h3 className="settings-card-title">🌐 Agent Output</h3>
+        <div className="settings-stack">
+          <div>
+            <label htmlFor="agentLocale" className="settings-field-label">
+              Language
+            </label>
+            <select
+              id="agentLocale"
+              value={localLocale}
+              onChange={(e) => setLocalLocale(e.target.value as UserLocale)}
+              className="settings-select"
+            >
+              <option value="ja">Japanese</option>
+              <option value="en">English</option>
+            </select>
+          </div>
+          <div>
+            <label htmlFor="agentTimezone" className="settings-field-label">
+              Timezone
+            </label>
+            <input
+              id="agentTimezone"
+              type="text"
+              value={localTimezone}
+              onChange={(e) => setLocalTimezone(e.target.value)}
+              className="settings-input"
+              placeholder="Asia/Tokyo"
+            />
+            <div className="settings-help-text">
+              Detected from your browser and saved as an IANA timezone.
+            </div>
+          </div>
         </div>
       </div>
 
@@ -422,7 +464,7 @@ export default function SettingsForm() {
       </div>
 
       <div className="settings-card settings-card-row">
-        <h3 className="settings-card-title">🧠 コーチの自律度</h3>
+        <h3 className="settings-card-title">🧠 Coach Autonomy</h3>
         <div className="settings-radio-grid">
           {COACH_AUTONOMY_OPTIONS.map((opt) => (
             <label
@@ -448,7 +490,7 @@ export default function SettingsForm() {
       </div>
 
       <div className="settings-card settings-card-row">
-        <h3 className="settings-card-title">🤖 AI推薦モード</h3>
+        <h3 className="settings-card-title">🤖 AI Recommendation Mode</h3>
         <select
           value={localRecommendMode}
           onChange={(e) => setLocalRecommendMode(e.target.value as RecommendMode)}
@@ -466,7 +508,7 @@ export default function SettingsForm() {
       </div>
 
       <div className="settings-card settings-card-row">
-        <h3 className="settings-card-title">📊 パーソナルデータ</h3>
+        <h3 className="settings-card-title">📊 Personal Data</h3>
         <label className="settings-value-row" style={{ cursor: 'pointer' }}>
           <input
             type="checkbox"
@@ -474,7 +516,7 @@ export default function SettingsForm() {
             onChange={(e) => setLocalUsePersonalData(e.target.checked)}
             style={{ width: '1.1rem', height: '1.1rem', accentColor: 'var(--primary)' }}
           />
-          <span>{localUsePersonalData ? 'ON — Stravaデータを使用' : 'OFF — 汎用推薦'}</span>
+          <span>{localUsePersonalData ? 'ON - use Strava data' : 'OFF - generic guidance'}</span>
         </label>
       </div>
 
@@ -488,7 +530,7 @@ export default function SettingsForm() {
         <div className="settings-stack">
           <div>
             <label htmlFor="intervalsIcuApiKey" className="settings-field-label">
-              API Key（Developer Settings）
+              API key (Developer Settings)
             </label>
             <input
               id="intervalsIcuApiKey"
@@ -496,7 +538,7 @@ export default function SettingsForm() {
               value={intervalsIcuApiKey}
               onChange={(e) => setIntervalsIcuApiKey(e.target.value)}
               placeholder={
-                intervalsIcuConfigured ? '保存済み。変更時のみ入力' : 'API key を貼り付け'
+                intervalsIcuConfigured ? 'Saved. Enter only to update.' : 'Paste API key'
               }
               autoComplete="off"
               className="settings-input"
@@ -543,21 +585,21 @@ export default function SettingsForm() {
               Intervals.icu Settings
             </a>
             {
-              ' > Developer Settings の API Key を貼り付けてください。Athlete ID は内部で 0 を使用します。PerfRide は暗号化保存し、planned workout の登録にだけ使います。'
+              ' > Developer Settings, paste your API key. PerfRide stores it encrypted and uses athlete ID 0 internally for planned workout registration.'
             }
             <br />
             <a href="https://event.mywhoosh.com/user/profile" target="_blank" rel="noreferrer">
               MyWhoosh Profile
             </a>
-            {' > Connections で Intervals.icu の Read Calendar を有効にしてください。'}
+            {' > Connections, enable Intervals.icu Read Calendar. '}
             <a
               href="https://mywhoosh.com/docs/partner-connections/"
               target="_blank"
               rel="noreferrer"
             >
-              公式手順
+              Official instructions
             </a>
-            {'も確認できます。MyWhoosh への反映には数分かかることがあります。'}
+            {' are also available. MyWhoosh may take a few minutes to sync.'}
           </div>
           <div className="settings-status-text">
             {intervalsIcuMessage ??
@@ -574,7 +616,7 @@ export default function SettingsForm() {
             background: 'color-mix(in srgb, var(--primary) 4%, var(--surface))',
           }}
         >
-          <h3 className="settings-card-title">🧪 確認時刻（開発用）</h3>
+          <h3 className="settings-card-title">🧪 Review Clock (dev)</h3>
           <div className="settings-inline-controls">
             <input
               type="datetime-local"
@@ -593,12 +635,12 @@ export default function SettingsForm() {
                 color: 'var(--foreground)',
               }}
             >
-              リセット
+              Reset
             </button>
           </div>
           {settings.asOf && (
             <div className="settings-status-text" style={{ marginTop: '0.55rem' }}>
-              現在の確認時刻: <strong>{formatJstClockLabel(settings.asOf)} (JST)</strong>
+              Current review clock: <strong>{formatJstClockLabel(settings.asOf)} (JST)</strong>
             </div>
           )}
         </div>

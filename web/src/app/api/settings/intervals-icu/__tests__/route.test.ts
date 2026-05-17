@@ -180,7 +180,7 @@ describe('Intervals.icu verification operation logs', () => {
     };
 
     expect(intervalsIcuVerificationLogStatus(verification)).toBe('completed');
-    expect(intervalsIcuVerificationLogMessage(verification, 'test')).toContain('成功');
+    expect(intervalsIcuVerificationLogMessage(verification, 'test')).toContain('succeeded');
   });
 
   it('reports missing credentials in the log message', () => {

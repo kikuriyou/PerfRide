@@ -59,6 +59,8 @@ from recommend_agent.weekly_logic import (
 )
 
 JST = ZoneInfo("Asia/Tokyo")
+DEFAULT_LOCALE = "ja"
+DEFAULT_TIMEZONE = "Asia/Tokyo"
 
 app = FastAPI(
     title="PerfRide Recommend Training API",
@@ -81,6 +83,33 @@ MAX_GENERATIONS_PER_DAY = 2
 
 # ADK session service
 session_service = InMemorySessionService()
+
+
+def _normalize_locale(value: str | None) -> str:
+    return "en" if value == "en" else DEFAULT_LOCALE
+
+
+def _resolve_timezone(value: str | None) -> ZoneInfo:
+    name = value.strip() if isinstance(value, str) and value.strip() else DEFAULT_TIMEZONE
+    try:
+        return ZoneInfo(name)
+    except Exception:
+        return JST
+
+
+def _timezone_name(tz: ZoneInfo) -> str:
+    return getattr(tz, "key", DEFAULT_TIMEZONE)
+
+
+def _language_context(locale: str, timezone: str) -> str:
+    language = "English" if locale == "en" else "Japanese"
+    return (
+        "\n\n## User Language and Timezone\n"
+        f"- response_language: {language}\n"
+        f"- user_locale: {locale}\n"
+        f"- user_timezone: {timezone}\n"
+        "- Keep JSON keys and canonical enum values unchanged.\n"
+    )
 
 
 def _record_operation(
@@ -118,6 +147,8 @@ class RecommendRequest(BaseModel):
     recommend_mode: str | None = None
     use_personal_data: bool | None = None
     coach_autonomy: str | None = None
+    locale: str | None = None
+    timezone: str | None = None
     plan_context_key: str | None = None
     constraint: str | None = None
     mode: str = "recommend"
@@ -172,6 +203,8 @@ class WeeklyPlanRequest(BaseModel):
     trigger: str = "scheduler"
     week_start: str | None = None
     as_of: str | None = None
+    locale: str | None = None
+    timezone: str | None = None
     force: bool = False
 
 
@@ -192,6 +225,8 @@ class WeeklyPlanRespondRequest(BaseModel):
     action: str
     user_message: str | None = None
     expected_plan_revision: int
+    locale: str | None = None
+    timezone: str | None = None
 
 
 class WeeklyPlanAppendRequest(BaseModel):
@@ -608,20 +643,73 @@ def _target_session_date(payload: dict[str, object], fallback: str) -> str:
     return fallback
 
 
-def _policy_signal_label(policy: dict[str, object]) -> str:
+def _policy_signal_label(policy: dict[str, object], locale: str = "ja") -> str:
     signal_types = policy.get("signal_types")
     if not isinstance(signal_types, list):
-        return "安全アラート"
+        return "safety alert" if locale == "en" else "安全アラート"
     labels = [str(signal_type) for signal_type in signal_types]
+    if locale == "en":
+        return f"safety alerts ({', '.join(labels)})"
     return f"安全アラート（{', '.join(labels)}）"
 
 
-def _recovery_guard_payload(policy: dict[str, object], session_date: str) -> dict[str, object]:
+def _policy_reason(policy: dict[str, object], locale: str = "ja") -> str:
+    signal_types = policy.get("signal_types")
+    primary = str(signal_types[0]) if isinstance(signal_types, list) and signal_types else ""
+    if locale == "en":
+        reason_by_signal = {
+            "tsb_critical": "TSB has dropped into a high-fatigue range",
+            "weekly_tss_spike": "weekly TSS has increased sharply",
+            "recent_intensity_high": "high-intensity rides have stacked up recently",
+            "weekly_tss_front_loaded": "the early-week load is already high",
+        }
+        return reason_by_signal.get(primary, "a fatigue alert is active")
+    return str(policy.get("reason", "疲労アラートが出ているため"))
+
+
+def _recovery_guard_payload(
+    policy: dict[str, object],
+    session_date: str,
+    locale: str = "ja",
+) -> dict[str, object]:
     session_type = str(policy.get("session_type", "recovery"))
-    reason = str(policy.get("reason", "疲労アラートが出ているため"))
-    based_on = f"{_policy_signal_label(policy)}と直近のフィットネス指標を踏まえた提案です"
+    reason = _policy_reason(policy, locale)
+    based_on = (
+        f"{_policy_signal_label(policy, locale)} and recent fitness metrics."
+        if locale == "en"
+        else f"{_policy_signal_label(policy, locale)}と直近のフィットネス指標を踏まえた提案です"
+    )
 
     if session_type == "rest":
+        if locale == "en":
+            return {
+                "summary": (
+                    "A fatigue alert is active, so the next session should be full rest "
+                    "instead of intensity."
+                ),
+                "why_now": f"{reason}, so recovery should take priority over training stimulus.",
+                "based_on": based_on,
+                "detail": (
+                    "## Full Rest\n\n"
+                    "- Stay off the bike today and prioritize sleep, fueling, "
+                    "and light stretching.\n"
+                    "- Avoid Threshold and VO2max until leg heaviness and resting HR normalize.\n"
+                    "- If you need to move, keep it to an easy walk or mobility work."
+                ),
+                "workout_intervals": [],
+                "totalDurationMin": 0,
+                "workoutName": "Rest Day",
+                "proposed_session": {
+                    "session_date": session_date,
+                    "session_type": "rest",
+                    "duration_minutes": 0,
+                    "target_tss": 0,
+                    "notes": "Changed to full rest due to fatigue alert",
+                    "reason": reason,
+                    "is_rest": True,
+                    "source": "safety_guard",
+                },
+            }
         return {
             "summary": "疲労アラートが出ているため、次回は高強度ではなく完全休養を優先しましょう。",
             "why_now": f"{reason}、トレーニング効果より回復を優先する局面です。",
@@ -643,6 +731,43 @@ def _recovery_guard_payload(policy: dict[str, object], session_date: str) -> dic
                 "notes": "疲労アラートにより完全休養へ変更",
                 "reason": reason,
                 "is_rest": True,
+                "source": "safety_guard",
+            },
+        }
+
+    if locale == "en":
+        return {
+            "summary": (
+                "A fatigue alert is active, so keep the next session to a 45-minute "
+                "recovery ride instead of intensity."
+            ),
+            "why_now": f"{reason}, so reducing fatigue is the priority.",
+            "based_on": based_on,
+            "detail": (
+                "## Recovery Ride (45 min)\n\n"
+                "### Warm-up (10 min)\n"
+                "- Spin easily at 45-55% FTP.\n\n"
+                "### Main Set (25 min)\n"
+                "- Cap effort at 55-60% FTP and keep conversation easy.\n"
+                "- Stop early if your legs still feel heavy.\n\n"
+                "### Cool-down (10 min)\n"
+                "- Ease down to 45-50% FTP."
+            ),
+            "workout_intervals": [
+                {"startMin": 0, "endMin": 10, "powerPercent": 50, "label": "Warmup"},
+                {"startMin": 10, "endMin": 35, "powerPercent": 58, "label": "Recovery"},
+                {"startMin": 35, "endMin": 45, "powerPercent": 45, "label": "Cooldown"},
+            ],
+            "totalDurationMin": 45,
+            "workoutName": "Recovery Ride",
+            "proposed_session": {
+                "session_date": session_date,
+                "session_type": "recovery",
+                "duration_minutes": 45,
+                "target_tss": 20,
+                "notes": "Avoiding intensity due to fatigue alert",
+                "reason": reason,
+                "is_rest": False,
                 "source": "safety_guard",
             },
         }
@@ -688,12 +813,13 @@ def _apply_recovery_guard(
     payload: dict[str, object],
     policy: dict[str, object] | None,
     fallback_session_date: str,
+    locale: str = "ja",
 ) -> dict[str, object]:
     if policy is None or _payload_is_recovery_aligned(payload):
         return payload
     session_date = _target_session_date(payload, fallback_session_date)
     guarded = dict(payload)
-    guarded.update(_recovery_guard_payload(policy, session_date))
+    guarded.update(_recovery_guard_payload(policy, session_date, locale))
     return guarded
 
 
@@ -741,14 +867,23 @@ def _ensure_webhook_workout_registration(
     return _with_workout_registration(proposed, registered)
 
 
-def _goal_text(goal: str, goal_custom: str | None) -> str:
-    goal_labels = {
-        "hillclimb_tt": "レース準備（ヒルクライム/TT）",
-        "road_race": "レース準備（ロードレース）",
-        "ftp_improvement": "FTP向上",
-        "fitness_maintenance": "体力維持",
-        "other": goal_custom or "その他",
-    }
+def _goal_text(goal: str, goal_custom: str | None, locale: str = "ja") -> str:
+    if locale == "en":
+        goal_labels = {
+            "hillclimb_tt": "Race prep (hill climb / TT)",
+            "road_race": "Race prep (road race)",
+            "ftp_improvement": "FTP improvement",
+            "fitness_maintenance": "Fitness maintenance",
+            "other": goal_custom or "Other",
+        }
+    else:
+        goal_labels = {
+            "hillclimb_tt": "レース準備（ヒルクライム/TT）",
+            "road_race": "レース準備（ロードレース）",
+            "ftp_improvement": "FTP向上",
+            "fitness_maintenance": "体力維持",
+            "other": goal_custom or "その他",
+        }
     return goal_labels.get(goal, goal)
 
 
@@ -834,6 +969,14 @@ def _weekly_request_message(
     baseline_week: WeekPayload,
     user_message: str | None = None,
 ) -> str:
+    locale = _normalize_locale(
+        profile.get("locale") if isinstance(profile.get("locale"), str) else None
+    )
+    timezone = (
+        profile.get("timezone")
+        if isinstance(profile.get("timezone"), str)
+        else DEFAULT_TIMEZONE
+    )
     goal = _profile_goal(profile)
     goal_date = goal.get("date")
     weekly_schedule = (
@@ -848,9 +991,12 @@ def _weekly_request_message(
         f"- goal: {_profile_goal_label(profile)}\n"
         f"- goal_date: {goal_date if isinstance(goal_date, str) and goal_date else 'unset'}\n"
         f"- coach_autonomy: {profile.get('coach_autonomy', 'suggest')}\n"
+        f"- locale: {locale}\n"
+        f"- timezone: {timezone}\n"
         "以下の baseline を必要なら安全側に調整してください。\n"
         f"```json\n{json.dumps(baseline_week, ensure_ascii=False)}\n```"
     )
+    message += _language_context(locale, timezone)
     if weekly_schedule:
         message += (
             f"\navailable days:\n```json\n{json.dumps(weekly_schedule, ensure_ascii=False)}\n```"
@@ -863,6 +1009,8 @@ def _weekly_request_message(
 async def _handle_insight(request: RecommendRequest) -> InsightResponse:
     """Detect signals via rules, then use LLM to generate user-facing text."""
     user_id = resolve_user_id(request.user_id)
+    locale = _normalize_locale(request.locale)
+    timezone = _timezone_name(_resolve_timezone(request.timezone))
     as_of = _parse_as_of(request.as_of)
     signals = detect_signals(override=request.activity_override, as_of=as_of, user_id=user_id)
 
@@ -870,7 +1018,7 @@ async def _handle_insight(request: RecommendRequest) -> InsightResponse:
         return InsightResponse(items=[])
 
     try:
-        agent = build_insight_agent()
+        agent = build_insight_agent(locale=locale)
 
         session = await session_service.create_session(
             app_name="perfride_insight",
@@ -886,6 +1034,7 @@ async def _handle_insight(request: RecommendRequest) -> InsightResponse:
         user_message = (
             f"以下の検知されたシグナルについて、ユーザー向けの通知テキストを生成してください。\n\n"
             f"シグナル:\n```json\n{json.dumps(signals, ensure_ascii=False)}\n```"
+            f"{_language_context(locale, timezone)}"
         )
 
         content = types.Content(
@@ -937,8 +1086,8 @@ async def _handle_insight(request: RecommendRequest) -> InsightResponse:
                     type=s["type"],
                     title=s["type"].replace("_", " ").title(),
                     summary=json.dumps(s["data"], ensure_ascii=False),
-                    why_now="",
-                    based_on="",
+                    why_now="" if locale == "ja" else "Generated from detected training signals.",
+                    based_on="" if locale == "ja" else "Detected training signal data.",
                     priority=s["priority"],
                 )
             )
@@ -997,6 +1146,9 @@ async def recommend_training(request: RecommendRequest) -> InsightResponse | Rec
     effective_personal = (
         request.use_personal_data if request.use_personal_data is not None else USE_PERSONAL_DATA
     )
+    locale = _normalize_locale(request.locale)
+    timezone = _resolve_timezone(request.timezone)
+    timezone_name = _timezone_name(timezone)
     trigger = (
         "coach_daily" if effective_personal and request.coach_autonomy == "coach" else "dashboard"
     )
@@ -1012,6 +1164,8 @@ async def recommend_training(request: RecommendRequest) -> InsightResponse | Rec
             "mode": effective_mode,
             "use_personal_data": effective_personal,
             "coach_autonomy": request.coach_autonomy,
+            "locale": locale,
+            "timezone": timezone_name,
         },
     )
     _record_operation(
@@ -1024,8 +1178,8 @@ async def recommend_training(request: RecommendRequest) -> InsightResponse | Rec
     )
 
     as_of = _parse_as_of(request.as_of)
-    now_jst = as_of if as_of is not None else datetime.now(JST)
-    today_str = now_jst.strftime("%Y-%m-%d")
+    now_local = as_of.astimezone(timezone) if as_of is not None else datetime.now(timezone)
+    today_str = now_local.strftime("%Y-%m-%d")
     bypass_cache = as_of is not None or request.constraint is not None
     safety_signals = (
         detect_signals(override=request.activity_override, as_of=as_of, user_id=resolved_user_id)
@@ -1045,6 +1199,8 @@ async def recommend_training(request: RecommendRequest) -> InsightResponse | Rec
         or cache.get("use_personal_data") != effective_personal
         or cache.get("ftp") != request.ftp
         or cache.get("coach_autonomy") != request.coach_autonomy
+        or cache.get("locale") != locale
+        or cache.get("timezone") != timezone_name
         or cache.get("plan_context_key") != request.plan_context_key
         or cache.get("user_id") not in (None, resolved_user_id)
     ):
@@ -1072,7 +1228,7 @@ async def recommend_training(request: RecommendRequest) -> InsightResponse | Rec
                 run_id=operation_run_id,
                 metadata={"from_cache": True},
             )
-            guarded_cache = _apply_recovery_guard(dict(cache), recovery_policy, today_str)
+            guarded_cache = _apply_recovery_guard(dict(cache), recovery_policy, today_str, locale)
             return RecommendResponse(
                 summary=str(guarded_cache.get("summary", "")),
                 detail=str(guarded_cache.get("detail", "")),
@@ -1090,43 +1246,46 @@ async def recommend_training(request: RecommendRequest) -> InsightResponse | Rec
         finally:
             user_id_var.reset(user_token)
 
-    goal_text = _goal_text(request.goal, request.goal_custom)
+    goal_text = _goal_text(request.goal, request.goal_custom, locale)
 
     if effective_personal:
         user_message = (
             f"今日のおすすめトレーニングを提案してください。\n"
             f"- トレーニング目標: {goal_text}\n"
             f"- FTP: {request.ftp}W\n"
-            f"- 今日の日付: {now_jst.strftime('%Y-%m-%d (%A)')}"
+            f"- 今日の日付: {now_local.strftime('%Y-%m-%d (%A)')}\n"
+            f"- timezone: {timezone_name}"
         )
         cache_json = _get_activity_cache(request.activity_override)
         if cache_json is not None:
-            summary = _summarize_recent_rides(cache_json.get("activities", []) or [], now_jst)
+            summary = _summarize_recent_rides(cache_json.get("activities", []) or [], now_local)
             if summary:
                 user_message += "\n\n## 直近ライドサマリ（事前計算済み）\n" + summary
     else:
         user_message = (
             f"今日のおすすめトレーニングを提案してください。\n"
-            f"- 今日の日付: {now_jst.strftime('%Y-%m-%d (%A)')}"
+            f"- 今日の日付: {now_local.strftime('%Y-%m-%d (%A)')}\n"
+            f"- timezone: {timezone_name}"
         )
 
     if request.constraint:
         user_message += f"\n- 制約: {request.constraint}"
     if request.coach_autonomy == "coach":
-        user_message += _coach_plan_message(now_jst)
+        user_message += _coach_plan_message(now_local)
     user_message += _recommendation_safety_context(safety_signals, recovery_policy)
+    user_message += _language_context(locale, timezone_name)
 
     override_token = activity_override_var.set(request.activity_override)
     as_of_token = as_of_var.set(as_of)
-    request_week_start, _ = resolve_week_start_and_as_of(None, request.as_of, now_jst)
+    request_week_start, _ = resolve_week_start_and_as_of(None, request.as_of, now_local)
     week_start_token = week_start_var.set(request_week_start)
-    reference_date_token = reference_date_var.set(now_jst.date())
+    reference_date_token = reference_date_var.set(now_local.date())
 
     try:
         reset_search_count()
         set_search_limit(effective_mode)
 
-        agent = build_agent(effective_mode, effective_personal, trigger=trigger)
+        agent = build_agent(effective_mode, effective_personal, trigger=trigger, locale=locale)
 
         session = await session_service.create_session(
             app_name="perfride_recommend",
@@ -1154,7 +1313,11 @@ async def recommend_training(request: RecommendRequest) -> InsightResponse | Rec
                 final_response = event.content.parts[0].text
 
         parsed = _parse_agent_json_response(final_response) or {
-            "summary": "今日のおすすめトレーニングです 🚴",
+            "summary": (
+                "Today's workout recommendation is ready 🚴"
+                if locale == "en"
+                else "今日のおすすめトレーニングです 🚴"
+            ),
             "detail": final_response,
         }
 
@@ -1167,7 +1330,7 @@ async def recommend_training(request: RecommendRequest) -> InsightResponse | Rec
         if cache and cache.get("generation_date") == today_str:
             count = cache.get("generation_count", 0)
             prev_count = count if isinstance(count, int) else 0
-        parsed = _apply_recovery_guard(parsed, recovery_policy, today_str)
+        parsed = _apply_recovery_guard(parsed, recovery_policy, today_str, locale)
 
         activity_mtime = (
             _get_activity_cache_mtime()
@@ -1186,6 +1349,8 @@ async def recommend_training(request: RecommendRequest) -> InsightResponse | Rec
             "use_personal_data": effective_personal,
             "ftp": request.ftp,
             "coach_autonomy": request.coach_autonomy,
+            "locale": locale,
+            "timezone": timezone_name,
             "plan_context_key": request.plan_context_key,
             "workout_intervals": parsed.get("workout_intervals"),
             "totalDurationMin": parsed.get("totalDurationMin"),
@@ -1263,6 +1428,8 @@ class WebhookRecommendRequest(BaseModel):
     trigger: str = "webhook"
     activity_id: int | None = None
     trace_id: str | None = None
+    locale: str | None = None
+    timezone: str | None = None
 
 
 class RespondRequest(BaseModel):
@@ -1271,6 +1438,8 @@ class RespondRequest(BaseModel):
     action: str
     user_message: str | None = None
     modification_count: int = 0
+    locale: str | None = None
+    timezone: str | None = None
 
 
 # Store session IDs for webhook conversations
@@ -1345,7 +1514,21 @@ async def _run_ambient_flow(user_id: str = "default", *, run_id: str | None = No
             user_id=resolved_user_id,
             run_id=run_id,
         )
-        agent = build_agent(mode=RECOMMEND_MODE, use_personal_data=True, trigger="webhook")
+        profile = _require_profile(resolved_user_id)
+        locale = _normalize_locale(
+            profile.get("locale") if isinstance(profile.get("locale"), str) else None
+        )
+        timezone = (
+            profile.get("timezone")
+            if isinstance(profile.get("timezone"), str)
+            else DEFAULT_TIMEZONE
+        )
+        agent = build_agent(
+            mode=RECOMMEND_MODE,
+            use_personal_data=True,
+            trigger="webhook",
+            locale=locale,
+        )
         session = await session_service.create_session(
             app_name="perfride_webhook",
             user_id=resolved_user_id,
@@ -1365,6 +1548,7 @@ async def _run_ambient_flow(user_id: str = "default", *, run_id: str | None = No
                         "ダッシュボード表示をトリガーとして次回セッションを判断します。\n"
                         "最新のアクティビティデータに基づき、次回セッションを判断し、"
                         "必要に応じてワークアウトプラットフォームに登録してください。"
+                        f"{_language_context(locale, str(timezone))}"
                     )
                 )
             ],
@@ -1426,7 +1610,10 @@ async def _run_weekly_agent(
     reference_date_token = reference_date_var.set(week_start_date)
     user_token = user_id_var.set(resolved_user_id)
     try:
-        agent = build_agent(RECOMMEND_MODE, True, trigger="weekly")
+        locale = _normalize_locale(
+            profile.get("locale") if isinstance(profile.get("locale"), str) else None
+        )
+        agent = build_agent(RECOMMEND_MODE, True, trigger="weekly", locale=locale)
         session = await session_service.create_session(
             app_name="perfride_weekly_plan",
             user_id=resolved_user_id,
@@ -1806,6 +1993,9 @@ async def _approve_weekly_review(
 async def recommend_webhook(request: WebhookRecommendRequest):
     """Webhook-triggered recommendation (called by Next.js after Strava webhook)."""
     resolved_user_id = resolve_user_id(request.user_id)
+    locale = _normalize_locale(request.locale)
+    timezone = _resolve_timezone(request.timezone)
+    timezone_name = _timezone_name(timezone)
     user_token = user_id_var.set(resolved_user_id)
     trace_id = request.trace_id or (
         f"activity-{request.activity_id or 'unknown'}-{int(datetime.now(UTC).timestamp())}"
@@ -1833,6 +2023,7 @@ async def recommend_webhook(request: WebhookRecommendRequest):
             mode=RECOMMEND_MODE,
             use_personal_data=True,
             trigger="webhook",
+            locale=locale,
         )
         _log_webhook_flow(trace_id, "Agent built")
 
@@ -1870,8 +2061,11 @@ async def recommend_webhook(request: WebhookRecommendRequest):
                         f"アクティビティが完了しました。\n"
                         f"Activity ID: {request.activity_id}\n"
                         f"Trace ID: {trace_id}\n"
+                        f"Locale: {locale}\n"
+                        f"Timezone: {timezone_name}\n"
                         f"次回セッションを判断し、必要に応じてワークアウトプラットフォームに登録してください。"
                         f"{_recommendation_safety_context(safety_signals, recovery_policy)}"
+                        f"{_language_context(locale, timezone_name)}"
                     )
                 )
             ],
@@ -1905,8 +2099,8 @@ async def recommend_webhook(request: WebhookRecommendRequest):
             metadata={"response_chars": len(final_response)},
         )
         parsed = _parse_agent_json_response(final_response) or {}
-        fallback_session_date = (datetime.now(JST).date() + timedelta(days=1)).isoformat()
-        parsed = _apply_recovery_guard(parsed, recovery_policy, fallback_session_date)
+        fallback_session_date = (datetime.now(timezone).date() + timedelta(days=1)).isoformat()
+        parsed = _apply_recovery_guard(parsed, recovery_policy, fallback_session_date, locale)
         proposed = _proposed_session_from(parsed.get("proposed_session"), request.activity_id)
         tool_result = (
             None if _is_safety_guard_payload(parsed) else workout_registration_result_var.get()
@@ -1965,6 +2159,8 @@ async def test_intervals_icu_connection_endpoint(request: IntervalsIcuTestReques
 async def recommend_respond(request: RespondRequest):
     """Handle user response to a notification (feedback loop)."""
     resolved_user_id = resolve_user_id(request.user_id)
+    locale = _normalize_locale(request.locale)
+    timezone = _timezone_name(_resolve_timezone(request.timezone))
     user_token = user_id_var.set(resolved_user_id)
     operation_run_id = new_operation_run_id("daily_response")
     _record_operation(
@@ -1991,6 +2187,7 @@ async def recommend_respond(request: RespondRequest):
             mode=RECOMMEND_MODE,
             use_personal_data=True,
             trigger="webhook",
+            locale=locale,
         )
 
         runner = Runner(
@@ -2007,6 +2204,7 @@ async def recommend_respond(request: RespondRequest):
                         f"ユーザーの応答: {request.action}\n"
                         f"メッセージ: {request.user_message or 'なし'}\n"
                         f"修正回数: {request.modification_count}/3"
+                        f"{_language_context(locale, timezone)}"
                     )
                 )
             ],

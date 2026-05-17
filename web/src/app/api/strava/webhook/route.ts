@@ -325,6 +325,8 @@ async function processWebhookEvent(event: StravaWebhookEvent, traceId: string): 
         trigger: 'webhook',
         activity_id: event.object_id,
         trace_id: traceId,
+        locale: settings.locale ?? 'ja',
+        timezone: settings.timezone ?? 'Asia/Tokyo',
       }),
     });
     const body = await agentRes.text();
@@ -343,7 +345,10 @@ async function processWebhookEvent(event: StravaWebhookEvent, traceId: string): 
       const parsed = JSON.parse(body) as AgentWebhookResponse;
       sessionId = parsed.session_id ?? sessionId;
       responseTraceId = parsed.trace_id ?? responseTraceId;
-      await writeCoachDecision(buildWebhookDecision(parsed, processed, traceId), event.owner_id);
+      await writeCoachDecision(
+        buildWebhookDecision(parsed, processed, traceId, settings.locale ?? 'ja'),
+        event.owner_id,
+      );
     } catch {
       // Keep raw body out of logs unless status is non-OK.
     }
@@ -371,12 +376,15 @@ export function buildWebhookDecision(
   agent: AgentWebhookResponse,
   activity: ProcessedActivity,
   traceId: string,
+  locale: 'ja' | 'en' = 'ja',
 ): CoachDecisionRecord {
   const proposed = agent.proposed_session ?? null;
   return {
     source: 'webhook',
-    source_label: 'アクティビティ後の提案',
-    summary: agent.summary || '次のおすすめが届きました',
+    source_label: locale === 'en' ? 'After-activity recommendation' : 'アクティビティ後の提案',
+    summary:
+      agent.summary ||
+      (locale === 'en' ? 'Your next recommendation is ready' : '次のおすすめが届きました'),
     detail: agent.detail || agent.response || null,
     why_now: agent.why_now || proposed?.reason || null,
     proposed_session: proposed,

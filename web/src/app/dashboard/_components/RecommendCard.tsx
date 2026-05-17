@@ -33,11 +33,11 @@ type GoalKey = 'hillclimb_tt' | 'road_race' | 'ftp_improvement' | 'fitness_maint
 type Panel = 'detail' | 'alternatives' | 'duration';
 
 const GOAL_LABELS: Record<GoalKey, string> = {
-  hillclimb_tt: '🏔️ レース準備（ヒルクライム / TT）',
-  road_race: '🏁 レース準備（ロードレース）',
-  ftp_improvement: '⚡ FTP向上',
-  fitness_maintenance: '💪 体力維持',
-  other: '✏️ その他',
+  hillclimb_tt: '🏔️ Race prep (hill climb / TT)',
+  road_race: '🏁 Race prep (road race)',
+  ftp_improvement: '⚡ FTP improvement',
+  fitness_maintenance: '💪 Fitness maintenance',
+  other: '✏️ Other',
 };
 
 interface AlternativeOption {
@@ -61,18 +61,18 @@ interface WeeklyPlanSnapshot {
 type ReplaceCandidate = TrainingSession & { session_id: string };
 
 const ALTERNATIVE_OPTIONS: AlternativeOption[] = [
-  { label: '軽め', constraint: '強度をひとつ下げた軽めのメニューに変更してください' },
-  { label: '重め', constraint: 'もうひとつ強度を上げたメニューに変更してください' },
+  { label: 'Lighter', constraint: 'Please make this one intensity level easier.' },
+  { label: 'Harder', constraint: 'Please make this one intensity level harder.' },
   {
-    label: '完全休養',
-    constraint: '今日は完全休養にしてください。ストレッチと休養のアドバイスをお願いします',
+    label: 'Full rest',
+    constraint: 'Please make today a full rest day with recovery and stretching advice.',
   },
 ];
 
 const DURATION_OPTIONS: DurationOption[] = [
-  { label: '30分版', minutes: 30 },
-  { label: '45分版', minutes: 45 },
-  { label: '90分版', minutes: 90 },
+  { label: '30 min', minutes: 30 },
+  { label: '45 min', minutes: 45 },
+  { label: '90 min', minutes: 90 },
 ];
 
 type WebhookDecisionStatus = 'unchanged' | 'replaced';
@@ -121,7 +121,7 @@ function writeWebhookDecisionStatus(
 
 function handledDecisionMessage(status: WebhookDecisionStatus): string {
   if (status === 'unchanged') return buildKeepWeeklyPlanMessage();
-  return 'この提案は Weekly Plan に反映済みです。';
+  return 'This recommendation has been applied to Weekly Plan.';
 }
 
 const chipStyle: CSSProperties = {
@@ -275,6 +275,8 @@ function RecommendCardInner() {
         settings.usePersonalData,
         settings.ftp,
         settings.coachAutonomy,
+        settings.locale,
+        settings.timezone,
         planContextKey,
       );
       if (cached) {
@@ -299,6 +301,8 @@ function RecommendCardInner() {
           recommendMode: settings.recommendMode,
           usePersonalData: settings.usePersonalData,
           coachAutonomy: settings.coachAutonomy,
+          locale: settings.locale,
+          timezone: settings.timezone,
           constraint: overrides?.constraint ?? null,
           asOf,
         }),
@@ -338,6 +342,8 @@ function RecommendCardInner() {
           settings.usePersonalData,
           settings.ftp,
           settings.coachAutonomy,
+          settings.locale,
+          settings.timezone,
           data.plan_context_key ?? null,
         );
       }
@@ -389,7 +395,10 @@ function RecommendCardInner() {
   };
 
   const handleDurationPick = (opt: DurationOption) => {
-    applyConstraint(`時間を${opt.minutes}分に変更してください`, `duration_${opt.minutes}`);
+    applyConstraint(
+      `Please change this workout to ${opt.minutes} minutes.`,
+      `duration_${opt.minutes}`,
+    );
   };
 
   const handleRevert = () => {
@@ -417,7 +426,9 @@ function RecommendCardInner() {
     settings.coachAutonomy,
     settings.goal,
     settings.goalCustom,
+    settings.locale,
     settings.recommendMode,
+    settings.timezone,
     settings.usePersonalData,
     settings.ftp,
   ]);
@@ -481,6 +492,7 @@ function RecommendCardInner() {
   const restStronglyRecommended =
     !!recommendation?.summary &&
     (recommendation.summary.includes('完全休養') ||
+      recommendation.summary.toLowerCase().includes('full rest') ||
       recommendation.summary.toLowerCase().includes('rest day'));
   const maxPowerPercent =
     recommendation?.workout_intervals && recommendation.workout_intervals.length > 0
@@ -488,7 +500,7 @@ function RecommendCardInner() {
       : null;
   const isLowIntensityRec = maxPowerPercent !== null && maxPowerPercent < 75;
   const alternativeOptions = ALTERNATIVE_OPTIONS.filter(
-    (opt) => opt.label !== '完全休養' || isLowIntensityRec,
+    (opt) => opt.label !== 'Full rest' || isLowIntensityRec,
   );
   const proposed = recommendation?.proposed_session;
   const replaceCandidates =
@@ -556,7 +568,7 @@ function RecommendCardInner() {
       return;
     }
     if (!res.ok) {
-      setDecisionMessage('置き換えに失敗しました。');
+      setDecisionMessage('Could not replace the session.');
       return;
     }
     const status: WebhookDecisionStatus = 'replaced';
@@ -597,7 +609,7 @@ function RecommendCardInner() {
             gap: '0.5rem',
           }}
         >
-          🏋️ 次のおすすめ
+          🏋️ Next Recommendation
         </h3>
         {sourceBadge && (
           <span
@@ -663,9 +675,9 @@ function RecommendCardInner() {
               borderRadius: 'var(--radius-sm)',
               opacity: 0.8,
             }}
-            title="目標を変更"
+            title="Change goal"
           >
-            変更
+            Change
           </button>
         </div>
       ) : (
@@ -694,18 +706,18 @@ function RecommendCardInner() {
               width: '100%',
             }}
           >
-            <option value="hillclimb_tt">🏔️ レース準備（ヒルクライム / TT）</option>
-            <option value="road_race">🏁 レース準備（ロードレース）</option>
-            <option value="ftp_improvement">⚡ FTP向上</option>
-            <option value="fitness_maintenance">💪 体力維持</option>
-            <option value="other">✏️ その他（自由入力）</option>
+            <option value="hillclimb_tt">🏔️ Race prep (hill climb / TT)</option>
+            <option value="road_race">🏁 Race prep (road race)</option>
+            <option value="ftp_improvement">⚡ FTP improvement</option>
+            <option value="fitness_maintenance">💪 Fitness maintenance</option>
+            <option value="other">✏️ Other (custom)</option>
           </select>
           {editGoal === 'other' && (
             <input
               type="text"
               value={editGoalCustom}
               onChange={(e) => setEditGoalCustom(e.target.value)}
-              placeholder="例: トライアスロン準備、グラベルレース..."
+              placeholder="Example: triathlon prep, gravel race..."
               style={{
                 marginTop: '0.5rem',
                 padding: '0.5rem 0.75rem',
@@ -738,7 +750,7 @@ function RecommendCardInner() {
                 color: 'var(--foreground)',
               }}
             >
-              キャンセル
+              Cancel
             </button>
             <button
               onClick={handleSaveGoal}
@@ -753,7 +765,7 @@ function RecommendCardInner() {
                 fontWeight: 600,
               }}
             >
-              保存
+              Save
             </button>
           </div>
         </div>
@@ -856,14 +868,14 @@ function RecommendCardInner() {
                   {(() => {
                     const raw = recommendation.created_at;
                     const iso = /[Z+]/.test(raw) ? raw : raw.replace(' ', 'T') + 'Z';
-                    return ` · ${new Date(iso).toLocaleString('ja-JP', {
-                      timeZone: 'Asia/Tokyo',
+                    return ` · ${new Date(iso).toLocaleString('en-US', {
+                      timeZone: settings.timezone,
                       hour12: false,
                     })}`;
                   })()}
                 </span>
               )}
-              <span>{expanded ? '▲ 閉じる' : '▼ 詳しく見る'}</span>
+              <span>{expanded ? '▲ Close' : '▼ Details'}</span>
             </div>
           </div>
 
@@ -906,12 +918,12 @@ function RecommendCardInner() {
                     </div>
                   ) : (
                     <div style={{ marginBottom: '0.5rem', opacity: 0.7 }}>
-                      置き換え対象の weekly plan session が見つかりません。
+                      No Weekly Plan session was found to replace.
                     </div>
                   )}
                   <div style={{ display: 'flex', gap: '0.5rem', flexWrap: 'wrap' }}>
                     <button type="button" onClick={keepWeeklyPlan} style={chipStyle}>
-                      変更なし
+                      Keep plan
                     </button>
                     {replaceCandidates.length > 1 && (
                       <select
@@ -944,7 +956,7 @@ function RecommendCardInner() {
                         cursor: canReplace ? 'pointer' : 'not-allowed',
                       }}
                     >
-                      置き換える
+                      Replace
                     </button>
                   </div>
                 </>
@@ -1000,11 +1012,11 @@ function RecommendCardInner() {
                     borderColor: openPanels.has('detail') ? 'var(--primary)' : 'var(--border)',
                   }}
                 >
-                  なぜこの提案？
+                  Why this?
                 </button>
 
                 <DropdownChip
-                  label="別案を見る"
+                  label="Alternatives"
                   active={openPanels.has('alternatives')}
                   onToggle={() => togglePanel('alternatives')}
                   disabled={loading}
@@ -1014,7 +1026,7 @@ function RecommendCardInner() {
                     <MenuItem
                       key={opt.label}
                       onClick={() => handleAlternativePick(opt)}
-                      disabled={opt.label === '重め' && restStronglyRecommended}
+                      disabled={opt.label === 'Harder' && restStronglyRecommended}
                     >
                       {opt.label}
                     </MenuItem>
@@ -1022,7 +1034,7 @@ function RecommendCardInner() {
                 </DropdownChip>
 
                 <DropdownChip
-                  label="時間変更"
+                  label="Duration"
                   active={openPanels.has('duration')}
                   onToggle={() => togglePanel('duration')}
                   disabled={loading}
@@ -1060,7 +1072,7 @@ function RecommendCardInner() {
                     opacity: 0.8,
                   }}
                 >
-                  元の提案に戻す
+                  Revert recommendation
                 </button>
               )}
 

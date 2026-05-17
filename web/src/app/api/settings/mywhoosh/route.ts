@@ -40,7 +40,7 @@ export function resolveMyWhooshSaveError(error: unknown): { message: string; sta
   if (message.includes('KMS_KEY_NAME')) {
     return {
       message:
-        'KMS_KEY_NAME が未設定です。MyWhoosh 認証情報を保存するには web/.env.local または Cloud Run env に KMS_KEY_NAME を設定してください。',
+        'KMS_KEY_NAME is not set. Set it in web/.env.local or Cloud Run env to save MyWhoosh credentials.',
       status: 503,
     };
   }
@@ -50,7 +50,7 @@ export function resolveMyWhooshSaveError(error: unknown): { message: string; sta
   ) {
     return {
       message:
-        'KMS 暗号化に失敗しました。KMS_KEY_NAME と web service account の Cloud KMS CryptoKey Encrypter 権限を確認してください。',
+        'KMS encryption failed. Check KMS_KEY_NAME and the Cloud KMS CryptoKey Encrypter role for the web service account.',
       status: 502,
     };
   }
@@ -117,22 +117,22 @@ export function myWhooshVerificationLogMessage(
   verification: MyWhooshVerification,
   action: 'save' | 'test' = 'save',
 ): string {
-  const prefix = action === 'save' ? 'MyWhoosh 設定を保存しました' : 'MyWhoosh ログイン確認';
+  const prefix = action === 'save' ? 'MyWhoosh settings save' : 'MyWhoosh login check';
   if (verification.status === 'verified') {
     return action === 'save'
-      ? 'MyWhoosh 設定を保存し、ログイン確認に成功しました'
-      : 'MyWhoosh ログイン確認に成功しました';
+      ? 'MyWhoosh settings saved and login check succeeded'
+      : 'MyWhoosh login check succeeded';
   }
   if (verification.status === 'already_logged_in') {
-    return `${prefix}は、別デバイスでログイン中のため完了できませんでした: ${verification.message}`;
+    return `${prefix} could not complete because another device is already logged in: ${verification.message}`;
   }
   if (verification.status === 'missing') {
-    return `${prefix}は、認証情報を確認できませんでした: ${verification.message}`;
+    return `${prefix} could not verify the credentials: ${verification.message}`;
   }
   if (verification.status === 'skipped') {
-    return `${prefix}は未実行です: ${verification.message}`;
+    return `${prefix} was skipped: ${verification.message}`;
   }
-  return `${prefix}に失敗しました: ${verification.message}`;
+  return `${prefix} failed: ${verification.message}`;
 }
 
 async function recordMyWhooshVerificationLog(

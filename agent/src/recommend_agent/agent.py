@@ -39,7 +39,7 @@ _COACH_DAILY_PROMPT = """
 """
 
 # Cache agents by (mode, use_personal_data) to avoid rebuilding per request
-_agent_cache: dict[tuple[str, bool, str], Agent] = {}
+_agent_cache: dict[tuple[str, bool, str, str], Agent] = {}
 
 
 def _build_tools(mode: str, use_personal_data: bool, trigger: str = "dashboard") -> list:
@@ -90,7 +90,26 @@ def _build_tools(mode: str, use_personal_data: bool, trigger: str = "dashboard")
     return tools
 
 
-def _build_instruction(mode: str, use_personal_data: bool) -> str:
+def _language_instruction(locale: str) -> str:
+    if locale == "en":
+        return """
+
+## Output Language Override
+
+Use English for all user-facing prose in the JSON values, including `summary`, `why_now`,
+`based_on`, `detail`, `workoutName`, `proposed_session.notes`, and `proposed_session.reason`.
+Do not translate JSON keys or canonical enum values such as `session_type`.
+"""
+    return """
+
+## Output Language Override
+
+Use Japanese for all user-facing prose in the JSON values. Do not translate JSON keys or
+canonical enum values such as `session_type`.
+"""
+
+
+def _build_instruction(mode: str, use_personal_data: bool, locale: str = "ja") -> str:
     prompt = _SYSTEM_PROMPT if use_personal_data else _GENERIC_PROMPT
 
     _old_rules = (
@@ -141,15 +160,21 @@ def _build_instruction(mode: str, use_personal_data: bool) -> str:
             "",
         )
 
-    return prompt
+    return prompt + _language_instruction(locale)
 
 
-def build_agent(mode: str, use_personal_data: bool, trigger: str = "dashboard") -> Agent:
-    key = (mode, use_personal_data, trigger)
+def build_agent(
+    mode: str,
+    use_personal_data: bool,
+    trigger: str = "dashboard",
+    locale: str = "ja",
+) -> Agent:
+    normalized_locale = "en" if locale == "en" else "ja"
+    key = (mode, use_personal_data, trigger, normalized_locale)
     if key in _agent_cache:
         return _agent_cache[key]
 
-    instruction = _build_instruction(mode, use_personal_data)
+    instruction = _build_instruction(mode, use_personal_data, normalized_locale)
     if trigger == "webhook":
         instruction = instruction + "\n\n" + _WEBHOOK_PROMPT
     elif trigger == "weekly":
@@ -171,22 +196,23 @@ def build_agent(mode: str, use_personal_data: bool, trigger: str = "dashboard") 
     return agent
 
 
-_insight_agent: Agent | None = None
+_insight_agents: dict[str, Agent] = {}
 
 
-def build_insight_agent() -> Agent:
-    global _insight_agent
-    if _insight_agent is not None:
-        return _insight_agent
+def build_insight_agent(locale: str = "ja") -> Agent:
+    normalized_locale = "en" if locale == "en" else "ja"
+    if normalized_locale in _insight_agents:
+        return _insight_agents[normalized_locale]
 
-    _insight_agent = Agent(
+    agent = Agent(
         name="insight_agent",
         model="gemini-3-flash-preview",
         description="Generates user-facing insight text from detected training signals.",
-        instruction=_INSIGHT_PROMPT,
+        instruction=_INSIGHT_PROMPT + _language_instruction(normalized_locale),
         tools=[],
     )
-    return _insight_agent
+    _insight_agents[normalized_locale] = agent
+    return agent
 
 
 root_agent = build_agent(RECOMMEND_MODE, USE_PERSONAL_DATA)

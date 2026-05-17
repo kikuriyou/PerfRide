@@ -5,6 +5,8 @@ from recommend_agent.tools._request_context import resolve_user_id
 
 _ALLOWED_FIELDS = {
     "coach_autonomy",
+    "locale",
+    "timezone",
     "ftp",
     "weight_kg",
     "max_hr",
@@ -33,6 +35,10 @@ def get_user_profile(user_id: str = "default") -> dict:
             data["coach_autonomy"]
             if isinstance(data.get("coach_autonomy"), str)
             else "suggest"
+        )
+        profile["locale"] = data["locale"] if data.get("locale") in {"ja", "en"} else "ja"
+        profile["timezone"] = (
+            data["timezone"] if isinstance(data.get("timezone"), str) else "Asia/Tokyo"
         )
         profile["goal"] = {
             "type": goal["type"] if isinstance(goal.get("type"), str) else "fitness_maintenance",

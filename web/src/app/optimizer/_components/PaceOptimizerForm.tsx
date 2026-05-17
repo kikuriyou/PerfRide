@@ -204,7 +204,9 @@ export default function PaceOptimizerForm({ segments = [] }: PaceOptimizerFormPr
     <div style={{ display: 'grid', gap: '1.5rem' }}>
       {/* Course Selection */}
       <div>
-        <h3 style={{ marginTop: 0, marginBottom: '1rem', fontSize: '1rem' }}>🗺️ コース選択</h3>
+        <h3 style={{ marginTop: 0, marginBottom: '1rem', fontSize: '1rem' }}>
+          🗺️ Course Selection
+        </h3>
 
         <div style={{ display: 'flex', gap: '0.5rem', marginBottom: '1rem', flexWrap: 'wrap' }}>
           <button
@@ -218,7 +220,7 @@ export default function PaceOptimizerForm({ segments = [] }: PaceOptimizerFormPr
               cursor: 'pointer',
             }}
           >
-            プリセット
+            Presets
           </button>
           {hasSegments && (
             <button
@@ -232,7 +234,7 @@ export default function PaceOptimizerForm({ segments = [] }: PaceOptimizerFormPr
                 cursor: 'pointer',
               }}
             >
-              ⭐ Stravaセグメント
+              ⭐ Strava Segments
             </button>
           )}
         </div>
@@ -282,7 +284,7 @@ export default function PaceOptimizerForm({ segments = [] }: PaceOptimizerFormPr
             </select>
             {isLoadingSegment && (
               <div style={{ marginTop: '0.5rem', fontSize: '0.85rem', opacity: 0.7 }}>
-                ⏳ セグメントデータを読み込み中...
+                ⏳ Loading segment data...
               </div>
             )}
           </div>
@@ -298,7 +300,7 @@ export default function PaceOptimizerForm({ segments = [] }: PaceOptimizerFormPr
             fontSize: '0.9rem',
           }}
         >
-          <strong>選択中:</strong> {course.name} ({(course.totalDistance / 1000).toFixed(2)}km)
+          <strong>Selected:</strong> {course.name} ({(course.totalDistance / 1000).toFixed(2)}km)
         </div>
       </div>
 
@@ -308,7 +310,7 @@ export default function PaceOptimizerForm({ segments = [] }: PaceOptimizerFormPr
           <label
             style={{ display: 'block', marginBottom: '0.5rem', fontSize: '0.85rem', opacity: 0.8 }}
           >
-            体重: <strong>{riderWeight} kg</strong>
+            Rider weight: <strong>{riderWeight} kg</strong>
           </label>
           <input
             type="range"
@@ -324,7 +326,7 @@ export default function PaceOptimizerForm({ segments = [] }: PaceOptimizerFormPr
           <label
             style={{ display: 'block', marginBottom: '0.5rem', fontSize: '0.85rem', opacity: 0.8 }}
           >
-            自転車: <strong>{bikeWeight} kg</strong>
+            Bike: <strong>{bikeWeight} kg</strong>
           </label>
           <input
             type="range"
@@ -341,7 +343,7 @@ export default function PaceOptimizerForm({ segments = [] }: PaceOptimizerFormPr
           <label
             style={{ display: 'block', marginBottom: '0.5rem', fontSize: '0.85rem', opacity: 0.8 }}
           >
-            目標NP: <strong>{targetNP} W</strong>
+            Target NP: <strong>{targetNP} W</strong>
           </label>
           <input
             type="range"
@@ -374,7 +376,7 @@ export default function PaceOptimizerForm({ segments = [] }: PaceOptimizerFormPr
           transition: 'all 0.2s',
         }}
       >
-        {isOptimizing ? '⏳ 最適化中...' : '🎯 最適ペースを計算'}
+        {isOptimizing ? '⏳ Optimizing...' : '🎯 Calculate Optimal Pace'}
       </button>
 
       {/* Results */}
@@ -407,7 +409,7 @@ export default function PaceOptimizerForm({ segments = [] }: PaceOptimizerFormPr
               >
                 {formatTime(result.estimatedTime)}
               </div>
-              <div style={{ fontSize: '0.75rem', opacity: 0.7 }}>最適化タイム</div>
+              <div style={{ fontSize: '0.75rem', opacity: 0.7 }}>Optimized Time</div>
             </div>
 
             <div
@@ -421,7 +423,7 @@ export default function PaceOptimizerForm({ segments = [] }: PaceOptimizerFormPr
               <div style={{ fontSize: '1.5rem', fontWeight: 700, opacity: 0.6 }}>
                 {formatTime(result.constantPowerTime)}
               </div>
-              <div style={{ fontSize: '0.75rem', opacity: 0.7 }}>一定パワー</div>
+              <div style={{ fontSize: '0.75rem', opacity: 0.7 }}>Constant Power</div>
             </div>
 
             <div
@@ -441,7 +443,7 @@ export default function PaceOptimizerForm({ segments = [] }: PaceOptimizerFormPr
               >
                 −{result.improvement.toFixed(2)}%
               </div>
-              <div style={{ fontSize: '0.75rem', opacity: 0.7 }}>改善率</div>
+              <div style={{ fontSize: '0.75rem', opacity: 0.7 }}>Improvement</div>
             </div>
 
             <div
@@ -455,7 +457,7 @@ export default function PaceOptimizerForm({ segments = [] }: PaceOptimizerFormPr
               <div style={{ fontSize: '1.5rem', fontWeight: 700 }}>
                 {Math.round(result.actualNP)} W
               </div>
-              <div style={{ fontSize: '0.75rem', opacity: 0.7 }}>実際のNP</div>
+              <div style={{ fontSize: '0.75rem', opacity: 0.7 }}>Actual NP</div>
             </div>
           </div>
 
@@ -469,7 +471,7 @@ export default function PaceOptimizerForm({ segments = [] }: PaceOptimizerFormPr
             }}
           >
             <h3 style={{ marginTop: 0, marginBottom: '1rem', fontSize: '1rem' }}>
-              ⚡ パワー・速度プロファイル
+              ⚡ Power and Speed Profile
             </h3>
             <ResponsiveContainer width="100%" height={280}>
               <LineChart data={chartData} syncId="paceOptimizer">
@@ -502,8 +504,8 @@ export default function PaceOptimizerForm({ segments = [] }: PaceOptimizerFormPr
                     borderRadius: '8px',
                   }}
                   formatter={(value: number, name: string) => {
-                    if (name === '速度') return [`${value} km/h`, name];
-                    return [`${value}W`, name === '最適化パワー' ? '最適化' : '一定'];
+                    if (name === 'Speed') return [`${value} km/h`, name];
+                    return [`${value}W`, name === 'Optimized Power' ? 'Optimized' : 'Constant'];
                   }}
                   labelFormatter={(v) => `${v.toFixed(2)} km`}
                 />
@@ -515,7 +517,7 @@ export default function PaceOptimizerForm({ segments = [] }: PaceOptimizerFormPr
                   stroke="var(--primary)"
                   strokeWidth={2}
                   dot={false}
-                  name="最適化パワー"
+                  name="Optimized Power"
                 />
                 <Line
                   yAxisId="power"
@@ -525,7 +527,7 @@ export default function PaceOptimizerForm({ segments = [] }: PaceOptimizerFormPr
                   strokeWidth={2}
                   strokeDasharray="5 5"
                   dot={false}
-                  name="一定パワー"
+                  name="Constant Power"
                 />
                 <Line
                   yAxisId="velocity"
@@ -534,7 +536,7 @@ export default function PaceOptimizerForm({ segments = [] }: PaceOptimizerFormPr
                   stroke="#22c55e"
                   strokeWidth={2}
                   dot={false}
-                  name="速度"
+                  name="Speed"
                 />
                 <ReferenceLine
                   yAxisId="power"
@@ -557,7 +559,7 @@ export default function PaceOptimizerForm({ segments = [] }: PaceOptimizerFormPr
             }}
           >
             <h3 style={{ marginTop: 0, marginBottom: '1rem', fontSize: '1rem' }}>
-              ⛰️ 標高・勾配プロファイル
+              ⛰️ Elevation and Gradient Profile
             </h3>
             <ResponsiveContainer width="100%" height={180}>
               <LineChart data={elevationData} syncId="paceOptimizer">
@@ -589,7 +591,7 @@ export default function PaceOptimizerForm({ segments = [] }: PaceOptimizerFormPr
                     borderRadius: '8px',
                   }}
                   formatter={(value: number, name: string) => {
-                    if (name === '標高') return [`${Math.round(value)}m`, name];
+                    if (name === 'Elevation') return [`${Math.round(value)}m`, name];
                     return [`${value}%`, name];
                   }}
                   labelFormatter={(v) => `${v.toFixed(2)} km`}
@@ -602,7 +604,7 @@ export default function PaceOptimizerForm({ segments = [] }: PaceOptimizerFormPr
                   stroke="#8b5cf6"
                   strokeWidth={2}
                   dot={false}
-                  name="標高"
+                  name="Elevation"
                 />
                 <Line
                   yAxisId="gradient"
@@ -611,7 +613,7 @@ export default function PaceOptimizerForm({ segments = [] }: PaceOptimizerFormPr
                   stroke="#22c55e"
                   strokeWidth={1.5}
                   dot={false}
-                  name="勾配"
+                  name="Gradient"
                 />
               </LineChart>
             </ResponsiveContainer>
@@ -627,9 +629,9 @@ export default function PaceOptimizerForm({ segments = [] }: PaceOptimizerFormPr
               opacity: 0.8,
             }}
           >
-            <strong>💡 最適化の解説:</strong> 登りや向かい風区間ではパワーを上げ、
-            下りや追い風区間ではパワーを抑えることで、同じNPでもタイムを短縮できます。
-            これは一定パワーで走るより効率的なエネルギー配分を実現します。
+            <strong>💡 Optimization note:</strong> The model raises power on climbs or headwind
+            sections and reduces it on descents or tailwind sections, shortening time at the same NP
+            compared with a constant-power strategy.
           </div>
         </>
       )}

@@ -17,8 +17,8 @@ describe('training session display helpers', () => {
   });
 
   it('does not mix workout types with rest labels', () => {
-    expect(formatSessionDuration({ type: 'sweetspot' })).toBe('時間未定');
-    expect(formatSessionBrief({ type: 'sweetspot' })).toBe('Sweetspot 時間未定');
-    expect(formatSessionBrief({ type: 'rest', duration_minutes: 45 })).toBe('休養');
+    expect(formatSessionDuration({ type: 'sweetspot' })).toBe('Duration TBD');
+    expect(formatSessionBrief({ type: 'sweetspot' })).toBe('Sweetspot Duration TBD');
+    expect(formatSessionBrief({ type: 'rest', duration_minutes: 45 })).toBe('Rest');
   });
 });

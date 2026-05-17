@@ -34,7 +34,7 @@ interface WeeklyPlanData {
 }
 
 function todaySummary(sessions: TodaySession[]): string {
-  if (sessions.length === 0) return '今日は休養または予定なし';
+  if (sessions.length === 0) return 'Rest or no session';
   return sessions.map((session) => formatSessionBrief(session)).join(' / ');
 }
 
@@ -78,7 +78,7 @@ export default function WeeklyPlanCard() {
           fontSize: '0.8rem',
         }}
       >
-        今週のプランを読み込み中...
+        Loading weekly plan...
       </div>
     );
   }
@@ -116,7 +116,7 @@ export default function WeeklyPlanCard() {
             whiteSpace: 'nowrap',
           }}
         >
-          <strong style={{ fontSize: '0.86rem' }}>今週のプラン</strong>
+          <strong style={{ fontSize: '0.86rem' }}>Weekly Plan</strong>
           <span style={separator}> · </span>
           <span style={{ opacity: 0.7, textTransform: 'capitalize' }}>{currentWeek.phase}</span>
           <span style={separator}> · </span>
@@ -126,7 +126,7 @@ export default function WeeklyPlanCard() {
           <strong>{currentWeek.target_tss}</strong>
           <span style={{ opacity: 0.6, marginLeft: '0.2rem' }}>TSS</span>
           <span style={separator}> · </span>
-          <span style={{ opacity: 0.55, marginRight: '0.35rem' }}>今日</span>
+          <span style={{ opacity: 0.55, marginRight: '0.35rem' }}>Today</span>
           {todayText}
         </div>
         <Link
@@ -143,7 +143,7 @@ export default function WeeklyPlanCard() {
             flexShrink: 0,
           }}
         >
-          見る
+          Open
         </Link>
       </div>
     </div>

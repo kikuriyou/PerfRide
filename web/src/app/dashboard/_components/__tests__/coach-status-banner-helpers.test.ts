@@ -27,7 +27,7 @@ describe('coach status banner helpers', () => {
     });
 
     expect(selectCoachStatusItem(items, new Set())?.message).toBe(
-      '最新ライドから、おすすめを更新しました。',
+      'Recommendation updated after your latest ride.',
     );
   });
 
@@ -38,7 +38,7 @@ describe('coach status banner helpers', () => {
       })[0],
     ).toMatchObject({
       id: 'weekly:2026-04-27:1',
-      message: '今週のプランを作成しました。',
+      message: 'Weekly plan created.',
       href: '/weekly-plan',
     });
 
@@ -46,7 +46,7 @@ describe('coach status banner helpers', () => {
       buildCoachStatusCandidates({
         currentWeek: { week_start: '2026-04-27', plan_revision: 3 },
       })[0]?.message,
-    ).toBe('今週のプランを更新しました。');
+    ).toBe('Weekly plan updated.');
   });
 
   it('skips dismissed items', () => {

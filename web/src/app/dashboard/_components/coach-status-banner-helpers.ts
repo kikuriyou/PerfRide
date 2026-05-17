@@ -48,8 +48,8 @@ export function buildCoachStatusCandidates(
       id: `webhook:${suffix}`,
       kind: 'webhook_recommendation',
       priority: 0,
-      message: '最新ライドから、おすすめを更新しました。',
-      actionLabel: '見る',
+      message: 'Recommendation updated after your latest ride.',
+      actionLabel: 'Open',
       href: '/dashboard',
     });
   }
@@ -61,8 +61,8 @@ export function buildCoachStatusCandidates(
       id: `weekly:${week.week_start}:${week.plan_revision}`,
       kind: created ? 'weekly_plan_created' : 'weekly_plan_updated',
       priority: 1,
-      message: created ? '今週のプランを作成しました。' : '今週のプランを更新しました。',
-      actionLabel: '見る',
+      message: created ? 'Weekly plan created.' : 'Weekly plan updated.',
+      actionLabel: 'Open',
       href: '/weekly-plan',
     });
   }

@@ -12,6 +12,7 @@ import {
   readWeeklyPlanReview,
 } from '@/lib/gcs-settings';
 import type { CoachDecisionRecord } from '@/lib/gcs-schema';
+import type { UserLocale } from '@/lib/gcs-schema';
 import { getCurrentPlanContext, isoDate } from '@/lib/weekly-plan';
 
 interface RecommendBody {
@@ -21,6 +22,8 @@ interface RecommendBody {
   recommendMode?: string | null;
   usePersonalData?: boolean | null;
   coachAutonomy?: 'observe' | 'suggest' | 'coach' | null;
+  locale?: UserLocale | null;
+  timezone?: string | null;
   constraint?: string | null;
   mode?: string;
   asOf?: string | null;
@@ -78,14 +81,20 @@ export function validWebhookDecision(
   return decision;
 }
 
-export function decisionResponse(decision: CoachDecisionRecord): Record<string, unknown> {
+export function decisionResponse(
+  decision: CoachDecisionRecord,
+  locale: UserLocale = 'ja',
+): Record<string, unknown> {
   return {
     summary: decision.summary,
     detail: decision.detail ?? decision.summary,
     created_at: decision.created_at,
     from_cache: false,
     why_now: decision.why_now ?? null,
-    based_on: 'アクティビティ完了後のコーチ判断',
+    based_on:
+      locale === 'en'
+        ? 'Coach decision after completed activity'
+        : 'アクティビティ完了後のコーチ判断',
     plan_context_key: decision.plan_context_key ?? null,
     proposed_session: decision.proposed_session ?? null,
     activity_id: decision.activity_id ?? null,
@@ -95,13 +104,28 @@ export function decisionResponse(decision: CoachDecisionRecord): Record<string, 
   };
 }
 
+function normalizeLocale(value: unknown, fallback: UserLocale = 'ja'): UserLocale {
+  return value === 'en' || value === 'ja' ? value : fallback;
+}
+
+function normalizeTimezone(value: unknown, fallback = 'Asia/Tokyo'): string {
+  const candidate = typeof value === 'string' && value.trim() ? value.trim() : fallback;
+  try {
+    new Intl.DateTimeFormat('en-US', { timeZone: candidate }).format(new Date());
+    return candidate;
+  } catch {
+    return fallback;
+  }
+}
+
 export function priorityDecisionResponse(
   decision: CoachDecisionRecord | null,
   today: string,
   latestActivity: { id?: number } | null,
+  locale: UserLocale = 'ja',
 ): Record<string, unknown> | null {
   const webhookDecision = validWebhookDecision(decision, today, latestActivity);
-  return webhookDecision ? decisionResponse(webhookDecision) : null;
+  return webhookDecision ? decisionResponse(webhookDecision, locale) : null;
 }
 
 export async function POST(request: Request) {
@@ -126,6 +150,8 @@ export async function POST(request: Request) {
 
     const userSettings = await readUserSettings(userId, { fallbackLegacy: true });
     const coachAutonomy = body.coachAutonomy ?? userSettings?.coach_autonomy ?? 'suggest';
+    const locale = normalizeLocale(body.locale ?? userSettings?.locale);
+    const timezone = normalizeTimezone(body.timezone ?? userSettings?.timezone);
     const [trainingPlan, reviewStore, coachDecision, rawActivityCache] = await Promise.all([
       readTrainingPlan(userId),
       readWeeklyPlanReview(userId),
@@ -146,7 +172,12 @@ export async function POST(request: Request) {
     const shouldUsePriority =
       !body.constraint && !body.asOf && body.mode !== 'insight' && coachAutonomy === 'coach';
     if (shouldUsePriority) {
-      const priorityResponse = priorityDecisionResponse(coachDecision, today, latestActivity);
+      const priorityResponse = priorityDecisionResponse(
+        coachDecision,
+        today,
+        latestActivity,
+        locale,
+      );
       if (priorityResponse) {
         return NextResponse.json(priorityResponse);
       }
@@ -162,6 +193,8 @@ export async function POST(request: Request) {
         recommend_mode: body.recommendMode || null,
         use_personal_data: body.usePersonalData ?? null,
         coach_autonomy: coachAutonomy,
+        locale,
+        timezone,
         plan_context_key: planContext.planContextKey,
         constraint: body.constraint || null,
         mode: body.mode || 'recommend',

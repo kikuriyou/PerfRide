@@ -8,14 +8,14 @@ import {
 
 describe('AgentOperationLogPanel helpers', () => {
   it('labels known operation statuses', () => {
-    expect(agentOperationStatusLabel('triggered')).toBe('トリガーON');
-    expect(agentOperationStatusLabel('completed')).toBe('完了');
+    expect(agentOperationStatusLabel('triggered')).toBe('Triggered');
+    expect(agentOperationStatusLabel('completed')).toBe('Done');
   });
 
   it('labels known operation names', () => {
-    expect(agentOperationLabel('webhook_recommend')).toBe('Webhook 推薦');
-    expect(agentOperationLabel('mywhoosh_settings')).toBe('MyWhoosh 設定');
-    expect(agentOperationLabel('intervals_icu_settings')).toBe('Intervals.icu 設定');
+    expect(agentOperationLabel('webhook_recommend')).toBe('Webhook recommendation');
+    expect(agentOperationLabel('mywhoosh_settings')).toBe('MyWhoosh settings');
+    expect(agentOperationLabel('intervals_icu_settings')).toBe('Intervals.icu settings');
     expect(agentOperationLabel('custom_process')).toBe('custom_process');
   });
 

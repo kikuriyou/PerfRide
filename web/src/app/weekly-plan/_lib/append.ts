@@ -47,7 +47,7 @@ export async function submitAppend(
       status: 'conflict',
       message:
         (raw as { message?: string } | null)?.message ??
-        'プランが更新されています。再読み込みしてからもう一度選んでください。',
+        'The plan has changed. Reload and try again.',
       currentPlanRevision: typeof current === 'number' ? current : undefined,
       raw,
     };

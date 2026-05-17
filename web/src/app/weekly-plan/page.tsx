@@ -21,8 +21,8 @@ interface WeeklyPlanPageProps {
 }
 
 function statusLabel(status: string): string {
-  if (status === 'approved') return '現在のプラン';
-  if (status === 'draft') return '下書き';
+  if (status === 'approved') return 'Current plan';
+  if (status === 'draft') return 'Draft';
   return status;
 }
 
@@ -40,7 +40,7 @@ function PastPlanArchive({ weeks, today }: { weeks: ApprovedWeekPayload[]; today
             padding: '0.65rem 0',
           }}
         >
-          過去のプラン ({weeks.length})
+          Past Plans ({weeks.length})
         </summary>
         <div style={{ display: 'grid', gap: '0.75rem', paddingTop: '0.35rem' }}>
           {weeks.map((week) => (
@@ -112,7 +112,7 @@ export default async function WeeklyPlanPage({ searchParams }: WeeklyPlanPagePro
         <p style={{ margin: '0.3rem 0 0', opacity: 0.7, fontSize: '0.85rem' }}>
           Week of {weekStart} ·{' '}
           {referenceState.asOf
-            ? `確認日時 ${formatJstClockLabel(referenceState.asOf)} JST`
+            ? `review clock ${formatJstClockLabel(referenceState.asOf)} JST`
             : `today ${today}`}
         </p>
       </header>

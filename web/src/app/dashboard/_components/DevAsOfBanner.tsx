@@ -26,7 +26,7 @@ export default function DevAsOfBanner() {
     >
       <span>🧪</span>
       <span>
-        開発モード: <strong>{display}</strong> 時点の推薦を表示中（キャッシュは無効）
+        Dev mode: showing recommendations as of <strong>{display}</strong>; cache disabled.
       </span>
     </div>
   );

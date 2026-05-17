@@ -7,14 +7,14 @@
 export const TIRE_TYPES = {
   road: {
     id: 'road',
-    label: '🚴 ロードタイヤ',
-    description: '標準',
+    label: '🚴 Road tires',
+    description: 'Standard',
     crr: 0.004,
   },
   gravel: {
     id: 'gravel',
-    label: '🌲 グラベルタイヤ',
-    description: 'やや遅め',
+    label: '🌲 Gravel tires',
+    description: 'Slightly slower',
     crr: 0.005,
   },
 } as const;

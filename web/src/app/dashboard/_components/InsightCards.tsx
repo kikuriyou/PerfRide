@@ -92,6 +92,8 @@ export default function InsightCards() {
             usePersonalData: settings.usePersonalData,
             mode: 'insight',
             asOf: settings.asOf ?? null,
+            locale: settings.locale,
+            timezone: settings.timezone,
           }),
         });
 
@@ -129,6 +131,8 @@ export default function InsightCards() {
     settings.usePersonalData,
     settings.coachAutonomy,
     settings.asOf,
+    settings.locale,
+    settings.timezone,
   ]);
 
   const toggleExpand = (type: string) => {
@@ -189,7 +193,7 @@ export default function InsightCards() {
                   padding: '0.25rem 0.5rem',
                 }}
               >
-                {expanded ? '閉じる' : '詳しく見る'}
+                {expanded ? 'Close' : 'Details'}
               </button>
             </div>
 

@@ -7,10 +7,11 @@ import {
   type CoachAutonomy,
   type DayName,
   type GCSUserSettings,
+  type UserLocale,
   type WeeklySchedule,
 } from '@/lib/gcs-schema';
 
-export type { CoachAutonomy } from '@/lib/gcs-schema';
+export type { CoachAutonomy, UserLocale } from '@/lib/gcs-schema';
 
 export type RecommendMode = 'hybrid' | 'web_only' | 'no_grounding';
 export type GoalType =
@@ -30,6 +31,8 @@ export interface UserSettings {
   recommendMode: RecommendMode;
   usePersonalData: boolean;
   coachAutonomy: CoachAutonomy;
+  locale: UserLocale;
+  timezone: string;
   weeklySchedule: WeeklySchedule;
   asOf: string | null;
 }
@@ -41,6 +44,7 @@ interface SettingsContextType {
 }
 
 const DAY_NAMES: DayName[] = ['mon', 'tue', 'wed', 'thu', 'fri', 'sat', 'sun'];
+const FALLBACK_TIMEZONE = 'Asia/Tokyo';
 
 const defaultSettings: UserSettings = {
   ftp: 200,
@@ -52,6 +56,8 @@ const defaultSettings: UserSettings = {
   recommendMode: 'hybrid',
   usePersonalData: true,
   coachAutonomy: 'suggest',
+  locale: 'ja',
+  timezone: FALLBACK_TIMEZONE,
   weeklySchedule: DEFAULT_WEEKLY_SCHEDULE,
   asOf: null,
 };
@@ -70,6 +76,25 @@ function syncAsOfCookie(asOf: string | null) {
   document.cookie = `perfride_as_of=${encodeURIComponent(
     asOf,
   )}; path=/; max-age=31536000; SameSite=Lax`;
+}
+
+function browserTimezone(): string {
+  if (typeof window === 'undefined') return FALLBACK_TIMEZONE;
+  return Intl.DateTimeFormat().resolvedOptions().timeZone || FALLBACK_TIMEZONE;
+}
+
+function normalizeLocale(value: unknown): UserLocale {
+  return value === 'en' || value === 'ja' ? value : defaultSettings.locale;
+}
+
+function normalizeTimezone(value: unknown): string {
+  const candidate = typeof value === 'string' && value.trim() ? value.trim() : browserTimezone();
+  try {
+    new Intl.DateTimeFormat('en-US', { timeZone: candidate }).format(new Date());
+    return candidate;
+  } catch {
+    return browserTimezone();
+  }
 }
 
 function normalizeWeeklySchedule(input?: Partial<WeeklySchedule> | null): WeeklySchedule {
@@ -103,6 +128,8 @@ function mapGcsToSettings(gcs: GCSUserSettings): UserSettings {
     recommendMode: defaultSettings.recommendMode,
     usePersonalData: defaultSettings.usePersonalData,
     coachAutonomy: gcs.coach_autonomy ?? defaultSettings.coachAutonomy,
+    locale: normalizeLocale(gcs.locale),
+    timezone: normalizeTimezone(gcs.timezone),
     weeklySchedule: normalizeWeeklySchedule(gcs.training_preference?.weekly_schedule),
     asOf: null,
   };
@@ -111,12 +138,16 @@ function mapGcsToSettings(gcs: GCSUserSettings): UserSettings {
 function loadLocalSettings(): UserSettings {
   if (typeof window === 'undefined') return defaultSettings;
   const saved = localStorage.getItem('userSettings');
-  if (!saved) return defaultSettings;
+  if (!saved) {
+    return { ...defaultSettings, timezone: browserTimezone() };
+  }
   try {
     const parsed = JSON.parse(saved) as Partial<UserSettings>;
     return {
       ...defaultSettings,
       ...parsed,
+      locale: normalizeLocale(parsed.locale),
+      timezone: normalizeTimezone(parsed.timezone),
       goalCustom: parsed.goalCustom ?? '',
       goalDate: parsed.goalDate ?? null,
       weeklySchedule: normalizeWeeklySchedule(parsed.weeklySchedule),
@@ -131,6 +162,8 @@ function mergeServerSettings(local: UserSettings, remote: UserSettings): UserSet
   return {
     ...local,
     ...remote,
+    locale: remote.locale,
+    timezone: remote.timezone || local.timezone,
     weeklySchedule: normalizeWeeklySchedule(remote.weeklySchedule),
     asOf: local.asOf,
   };
@@ -203,7 +236,9 @@ export function SettingsProvider({ children }: { children: ReactNode }) {
         (newSettings.usePersonalData !== undefined &&
           newSettings.usePersonalData !== prev.usePersonalData) ||
         (newSettings.coachAutonomy !== undefined &&
-          newSettings.coachAutonomy !== prev.coachAutonomy);
+          newSettings.coachAutonomy !== prev.coachAutonomy) ||
+        (newSettings.locale !== undefined && newSettings.locale !== prev.locale) ||
+        (newSettings.timezone !== undefined && newSettings.timezone !== prev.timezone);
       if (shouldClearCache) {
         try {
           localStorage.removeItem('perfride_recommendation_cache');
@@ -214,6 +249,8 @@ export function SettingsProvider({ children }: { children: ReactNode }) {
       return {
         ...prev,
         ...newSettings,
+        locale: normalizeLocale(newSettings.locale ?? prev.locale),
+        timezone: normalizeTimezone(newSettings.timezone ?? prev.timezone),
         weeklySchedule: normalizeWeeklySchedule(newSettings.weeklySchedule ?? prev.weeklySchedule),
       };
     });

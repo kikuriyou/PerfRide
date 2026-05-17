@@ -5,11 +5,11 @@ import { useEffect, useState } from 'react';
 import type { AgentOperationLogRecord, AgentOperationLogStatus } from '@/lib/gcs-schema';
 
 const STATUS_LABELS: Record<AgentOperationLogStatus, string> = {
-  triggered: 'トリガーON',
-  started: '開始',
-  completed: '完了',
-  error: 'エラー',
-  skipped: 'スキップ',
+  triggered: 'Triggered',
+  started: 'Started',
+  completed: 'Done',
+  error: 'Error',
+  skipped: 'Skipped',
 };
 
 const STATUS_COLORS: Record<AgentOperationLogStatus, string> = {
@@ -22,14 +22,14 @@ const STATUS_COLORS: Record<AgentOperationLogStatus, string> = {
 
 const OPERATION_LABELS: Record<string, string> = {
   strava_webhook: 'Strava webhook',
-  webhook_recommend: 'Webhook 推薦',
-  daily_recommend: 'Daily 推薦',
-  daily_response: 'Daily 応答',
+  webhook_recommend: 'Webhook recommendation',
+  daily_recommend: 'Daily recommendation',
+  daily_response: 'Daily response',
   weekly_plan: 'Weekly plan',
   ambient_flow: 'Ambient flow',
-  workout_registration: 'Workout 登録',
-  mywhoosh_settings: 'MyWhoosh 設定',
-  intervals_icu_settings: 'Intervals.icu 設定',
+  workout_registration: 'Workout registration',
+  mywhoosh_settings: 'MyWhoosh settings',
+  intervals_icu_settings: 'Intervals.icu settings',
   insight: 'Insight',
 };
 
@@ -52,7 +52,7 @@ export function agentOperationLabel(operation: string): string {
 export function formatAgentLogTime(value: string): string {
   const date = new Date(value);
   if (Number.isNaN(date.getTime())) return value;
-  return new Intl.DateTimeFormat('ja-JP', {
+  return new Intl.DateTimeFormat('en-US', {
     timeZone: 'Asia/Tokyo',
     month: '2-digit',
     day: '2-digit',
@@ -94,7 +94,7 @@ export default function AgentOperationLogPanel({ refreshSignal = 0 }: AgentOpera
       const data = (await res.json()) as AgentLogsResponse;
       setLogs(Array.isArray(data.logs) ? data.logs : []);
     } catch {
-      setError('ログを取得できませんでした');
+      setError('Could not load logs');
     } finally {
       setLoading(false);
     }
@@ -111,7 +111,7 @@ export default function AgentOperationLogPanel({ refreshSignal = 0 }: AgentOpera
         const data = (await res.json()) as AgentLogsResponse;
         if (!cancelled) setLogs(Array.isArray(data.logs) ? data.logs : []);
       } catch {
-        if (!cancelled) setError('ログを取得できませんでした');
+        if (!cancelled) setError('Could not load logs');
       } finally {
         if (!cancelled) setLoading(false);
       }
@@ -134,9 +134,9 @@ export default function AgentOperationLogPanel({ refreshSignal = 0 }: AgentOpera
         }}
       >
         <div>
-          <h3 style={{ margin: 0, fontSize: '0.95rem' }}>Agent 動作ログ</h3>
+          <h3 style={{ margin: 0, fontSize: '0.95rem' }}>Agent Operation Log</h3>
           <div style={{ marginTop: '0.2rem', fontSize: '0.78rem', opacity: 0.65 }}>
-            直近 {logs.length} 件
+            Latest {logs.length}
           </div>
         </div>
         <button
@@ -152,14 +152,14 @@ export default function AgentOperationLogPanel({ refreshSignal = 0 }: AgentOpera
             fontSize: '0.82rem',
           }}
         >
-          更新
+          Refresh
         </button>
       </div>
 
-      {loading && <div style={{ fontSize: '0.9rem', opacity: 0.7 }}>読み込み中...</div>}
+      {loading && <div style={{ fontSize: '0.9rem', opacity: 0.7 }}>Loading...</div>}
       {!loading && error && <div style={{ color: '#c0392b', fontSize: '0.9rem' }}>{error}</div>}
       {!loading && !error && logs.length === 0 && (
-        <div style={{ fontSize: '0.9rem', opacity: 0.7 }}>ログはまだありません</div>
+        <div style={{ fontSize: '0.9rem', opacity: 0.7 }}>No logs yet</div>
       )}
       {!loading && !error && logs.length > 0 && (
         <div className="settings-log-list">

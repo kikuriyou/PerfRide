@@ -54,7 +54,7 @@ export function PendingReviewPanel({ review }: PendingReviewPanelProps) {
       }}
     >
       <div style={{ fontSize: '0.9rem', fontWeight: 600, marginBottom: '0.35rem' }}>
-        🔔 未承認の draft があります
+        🔔 Pending draft review
       </div>
       <div style={{ fontSize: '0.78rem', opacity: 0.75, marginBottom: '0.65rem' }}>
         Revision {review.plan_revision} · {review.week_start} · status {review.status}
@@ -81,7 +81,7 @@ export function PendingReviewPanel({ review }: PendingReviewPanelProps) {
           <textarea
             value={modifyText}
             onChange={(e) => setModifyText(e.target.value)}
-            placeholder="修正内容を入力 (例: 火曜の強度を下げてください)"
+            placeholder="Enter changes (example: lower Tuesday intensity)"
             rows={3}
             style={{
               width: '100%',
@@ -107,7 +107,7 @@ export function PendingReviewPanel({ review }: PendingReviewPanelProps) {
               onClick={() => dispatch('approve')}
               style={primaryButtonStyle('#4caf50', submitting !== null)}
             >
-              {submitting === 'approve' ? '処理中...' : '承認'}
+              {submitting === 'approve' ? 'Processing...' : 'Approve'}
             </button>
             <button
               type="button"
@@ -116,7 +116,7 @@ export function PendingReviewPanel({ review }: PendingReviewPanelProps) {
               onClick={() => setMode('modifying')}
               style={secondaryButtonStyle(submitting !== null)}
             >
-              修正して再生成
+              Modify and regenerate
             </button>
             <button
               type="button"
@@ -125,7 +125,7 @@ export function PendingReviewPanel({ review }: PendingReviewPanelProps) {
               onClick={() => dispatch('dismiss')}
               style={ghostButtonStyle(submitting !== null)}
             >
-              {submitting === 'dismiss' ? '処理中...' : '見送る'}
+              {submitting === 'dismiss' ? 'Processing...' : 'Dismiss'}
             </button>
           </>
         )}
@@ -141,7 +141,7 @@ export function PendingReviewPanel({ review }: PendingReviewPanelProps) {
                 submitting !== null || !modifyText.trim(),
               )}
             >
-              {submitting === 'modify' ? '送信中...' : '送信'}
+              {submitting === 'modify' ? 'Sending...' : 'Send'}
             </button>
             <button
               type="button"
@@ -154,7 +154,7 @@ export function PendingReviewPanel({ review }: PendingReviewPanelProps) {
               }}
               style={ghostButtonStyle(submitting !== null)}
             >
-              キャンセル
+              Cancel
             </button>
           </>
         )}

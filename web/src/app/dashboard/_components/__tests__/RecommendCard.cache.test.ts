@@ -38,6 +38,8 @@ const sampleRec: Recommendation = {
   from_cache: false,
   plan_context_key: 'coach:2026-04-07:3:approved',
 };
+const sampleLocale = 'ja' as const;
+const sampleTimezone = 'Asia/Tokyo';
 
 describe('shouldReadCache', () => {
   it('returns true only when no forceRefresh, no constraint, no asOf', () => {
@@ -84,6 +86,8 @@ describe('cache helpers do not touch localStorage when bypassed', () => {
         true,
         250,
         'coach',
+        sampleLocale,
+        sampleTimezone,
         sampleRec.plan_context_key ?? null,
       );
     }
@@ -94,7 +98,15 @@ describe('cache helpers do not touch localStorage when bypassed', () => {
   it('loadCachedRecommendation is not invoked when asOf is set', () => {
     const asOf = '2026-04-10T22:00';
     if (shouldReadCache(asOf, false, false)) {
-      loadCachedRecommendation('hybrid', true, 250, 'coach', sampleRec.plan_context_key ?? null);
+      loadCachedRecommendation(
+        'hybrid',
+        true,
+        250,
+        'coach',
+        sampleLocale,
+        sampleTimezone,
+        sampleRec.plan_context_key ?? null,
+      );
     }
     expect(storage.getItem).not.toHaveBeenCalled();
   });
@@ -109,6 +121,8 @@ describe('cache helpers do not touch localStorage when bypassed', () => {
         true,
         250,
         'coach',
+        sampleLocale,
+        sampleTimezone,
         sampleRec.plan_context_key ?? null,
       );
     }
@@ -126,6 +140,8 @@ describe('cache helpers do not touch localStorage when bypassed', () => {
         true,
         250,
         'coach',
+        sampleLocale,
+        sampleTimezone,
         sampleRec.plan_context_key ?? null,
       );
     }
@@ -143,7 +159,15 @@ describe('loadCachedRecommendation', () => {
 
   it('returns null when cache is empty', () => {
     expect(
-      loadCachedRecommendation('hybrid', true, 250, 'coach', sampleRec.plan_context_key ?? null),
+      loadCachedRecommendation(
+        'hybrid',
+        true,
+        250,
+        'coach',
+        sampleLocale,
+        sampleTimezone,
+        sampleRec.plan_context_key ?? null,
+      ),
     ).toBeNull();
   });
 
@@ -154,6 +178,8 @@ describe('loadCachedRecommendation', () => {
       true,
       250,
       'coach',
+      sampleLocale,
+      sampleTimezone,
       sampleRec.plan_context_key ?? null,
     );
     const loaded = loadCachedRecommendation(
@@ -161,6 +187,8 @@ describe('loadCachedRecommendation', () => {
       true,
       250,
       'coach',
+      sampleLocale,
+      sampleTimezone,
       sampleRec.plan_context_key ?? null,
     );
     expect(loaded).not.toBeNull();
@@ -174,10 +202,68 @@ describe('loadCachedRecommendation', () => {
       true,
       250,
       'coach',
+      sampleLocale,
+      sampleTimezone,
       sampleRec.plan_context_key ?? null,
     );
     expect(
-      loadCachedRecommendation('hybrid', true, 300, 'coach', sampleRec.plan_context_key ?? null),
+      loadCachedRecommendation(
+        'hybrid',
+        true,
+        300,
+        'coach',
+        sampleLocale,
+        sampleTimezone,
+        sampleRec.plan_context_key ?? null,
+      ),
+    ).toBeNull();
+  });
+
+  it('returns null when locale differs', () => {
+    saveCachedRecommendation(
+      sampleRec,
+      'hybrid',
+      true,
+      250,
+      'coach',
+      'ja',
+      sampleTimezone,
+      sampleRec.plan_context_key ?? null,
+    );
+    expect(
+      loadCachedRecommendation(
+        'hybrid',
+        true,
+        250,
+        'coach',
+        'en',
+        sampleTimezone,
+        sampleRec.plan_context_key ?? null,
+      ),
+    ).toBeNull();
+  });
+
+  it('returns null when timezone differs', () => {
+    saveCachedRecommendation(
+      sampleRec,
+      'hybrid',
+      true,
+      250,
+      'coach',
+      sampleLocale,
+      'Asia/Tokyo',
+      sampleRec.plan_context_key ?? null,
+    );
+    expect(
+      loadCachedRecommendation(
+        'hybrid',
+        true,
+        250,
+        'coach',
+        sampleLocale,
+        'America/Los_Angeles',
+        sampleRec.plan_context_key ?? null,
+      ),
     ).toBeNull();
   });
 
@@ -188,10 +274,20 @@ describe('loadCachedRecommendation', () => {
       true,
       250,
       'coach',
+      sampleLocale,
+      sampleTimezone,
       sampleRec.plan_context_key ?? null,
     );
     expect(
-      loadCachedRecommendation('hybrid', true, 250, 'coach', 'coach:2026-04-14:4:approved'),
+      loadCachedRecommendation(
+        'hybrid',
+        true,
+        250,
+        'coach',
+        sampleLocale,
+        sampleTimezone,
+        'coach:2026-04-14:4:approved',
+      ),
     ).toBeNull();
   });
 });

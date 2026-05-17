@@ -44,10 +44,10 @@ interface ZoneData {
 
 // HR Zone definitions
 const HR_ZONES = [
-  { name: 'Z1 回復', minPct: 0, maxPct: 60, color: '#9E9E9E' },
-  { name: 'Z2 持久力', minPct: 60, maxPct: 70, color: '#2196F3' },
-  { name: 'Z3 テンポ', minPct: 70, maxPct: 80, color: '#4CAF50' },
-  { name: 'Z4 閾値', minPct: 80, maxPct: 90, color: '#FF9800' },
+  { name: 'Z1 Recovery', minPct: 0, maxPct: 60, color: '#9E9E9E' },
+  { name: 'Z2 Endurance', minPct: 60, maxPct: 70, color: '#2196F3' },
+  { name: 'Z3 Tempo', minPct: 70, maxPct: 80, color: '#4CAF50' },
+  { name: 'Z4 Threshold', minPct: 80, maxPct: 90, color: '#FF9800' },
   { name: 'Z5 VO2Max', minPct: 90, maxPct: 100, color: '#f44336' },
 ];
 
@@ -82,7 +82,7 @@ export default function ActivityCharts({ activityId }: ActivityChartsProps) {
         const data = await res.json();
         setStreams(data);
       } catch {
-        setError('データを読み込めませんでした');
+        setError('Could not load data');
       } finally {
         setLoading(false);
       }
@@ -93,7 +93,7 @@ export default function ActivityCharts({ activityId }: ActivityChartsProps) {
   if (loading) {
     return (
       <div style={{ textAlign: 'center', padding: '1.5rem', opacity: 0.7 }}>
-        📊 チャートを読み込み中...
+        📊 Loading charts...
       </div>
     );
   }
@@ -101,7 +101,7 @@ export default function ActivityCharts({ activityId }: ActivityChartsProps) {
   if (error || !streams || streams.time.length === 0) {
     return (
       <div style={{ textAlign: 'center', padding: '1rem', opacity: 0.5, fontSize: '0.85rem' }}>
-        チャートデータがありません
+        No chart data
       </div>
     );
   }
@@ -169,8 +169,8 @@ export default function ActivityCharts({ activityId }: ActivityChartsProps) {
                   opacity: 0.8,
                 }}
               >
-                📈 速度 (km/h){' '}
-                {hasAltitude && <span style={{ opacity: 0.6, fontWeight: 400 }}>/ 標高</span>}
+                📈 Speed (km/h){' '}
+                {hasAltitude && <span style={{ opacity: 0.6, fontWeight: 400 }}>/ Elevation</span>}
               </div>
               <div
                 style={{
@@ -226,10 +226,10 @@ export default function ActivityCharts({ activityId }: ActivityChartsProps) {
                         fontSize: '0.8rem',
                       }}
                       formatter={(value: number, name: string) => {
-                        if (name === 'altitude') return [`${Math.round(value)}m`, '標高'];
-                        return [`${value.toFixed(1)} km/h`, '速度'];
+                        if (name === 'altitude') return [`${Math.round(value)}m`, 'Elevation'];
+                        return [`${value.toFixed(1)} km/h`, 'Speed'];
                       }}
-                      labelFormatter={(v) => `${Math.round(v as number)} 分`}
+                      labelFormatter={(v) => `${Math.round(v as number)} min`}
                     />
                     {/* Elevation area (background) */}
                     {hasAltitude && (
@@ -268,8 +268,8 @@ export default function ActivityCharts({ activityId }: ActivityChartsProps) {
                   opacity: 0.8,
                 }}
               >
-                ⚡ パワー (W){' '}
-                {hasAltitude && <span style={{ opacity: 0.6, fontWeight: 400 }}>/ 標高</span>}
+                ⚡ Power (W){' '}
+                {hasAltitude && <span style={{ opacity: 0.6, fontWeight: 400 }}>/ Elevation</span>}
               </div>
               <div
                 style={{
@@ -325,10 +325,10 @@ export default function ActivityCharts({ activityId }: ActivityChartsProps) {
                         fontSize: '0.8rem',
                       }}
                       formatter={(value: number, name: string) => {
-                        if (name === 'altitude') return [`${Math.round(value)}m`, '標高'];
-                        return [`${Math.round(value)}W`, 'パワー'];
+                        if (name === 'altitude') return [`${Math.round(value)}m`, 'Elevation'];
+                        return [`${Math.round(value)}W`, 'Power'];
                       }}
-                      labelFormatter={(v) => `${Math.round(v as number)} 分`}
+                      labelFormatter={(v) => `${Math.round(v as number)} min`}
                     />
                     {/* FTP reference line */}
                     {settings.ftp > 0 && (
@@ -384,7 +384,7 @@ export default function ActivityCharts({ activityId }: ActivityChartsProps) {
                   opacity: 0.8,
                 }}
               >
-                ❤️ 心拍数 (bpm)
+                ❤️ Heart Rate (bpm)
               </div>
               <div
                 style={{
@@ -462,10 +462,10 @@ export default function ActivityCharts({ activityId }: ActivityChartsProps) {
                           <span key="hr" style={{ color: zoneInfo?.color }}>
                             {Math.round(value)} bpm ({zoneInfo?.name || ''})
                           </span>,
-                          '心拍',
+                          'Heart rate',
                         ];
                       }}
-                      labelFormatter={(v) => `${Math.round(v as number)} 分`}
+                      labelFormatter={(v) => `${Math.round(v as number)} min`}
                     />
                     <Line
                       type="linear"
@@ -487,7 +487,7 @@ export default function ActivityCharts({ activityId }: ActivityChartsProps) {
             <div
               style={{ fontSize: '0.8rem', fontWeight: 600, marginBottom: '0.25rem', opacity: 0.8 }}
             >
-              ❤️ ゾーン分布
+              ❤️ Zone Distribution
             </div>
             <div
               style={{
@@ -541,7 +541,7 @@ export default function ActivityCharts({ activityId }: ActivityChartsProps) {
 
       {!hasSpeed && !hasHeartrate && (
         <div style={{ textAlign: 'center', padding: '1rem', opacity: 0.5, fontSize: '0.85rem' }}>
-          詳細データがありません
+          No detailed data
         </div>
       )}
     </div>

@@ -114,7 +114,7 @@ export default async function SimulatorPage() {
       {/* Map-based Segment Search - Only when logged in */}
       {session && (
         <section>
-          <h2 style={{ marginBottom: '1rem' }}>🗺️ セグメントを地図から探す</h2>
+          <h2 style={{ marginBottom: '1rem' }}>🗺️ Find Segments on the Map</h2>
           <div className="card">
             <SegmentSearchWrapper />
           </div>

@@ -3,6 +3,7 @@ import { getServerSession } from 'next-auth/next';
 
 import { agentFetch } from '@/lib/agent';
 import { authOptions } from '@/lib/auth';
+import { readUserSettings } from '@/lib/gcs-settings';
 
 interface RespondBody {
   session_id: string;
@@ -19,9 +20,15 @@ export async function POST(request: Request) {
 
   try {
     const body: RespondBody = await request.json();
+    const settings = await readUserSettings(session.user.id, { fallbackLegacy: true });
     const resp = await agentFetch('/recommend/respond', {
       method: 'POST',
-      body: JSON.stringify({ ...body, user_id: session.user.id }),
+      body: JSON.stringify({
+        ...body,
+        user_id: session.user.id,
+        locale: settings?.locale ?? 'ja',
+        timezone: settings?.timezone ?? 'Asia/Tokyo',
+      }),
     });
 
     if (!resp.ok) {

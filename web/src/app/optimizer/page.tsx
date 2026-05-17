@@ -39,7 +39,7 @@ export default async function OptimizerPage() {
           <ExperimentalBadge />
         </h1>
         <p style={{ opacity: 0.7, marginTop: '0.25rem', fontSize: '0.9rem' }}>
-          コースプロファイルに基づいて最適なペース配分を計算します
+          Calculate an optimal pacing strategy from the course profile.
         </p>
         <ExperimentalNotice>
           This tool is experimental. Pacing recommendations are estimates and should be validated
@@ -61,7 +61,7 @@ export default async function OptimizerPage() {
           }}
         >
           <span style={{ fontSize: '0.9rem' }}>
-            💡 Stravaと連携すると、スターしたセグメントのデータを使用できます
+            💡 Connect Strava to use your starred segments.
           </span>
           <Link
             href="/api/auth/signin"
@@ -89,21 +89,21 @@ export default async function OptimizerPage() {
           }}
         >
           <h2 style={{ marginTop: 0, marginBottom: '1rem', fontSize: '1.1rem' }}>
-            📚 このツールについて
+            📚 About This Tool
           </h2>
           <p style={{ fontSize: '0.9rem', lineHeight: 1.7, opacity: 0.85 }}>
-            本ツールは論文 &quot;A numerical design methodology for optimal pacing strategy in the
-            individual time trial discipline of cycling&quot; (Sports Engineering, 2025)
-            の手法に基づいています。
+            This tool is based on the method from &quot;A numerical design methodology for optimal
+            pacing strategy in the individual time trial discipline of cycling&quot; (Sports
+            Engineering, 2025).
           </p>
           <p style={{ fontSize: '0.9rem', lineHeight: 1.7, opacity: 0.85, marginTop: '0.75rem' }}>
-            <strong>Normalized Power (NP)</strong> 制約の下で、コースの勾配や風向きに応じた
-            最適なパワー配分を計算することで、一定パワー戦略よりも短いタイムでゴールできます。
-            論文では0.45%〜2.84%のタイム改善が報告されています。
+            Under a <strong>Normalized Power (NP)</strong> constraint, it adjusts power by gradient
+            and wind so the modeled finish time can beat a constant-power strategy. The paper
+            reports a 0.45% to 2.84% time improvement.
           </p>
           <p style={{ fontSize: '0.85rem', marginTop: '1rem', opacity: 0.6 }}>
-            ⚠️
-            本ツールは教育・参考目的です。実際のレースでは体調やコンディションを考慮してください。
+            ⚠️ This tool is for education and reference. Account for your condition and race-day
+            constraints before using it in an event.
           </p>
         </div>
       </section>

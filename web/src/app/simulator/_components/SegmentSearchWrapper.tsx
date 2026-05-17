@@ -19,7 +19,7 @@ const SegmentMap = dynamic(() => import('./SegmentMap'), {
         borderRadius: 'var(--radius-lg)',
       }}
     >
-      <p>地図を読み込み中...</p>
+      <p>Loading map...</p>
     </div>
   ),
 });
@@ -46,7 +46,7 @@ export default function SegmentSearchWrapper() {
         }}
       >
         <div style={{ fontSize: '2rem' }}>🏔️</div>
-        <p>シミュレーターを準備中...</p>
+        <p>Preparing simulator...</p>
       </div>
     );
   }

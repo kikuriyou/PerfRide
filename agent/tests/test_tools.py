@@ -135,6 +135,11 @@ class TestBuildAgent:
         a2 = build_agent("hybrid", False)
         assert a1 is not a2
 
+    def test_different_locale_return_different(self):
+        a1 = build_agent("hybrid", True, locale="ja")
+        a2 = build_agent("hybrid", True, locale="en")
+        assert a1 is not a2
+
 
 class TestSetSearchLimit:
     """Tests for set_search_limit."""

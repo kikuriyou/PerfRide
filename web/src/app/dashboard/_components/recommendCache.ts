@@ -1,4 +1,4 @@
-import type { CoachAutonomy, RecommendMode } from '@/lib/settings';
+import type { CoachAutonomy, RecommendMode, UserLocale } from '@/lib/settings';
 import type { ProposedSession } from '@/lib/gcs-schema';
 import type { WorkoutInterval } from '@/types/workout';
 
@@ -31,6 +31,8 @@ export interface CachedRecommendationEntry extends Recommendation {
   _usePersonalData: boolean;
   _ftp: number;
   _coachAutonomy: CoachAutonomy;
+  _locale: UserLocale;
+  _timezone: string;
   _planContextKey: string | null;
   _cacheDate: string;
 }
@@ -52,6 +54,8 @@ export function loadCachedRecommendation(
   usePersonalData: boolean,
   ftp: number,
   coachAutonomy: CoachAutonomy,
+  locale: UserLocale,
+  timezone: string,
   planContextKey: string | null,
 ): Recommendation | null {
   try {
@@ -60,13 +64,15 @@ export function loadCachedRecommendation(
     const cached = JSON.parse(raw) as Partial<CachedRecommendationEntry>;
     const age = Date.now() - (cached._cachedAt || 0);
     if (age > CACHE_TTL_MS) return null;
-    const today = new Date().toLocaleDateString('en-CA', { timeZone: 'Asia/Tokyo' });
+    const today = new Date().toLocaleDateString('en-CA', { timeZone: timezone });
     if (cached._cacheDate !== today) return null;
     if (
       cached._recommendMode !== recommendMode ||
       cached._usePersonalData !== usePersonalData ||
       cached._ftp !== ftp ||
       cached._coachAutonomy !== coachAutonomy ||
+      cached._locale !== locale ||
+      cached._timezone !== timezone ||
       cached._planContextKey !== planContextKey
     ) {
       return null;
@@ -83,6 +89,8 @@ export function saveCachedRecommendation(
   usePersonalData: boolean,
   ftp: number,
   coachAutonomy: CoachAutonomy,
+  locale: UserLocale,
+  timezone: string,
   planContextKey: string | null,
 ): void {
   try {
@@ -93,8 +101,10 @@ export function saveCachedRecommendation(
       _usePersonalData: usePersonalData,
       _ftp: ftp,
       _coachAutonomy: coachAutonomy,
+      _locale: locale,
+      _timezone: timezone,
       _planContextKey: planContextKey,
-      _cacheDate: new Date().toLocaleDateString('en-CA', { timeZone: 'Asia/Tokyo' }),
+      _cacheDate: new Date().toLocaleDateString('en-CA', { timeZone: timezone }),
     };
     localStorage.setItem(CACHE_KEY, JSON.stringify(entry));
   } catch {

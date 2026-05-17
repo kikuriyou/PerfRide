@@ -16,7 +16,7 @@ describe('recommendation display helpers', () => {
         { date: '2026-04-28', type: 'recovery', duration_minutes: 45, status: 'planned' },
         { session_date: '2026-04-28', session_type: 'sweetspot', duration_minutes: 50 },
       ),
-    ).toBe('4/28 の予定を Recovery 45min から Sweetspot 50min に変更します');
+    ).toBe('Change 4/28 from Recovery 45min to Sweetspot 50min');
   });
 
   it('builds date-specific success and conflict messages', () => {
@@ -26,11 +26,9 @@ describe('recommendation display helpers', () => {
       duration_minutes: 50,
     };
     expect(buildReplaceSuccessMessage(proposed)).toBe(
-      '4/28 の Weekly Plan を Sweetspot 50min に更新しました。',
+      'Updated 4/28 in Weekly Plan to Sweetspot 50min.',
     );
-    expect(buildReplaceConflictMessage(proposed)).toBe(
-      '4/28 のプランが更新されています。再読み込みしてからもう一度選んでください。',
-    );
+    expect(buildReplaceConflictMessage(proposed)).toBe('4/28 has changed. Reload and try again.');
   });
 
   it('makes no-op replace results explicit', () => {
@@ -51,26 +49,26 @@ describe('recommendation display helpers', () => {
         },
       ),
     ).toBe(
-      '4/28 の Weekly Plan はすでに Endurance 60min です。変更はありません。この提案は対応済みです。',
+      '4/28 is already Endurance 60min in Weekly Plan. No change was needed, and this recommendation is handled.',
     );
   });
 
   it('explains unchanged decisions as handled', () => {
     expect(buildKeepWeeklyPlanMessage()).toBe(
-      '変更なしを確定しました。Weekly Plan は更新していません。この提案は対応済みです。',
+      'Marked as no change. Weekly Plan was not updated, and this recommendation is handled.',
     );
   });
 
   it('uses rest and missing-duration labels safely', () => {
-    expect(proposedSessionHeading({ is_rest: true })).toBe('今日は休養提案です');
+    expect(proposedSessionHeading({ is_rest: true })).toBe('Rest recommendation for today');
     expect(proposedSessionHeading({ session_type: 'sweetspot', target_tss: 55 })).toBe(
-      'Sweetspot 時間未定 · TSS 55',
+      'Sweetspot Duration TBD · TSS 55',
     );
   });
 
-  it('maps source labels to user-facing Japanese labels', () => {
-    expect(displaySourceLabel('webhook')).toBe('最新ライドから');
-    expect(displaySourceLabel('generated')).toBe('今日の状態から');
+  it('maps source labels to user-facing labels', () => {
+    expect(displaySourceLabel('webhook')).toBe('After latest ride');
+    expect(displaySourceLabel('generated')).toBe("Today's status");
     expect(displaySourceLabel('weekly_plan')).toBeNull();
   });
 
@@ -80,21 +78,21 @@ describe('recommendation display helpers', () => {
         { date: '2026-04-28', type: 'threshold', duration_minutes: 60, status: 'planned' },
         { session_date: '2026-04-28', session_type: 'recovery', duration_minutes: 45 },
       ),
-    ).toBe('軽めに調整: Threshold 60min → Recovery 45min');
+    ).toBe('Adjust lighter: Threshold 60min -> Recovery 45min');
 
     expect(
       buildWebhookDiffLine(
         { date: '2026-04-28', type: 'endurance', duration_minutes: 60, status: 'planned' },
         { session_date: '2026-04-28', session_type: 'endurance', duration_minutes: 60 },
       ),
-    ).toBe('予定どおりでOK: Endurance 60min');
+    ).toBe('Keep as planned: Endurance 60min');
 
     expect(
       buildWebhookDiffLine(
         { date: '2026-04-28', type: 'threshold', duration_minutes: 60, status: 'planned' },
         { session_date: '2026-04-28', is_rest: true },
       ),
-    ).toBe('回復優先: Threshold 60min は見送り');
+    ).toBe('Recovery first: skip Threshold 60min');
 
     expect(
       buildWebhookDiffLine(null, {
@@ -102,6 +100,6 @@ describe('recommendation display helpers', () => {
         session_type: 'recovery',
         duration_minutes: 45,
       }),
-    ).toBe('最新ライドを踏まえた提案です');
+    ).toBe('Recommendation based on your latest ride');
   });
 });

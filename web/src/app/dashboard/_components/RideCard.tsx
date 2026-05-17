@@ -57,8 +57,8 @@ export default function RideCard({ activity }: RideCardProps) {
                 const month = parseInt(d.slice(5, 7), 10);
                 const day = parseInt(d.slice(8, 10), 10);
                 const dow = new Date(d.slice(0, 10) + 'T00:00:00').getDay();
-                const days = ['日', '月', '火', '水', '木', '金', '土'];
-                return `${month}月${day}日(${days[dow]})`;
+                const days = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+                return `${month}/${day} (${days[dow]})`;
               })()}
             </span>
             <span style={{ opacity: 0.5 }}>|</span>
@@ -112,25 +112,25 @@ export default function RideCard({ activity }: RideCardProps) {
               <div style={{ fontSize: '1.1rem', fontWeight: 700, color: 'var(--primary)' }}>
                 {formatDistance(activity.distance)}
               </div>
-              <div style={{ fontSize: '0.7rem', opacity: 0.6 }}>距離</div>
+              <div style={{ fontSize: '0.7rem', opacity: 0.6 }}>Distance</div>
             </div>
             <div style={{ textAlign: 'center' }}>
               <div style={{ fontSize: '1.1rem', fontWeight: 700, color: 'var(--primary)' }}>
                 {formatElevation(activity.total_elevation_gain)}
               </div>
-              <div style={{ fontSize: '0.7rem', opacity: 0.6 }}>獲得標高</div>
+              <div style={{ fontSize: '0.7rem', opacity: 0.6 }}>Elevation</div>
             </div>
             <div style={{ textAlign: 'center' }}>
               <div style={{ fontSize: '1.1rem', fontWeight: 700, color: 'var(--primary)' }}>
                 {formatDuration(activity.moving_time)}
               </div>
-              <div style={{ fontSize: '0.7rem', opacity: 0.6 }}>時間</div>
+              <div style={{ fontSize: '0.7rem', opacity: 0.6 }}>Time</div>
             </div>
             <div style={{ textAlign: 'center' }}>
               <div style={{ fontSize: '1.1rem', fontWeight: 700, color: 'var(--primary)' }}>
                 {(activity.average_speed * 3.6).toFixed(1)} km/h
               </div>
-              <div style={{ fontSize: '0.7rem', opacity: 0.6 }}>平均速度</div>
+              <div style={{ fontSize: '0.7rem', opacity: 0.6 }}>Avg Speed</div>
             </div>
           </div>
 
@@ -238,7 +238,7 @@ export default function RideCard({ activity }: RideCardProps) {
               marginTop: '0.75rem',
             }}
           >
-            Stravaで見る →
+            View on Strava →
           </a>
         </div>
       )}

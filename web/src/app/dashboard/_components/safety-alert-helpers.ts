@@ -32,7 +32,7 @@ export function remainingInsightItems<T extends SafetyAlertItem>(
 export function safetyAlertMessage(item: SafetyAlertItem): string {
   const source = `${item.type} ${item.title} ${item.summary}`.toLowerCase();
   if (source.includes('fatigue') || source.includes('疲労') || source.includes('tsb')) {
-    return '疲労が高めです。今日は回復を優先しましょう。';
+    return 'Fatigue is elevated. Prioritize recovery today.';
   }
   return item.summary || item.title;
 }

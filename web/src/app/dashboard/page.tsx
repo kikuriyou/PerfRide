@@ -65,7 +65,7 @@ export default async function DashboardPage() {
 
   const now = new Date();
   const weekStart = new Date(now);
-  // 月曜始まり: 日曜(0)は6日前、それ以外は(dayOfWeek - 1)日前
+  // Monday start: Sunday (0) is 6 days back, otherwise dayOfWeek - 1.
   const dayOfWeek = now.getDay();
   const daysToMonday = dayOfWeek === 0 ? 6 : dayOfWeek - 1;
   weekStart.setDate(now.getDate() - daysToMonday);

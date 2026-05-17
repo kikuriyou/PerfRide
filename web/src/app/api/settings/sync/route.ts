@@ -6,6 +6,7 @@ import {
   type CoachAutonomy,
   type DayName,
   type GCSUserSettings,
+  type UserLocale,
   type WeeklySchedule,
 } from '@/lib/gcs-schema';
 import { DEFAULT_WEEKLY_SCHEDULE } from '@/lib/gcs-schema';
@@ -19,6 +20,8 @@ interface SyncBody {
   goalCustom?: string;
   goalDate?: string | null;
   coachAutonomy?: CoachAutonomy;
+  locale?: UserLocale;
+  timezone?: string;
   weeklySchedule?: Partial<WeeklySchedule>;
 }
 
@@ -28,6 +31,20 @@ function normalizeGoalDate(value: string | null | undefined): string | null {
   if (!value) return null;
   const trimmed = value.trim();
   return /^\d{4}-\d{2}-\d{2}$/.test(trimmed) ? trimmed : null;
+}
+
+function normalizeLocale(value: unknown): UserLocale {
+  return value === 'en' || value === 'ja' ? value : 'ja';
+}
+
+function normalizeTimezone(value: unknown, fallback = 'Asia/Tokyo'): string {
+  const candidate = typeof value === 'string' && value.trim() ? value.trim() : fallback;
+  try {
+    new Intl.DateTimeFormat('en-US', { timeZone: candidate }).format(new Date());
+    return candidate;
+  } catch {
+    return fallback;
+  }
 }
 
 function normalizeWeeklySchedule(input?: Partial<WeeklySchedule>): WeeklySchedule {
@@ -46,6 +63,8 @@ function baseSettings(userId: string): GCSUserSettings {
   return {
     user_id: userId,
     strava_owner_id: Number(userId) || 0,
+    locale: 'ja',
+    timezone: 'Asia/Tokyo',
     coach_autonomy: 'suggest',
     ftp: 200,
     weight_kg: 70,
@@ -91,6 +110,11 @@ export async function POST(request: Request) {
       ftp: body.ftp ?? current.ftp ?? 200,
       weight_kg: body.weight ?? current.weight_kg ?? 70,
       max_hr: body.maxHR ?? current.max_hr ?? 185,
+      locale: normalizeLocale(body.locale ?? current.locale),
+      timezone: normalizeTimezone(
+        body.timezone ?? current.timezone,
+        current.timezone ?? 'Asia/Tokyo',
+      ),
       coach_autonomy: body.coachAutonomy ?? current.coach_autonomy ?? 'suggest',
       goal: {
         ...(current.goal ?? {

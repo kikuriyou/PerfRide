@@ -45,7 +45,7 @@ export function AddSessionForm({ weekStart, today, planRevision }: AddSessionFor
             opacity: 0.72,
           }}
         >
-          手動で session を追加
+          Add session manually
         </button>
       </div>
     );
@@ -190,7 +190,7 @@ export function AddSessionForm({ weekStart, today, planRevision }: AddSessionFor
             opacity: submitting ? 0.6 : 1,
           }}
         >
-          {submitting ? '追加中...' : 'Add'}
+          {submitting ? 'Adding...' : 'Add'}
         </button>
         <button
           type="button"

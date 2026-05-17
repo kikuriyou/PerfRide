@@ -39,7 +39,7 @@ function calculateSimplifiedTSS(activity: StravaActivity, userFTP: number): numb
   return Math.min(baseTSS, 300);
 }
 
-// YYYY-MM-DD形式をローカルタイムゾーンでパース
+// Parse YYYY-MM-DD in the local timezone.
 function parseLocalDate(dateStr: string): Date {
   const [year, month, day] = dateStr.split('-').map(Number);
   return new Date(year, month - 1, day);
@@ -49,10 +49,10 @@ function getWeekKey(date: Date): string {
   const d = new Date(date);
   d.setHours(0, 0, 0, 0);
   const dayOfWeek = d.getDay();
-  // 月曜始まりに変更: 日曜(0)は6日前、それ以外は(dayOfWeek - 1)日前
+  // Monday start: Sunday (0) is 6 days back, otherwise dayOfWeek - 1.
   const daysToMonday = dayOfWeek === 0 ? 6 : dayOfWeek - 1;
   d.setDate(d.getDate() - daysToMonday);
-  // ローカルタイムゾーンでYYYY-MM-DD形式を返す
+  // Return YYYY-MM-DD in local timezone.
   const year = d.getFullYear();
   const month = String(d.getMonth() + 1).padStart(2, '0');
   const day = String(d.getDate()).padStart(2, '0');
@@ -156,7 +156,7 @@ function processActivitiesForChart(activities: StravaActivity[], ftp: number): W
     const tsb = ctl - atl;
 
     return {
-      week: new Date(data.weekStart).toLocaleDateString('ja-JP', {
+      week: new Date(data.weekStart).toLocaleDateString('en-US', {
         month: 'short',
         day: 'numeric',
       }),
@@ -214,7 +214,7 @@ export default function FitnessChart({ activities }: FitnessChartProps) {
           </span>
           <HelpTooltip>
             <div style={{ fontWeight: 600, marginBottom: '0.75rem', color: 'var(--primary)' }}>
-              📊 このグラフの見方
+              📊 How to Read This Chart
             </div>
             <div style={{ marginBottom: '0.75rem' }}>
               <div
@@ -230,9 +230,9 @@ export default function FitnessChart({ activities }: FitnessChartProps) {
                 </span>
               </div>
               <div style={{ paddingLeft: '1rem', opacity: 0.85 }}>
-                週間トレーニング負荷。
+                Weekly training load.
                 <br />
-                パワーや獲得標高から算出。
+                Estimated from power and elevation gain.
               </div>
             </div>
             <div style={{ marginBottom: '0.75rem' }}>
@@ -247,9 +247,9 @@ export default function FitnessChart({ activities }: FitnessChartProps) {
                 <span style={{ color: '#2196F3', fontWeight: 600 }}>● Fitness (CTL)</span>
               </div>
               <div style={{ paddingLeft: '1rem', opacity: 0.85 }}>
-                過去6週間のトレーニング蓄積。
+                Training load accumulated over roughly six weeks.
                 <br />
-                高いほど体力がついている状態。
+                Higher values indicate more developed fitness.
               </div>
             </div>
             <div style={{ marginBottom: '0.75rem' }}>
@@ -264,9 +264,9 @@ export default function FitnessChart({ activities }: FitnessChartProps) {
                 <span style={{ color: '#f44336', fontWeight: 600 }}>● Fatigue (ATL)</span>
               </div>
               <div style={{ paddingLeft: '1rem', opacity: 0.85 }}>
-                直近1週間の疲労度。
+                Short-term fatigue over roughly one week.
                 <br />
-                高いほど疲れが溜まっている。
+                Higher values indicate more accumulated fatigue.
               </div>
             </div>
             <div style={{ marginBottom: '0.5rem' }}>
@@ -281,9 +281,9 @@ export default function FitnessChart({ activities }: FitnessChartProps) {
                 <span style={{ color: '#4CAF50', fontWeight: 600 }}>● Form (TSB)</span>
               </div>
               <div style={{ paddingLeft: '1rem', opacity: 0.85 }}>
-                Fitness - Fatigue = コンディション。
+                Fitness - Fatigue = readiness.
                 <br />
-                <strong>+10〜+25</strong>がレースに最適な状態！
+                <strong>+10 to +25</strong> is often race-ready.
               </div>
             </div>
           </HelpTooltip>
@@ -489,20 +489,20 @@ export default function FitnessChart({ activities }: FitnessChartProps) {
           <span style={{ fontSize: '0.9rem', fontWeight: 600 }}>Weekly Volume</span>
           <HelpTooltip>
             <div style={{ fontWeight: 600, marginBottom: '0.5rem', color: 'var(--primary)' }}>
-              📈 週間ボリューム
+              📈 Weekly Volume
             </div>
             <div style={{ marginBottom: '0.5rem' }}>
-              <span style={{ color: '#8BC34A', fontWeight: 600 }}>グリーン</span>: 獲得標高（m）-
-              棒グラフ
+              <span style={{ color: '#8BC34A', fontWeight: 600 }}>Green</span>: elevation gain (m),
+              shown as bars.
             </div>
             <div>
-              <span style={{ color: 'var(--primary)', fontWeight: 600 }}>オレンジ</span>:
-              走行距離（km）- 線グラフ
+              <span style={{ color: 'var(--primary)', fontWeight: 600 }}>Orange</span>: distance
+              (km), shown as a line.
             </div>
             <div style={{ marginTop: '0.75rem', opacity: 0.8, fontSize: '0.8rem' }}>
-              トレーニング量の推移を確認できます。
+              Use this to scan how your volume is changing.
               <br />
-              レース前は徐々に減らしていきましょう。
+              Reduce it gradually before a target race.
             </div>
           </HelpTooltip>
         </div>
@@ -553,8 +553,8 @@ export default function FitnessChart({ activities }: FitnessChartProps) {
                   fontSize: '0.85rem',
                 }}
                 formatter={(value: number, name: string) => {
-                  if (name === 'distance') return [`${value} km`, '距離'];
-                  if (name === 'elevation') return [`${value} m`, '獲得標高'];
+                  if (name === 'distance') return [`${value} km`, 'Distance'];
+                  if (name === 'elevation') return [`${value} m`, 'Elevation gain'];
                   return [value, name];
                 }}
               />
@@ -601,10 +601,10 @@ export default function FitnessChart({ activities }: FitnessChartProps) {
           }}
         >
           <span>
-            <span style={{ color: '#8BC34A', opacity: 0.5 }}>▌</span> 獲得標高 (m)
+            <span style={{ color: '#8BC34A', opacity: 0.5 }}>▌</span> Elevation gain (m)
           </span>
           <span>
-            <span style={{ color: 'var(--primary)' }}>━</span> 距離 (km)
+            <span style={{ color: 'var(--primary)' }}>━</span> Distance (km)
           </span>
         </div>
       </div>

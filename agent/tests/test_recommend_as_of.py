@@ -181,6 +181,8 @@ class TestRecommendHandlerAsOf:
             "mode": "quick",
             "use_personal_data": True,
             "ftp": 250,
+            "locale": "ja",
+            "timezone": "Asia/Tokyo",
             "workout_intervals": None,
             "totalDurationMin": None,
             "workoutName": None,

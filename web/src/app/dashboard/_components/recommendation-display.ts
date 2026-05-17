@@ -6,10 +6,10 @@ import {
 } from '@/lib/training-session-display';
 
 export function displaySourceLabel(source: string | null | undefined): string | null {
-  if (source === 'webhook') return '最新ライドから';
-  if (source === 'generated') return '今日の状態から';
+  if (source === 'webhook') return 'After latest ride';
+  if (source === 'generated') return "Today's status";
   if (source === 'weekly_plan') return null;
-  return source ? '提案' : null;
+  return source ? 'Recommendation' : null;
 }
 
 export function buildReplacePreview(
@@ -17,12 +17,12 @@ export function buildReplacePreview(
   proposed: ProposedSession | null | undefined,
 ): string | null {
   if (!target || !proposed?.session_date || proposed.is_rest) return null;
-  return `${formatShortDate(proposed.session_date)} の予定を ${formatSessionBrief(
+  return `Change ${formatShortDate(proposed.session_date)} from ${formatSessionBrief(
     target,
-  )} から ${formatSessionBrief({
+  )} to ${formatSessionBrief({
     type: proposed.session_type,
     duration_minutes: proposed.duration_minutes,
-  })} に変更します`;
+  })}`;
 }
 
 export function hasVisibleReplaceChange(
@@ -47,22 +47,22 @@ export function buildWebhookDiffLine(
   if (!proposed) return null;
   if (proposed.is_rest) {
     return target
-      ? `回復優先: ${formatSessionBrief(target)} は見送り`
-      : '回復優先: 今日は休養を優先しましょう';
+      ? `Recovery first: skip ${formatSessionBrief(target)}`
+      : 'Recovery first: prioritize rest today';
   }
-  if (!target) return '最新ライドを踏まえた提案です';
+  if (!target) return 'Recommendation based on your latest ride';
 
   const before = formatSessionBrief(target);
   const after = formatSessionBrief({
     type: proposed.is_rest ? 'rest' : proposed.session_type,
     duration_minutes: proposed.duration_minutes,
   });
-  if (before === after) return `予定どおりでOK: ${after}`;
-  return `軽めに調整: ${before} → ${after}`;
+  if (before === after) return `Keep as planned: ${after}`;
+  return `Adjust lighter: ${before} -> ${after}`;
 }
 
 export function buildKeepWeeklyPlanMessage(): string {
-  return '変更なしを確定しました。Weekly Plan は更新していません。この提案は対応済みです。';
+  return 'Marked as no change. Weekly Plan was not updated, and this recommendation is handled.';
 }
 
 export function buildReplaceSuccessMessage(
@@ -76,21 +76,19 @@ export function buildReplaceSuccessMessage(
   if (target && !hasVisibleReplaceChange(target, proposed)) {
     return `${formatShortDate(
       proposed.session_date,
-    )} の Weekly Plan はすでに ${after} です。変更はありません。この提案は対応済みです。`;
+    )} is already ${after} in Weekly Plan. No change was needed, and this recommendation is handled.`;
   }
 
-  const before = target ? `${formatSessionBrief(target)} から ` : '';
-  return `${formatShortDate(proposed.session_date)} の Weekly Plan を ${before}${after} に更新しました。`;
+  const before = target ? ` from ${formatSessionBrief(target)}` : '';
+  return `Updated ${formatShortDate(proposed.session_date)} in Weekly Plan${before} to ${after}.`;
 }
 
 export function buildReplaceConflictMessage(proposed: ProposedSession): string {
-  return `${formatShortDate(
-    proposed.session_date,
-  )} のプランが更新されています。再読み込みしてからもう一度選んでください。`;
+  return `${formatShortDate(proposed.session_date)} has changed. Reload and try again.`;
 }
 
 export function proposedSessionHeading(proposed: ProposedSession): string {
-  if (proposed.is_rest) return '今日は休養提案です';
+  if (proposed.is_rest) return 'Rest recommendation for today';
   return formatSessionWithTss({
     type: proposed.session_type,
     duration_minutes: proposed.duration_minutes,

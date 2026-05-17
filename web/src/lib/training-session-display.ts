@@ -19,7 +19,7 @@ const TYPE_LABELS: Record<string, string> = {
 };
 
 export function formatShortDate(date: string | null | undefined): string {
-  if (!date) return '対象日';
+  if (!date) return 'Target date';
   const match = /^(\d{4})-(\d{2})-(\d{2})/.exec(date);
   if (!match) return date;
   return `${Number(match[2])}/${Number(match[3])}`;
@@ -32,15 +32,15 @@ export function formatSessionType(type: string | null | undefined): string {
 }
 
 export function formatSessionDuration(session: SessionDisplayInput): string {
-  if (session.type?.toLowerCase() === 'rest') return '休養';
+  if (session.type?.toLowerCase() === 'rest') return 'Rest';
   if (typeof session.duration_minutes === 'number' && session.duration_minutes > 0) {
     return `${session.duration_minutes}min`;
   }
-  return '時間未定';
+  return 'Duration TBD';
 }
 
 export function formatSessionBrief(session: SessionDisplayInput): string {
-  if (session.type?.toLowerCase() === 'rest') return '休養';
+  if (session.type?.toLowerCase() === 'rest') return 'Rest';
   return `${formatSessionType(session.type)} ${formatSessionDuration(session)}`;
 }
 

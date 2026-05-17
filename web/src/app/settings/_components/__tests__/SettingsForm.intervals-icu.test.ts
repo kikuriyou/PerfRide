@@ -6,7 +6,7 @@ describe('intervalsIcuSaveMessage', () => {
   const base = { configured: true, athlete_id: '0', updated_at: '2026-05-02T00:00:00Z' };
 
   it('does not imply verification when save returns no verification result', () => {
-    expect(intervalsIcuSaveMessage({ ...base, verification: null })).toBe('保存しました');
+    expect(intervalsIcuSaveMessage({ ...base, verification: null })).toBe('Saved');
   });
 
   it('reports verified credentials', () => {
@@ -20,7 +20,7 @@ describe('intervalsIcuSaveMessage', () => {
           checked_at: '2026-05-02T00:00:00Z',
         },
       }),
-    ).toContain('成功');
+    ).toContain('succeeded');
   });
 
   it('reports failed verification separately from save', () => {
@@ -34,7 +34,7 @@ describe('intervalsIcuSaveMessage', () => {
           checked_at: '2026-05-02T00:00:00Z',
         },
       }),
-    ).toContain('保存しましたが');
+    ).toContain('Saved, but');
   });
 });
 
@@ -52,7 +52,7 @@ describe('intervalsIcuTestMessage', () => {
           checked_at: '2026-05-02T00:00:00Z',
         },
       }),
-    ).toContain('数分');
+    ).toContain('few minutes');
   });
 
   it('reports skipped checks without save wording', () => {
@@ -66,6 +66,6 @@ describe('intervalsIcuTestMessage', () => {
           checked_at: '2026-05-02T00:00:00Z',
         },
       }),
-    ).not.toContain('保存');
+    ).not.toContain('Saved');
   });
 });

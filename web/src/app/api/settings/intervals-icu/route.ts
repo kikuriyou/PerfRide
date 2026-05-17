@@ -40,7 +40,7 @@ export function resolveIntervalsIcuSaveError(error: unknown): { message: string;
   if (message.includes('KMS_KEY_NAME')) {
     return {
       message:
-        'KMS_KEY_NAME が未設定です。Intervals.icu API key を保存するには web/.env.local または Cloud Run env に KMS_KEY_NAME を設定してください。',
+        'KMS_KEY_NAME is not set. Set it in web/.env.local or Cloud Run env to save the Intervals.icu API key.',
       status: 503,
     };
   }
@@ -50,7 +50,7 @@ export function resolveIntervalsIcuSaveError(error: unknown): { message: string;
   ) {
     return {
       message:
-        'KMS 暗号化に失敗しました。KMS_KEY_NAME と web service account の Cloud KMS CryptoKey Encrypter 権限を確認してください。',
+        'KMS encryption failed. Check KMS_KEY_NAME and the Cloud KMS CryptoKey Encrypter role for the web service account.',
       status: 502,
     };
   }
@@ -115,19 +115,19 @@ export function intervalsIcuVerificationLogMessage(
   verification: IntervalsIcuVerification,
   action: 'save' | 'test' = 'save',
 ): string {
-  const prefix = action === 'save' ? 'Intervals.icu 設定を保存しました' : 'Intervals.icu 接続確認';
+  const prefix = action === 'save' ? 'Intervals.icu settings save' : 'Intervals.icu verification';
   if (verification.status === 'verified') {
     return action === 'save'
-      ? 'Intervals.icu 設定を保存し、接続確認に成功しました'
-      : 'Intervals.icu 接続確認に成功しました';
+      ? 'Intervals.icu settings saved and verified'
+      : 'Intervals.icu verification succeeded';
   }
   if (verification.status === 'missing') {
-    return `${prefix}は、API key を確認できませんでした: ${verification.message}`;
+    return `${prefix} could not verify the API key: ${verification.message}`;
   }
   if (verification.status === 'skipped') {
-    return `${prefix}は未実行です: ${verification.message}`;
+    return `${prefix} was skipped: ${verification.message}`;
   }
-  return `${prefix}に失敗しました: ${verification.message}`;
+  return `${prefix} failed: ${verification.message}`;
 }
 
 async function recordIntervalsIcuVerificationLog(

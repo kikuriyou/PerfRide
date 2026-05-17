@@ -9,12 +9,12 @@ describe('safety alert helpers', () => {
   it('selects high fatigue insight as the safety alert', () => {
     const items = [
       { type: 'trend', title: 'CTL trend', summary: 'steady', priority: 'medium' },
-      { type: 'high_fatigue', title: '疲労が高め', summary: 'TSB is low', priority: 'high' },
+      { type: 'high_fatigue', title: 'High fatigue', summary: 'TSB is low', priority: 'high' },
     ];
     const safety = selectSafetyAlert(items);
 
     expect(safety?.type).toBe('high_fatigue');
-    expect(safetyAlertMessage(safety!)).toBe('疲労が高めです。今日は回復を優先しましょう。');
+    expect(safetyAlertMessage(safety!)).toBe('Fatigue is elevated. Prioritize recovery today.');
     expect(remainingInsightItems(items, safety).map((item) => item.type)).toEqual(['trend']);
   });
 

@@ -27,6 +27,7 @@ export type {
   ReviewStatus,
   SessionStatus,
   TrainingSession,
+  UserLocale,
   WeekStatus,
   WeeklyPlanReviewPayload,
   WeeklyPlanReviewStore,

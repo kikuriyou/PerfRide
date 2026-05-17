@@ -25,10 +25,10 @@ interface WeeklyActionResponse {
 }
 
 const QUICK_OPTIONS = [
-  { label: 'もっと軽く', value: '強度をもっと軽くしてください' },
-  { label: 'もっとハードに', value: 'もっとハードなメニューにしてください' },
-  { label: '時間を短く', value: '時間を短くしてください' },
-  { label: '別の種類に', value: '別の種類のトレーニングに変更してください' },
+  { label: 'Lighter', value: 'Please make the workout easier.' },
+  { label: 'Harder', value: 'Please make the workout harder.' },
+  { label: 'Shorter', value: 'Please shorten the workout.' },
+  { label: 'Different type', value: 'Please change this to a different training type.' },
 ];
 
 const MAX_QUICK_MODIFICATIONS = 3;
@@ -223,31 +223,33 @@ function DailyChatView({ sessionId }: { sessionId: string }) {
 
     try {
       const data = await sendDailyToAgent(sessionId, 'modify', text, nextCount);
-      const agentText = data.message || data.error || '応答を取得できませんでした';
+      const agentText = data.message || data.error || 'Could not get a response';
       setMessages((prev) => [...prev, { role: 'agent', text: agentText }]);
       setAwaitingDecision(true);
     } catch {
-      setMessages((prev) => [...prev, { role: 'agent', text: '通信エラーが発生しました' }]);
+      setMessages((prev) => [...prev, { role: 'agent', text: 'Network error' }]);
     } finally {
       setLoading(false);
     }
   };
 
   if (done) {
-    return <ConfirmationView message="了解しました。更新されたメニューで進めます。" />;
+    return <ConfirmationView message="Updated workout accepted." />;
   }
 
   return (
     <div style={styles.container}>
-      <div style={styles.title}>メニューを変更</div>
+      <div style={styles.title}>Modify Workout</div>
       <div ref={listRef} style={styles.messageList}>
-        {messages.length === 0 && <div style={styles.agentBubble}>どのように変更しますか？</div>}
+        {messages.length === 0 && (
+          <div style={styles.agentBubble}>What would you like to change?</div>
+        )}
         {messages.map((msg, index) => (
           <div key={index} style={msg.role === 'agent' ? styles.agentBubble : styles.userBubble}>
             {msg.text}
           </div>
         ))}
-        {loading && <div style={{ ...styles.agentBubble, opacity: 0.6 }}>考え中...</div>}
+        {loading && <div style={{ ...styles.agentBubble, opacity: 0.6 }}>Thinking...</div>}
       </div>
       {awaitingDecision ? (
         <div style={styles.row}>
@@ -255,7 +257,7 @@ function DailyChatView({ sessionId }: { sessionId: string }) {
             OK
           </button>
           <button onClick={() => setAwaitingDecision(false)} style={styles.secondaryBtn}>
-            さらに変更
+            Modify again
           </button>
         </div>
       ) : (
@@ -287,7 +289,7 @@ function DailyChatView({ sessionId }: { sessionId: string }) {
               style={styles.input}
               value={inputValue}
               onChange={(event) => setInputValue(event.target.value)}
-              placeholder={freeTextOnly ? '直接ご希望を入力...' : '変更内容を入力...'}
+              placeholder={freeTextOnly ? 'Enter your request...' : 'Describe the change...'}
               disabled={loading}
             />
             <button
@@ -295,7 +297,7 @@ function DailyChatView({ sessionId }: { sessionId: string }) {
               style={{ ...styles.primaryBtn, opacity: loading ? 0.5 : 1 }}
               disabled={loading || !inputValue.trim()}
             >
-              送信
+              Send
             </button>
           </form>
         </>
@@ -311,7 +313,7 @@ function DailyDirectActionView({
   sessionId: string;
   action: 'approve' | 'rest';
 }) {
-  const [message, setMessage] = useState('送信中...');
+  const [message, setMessage] = useState('Sending...');
 
   useEffect(() => {
     let cancelled = false;
@@ -320,13 +322,11 @@ function DailyDirectActionView({
         if (cancelled) return;
         setMessage(
           data.error ||
-            (action === 'approve'
-              ? '了解しました！頑張りましょう！'
-              : '了解しました。休みましょう。'),
+            (action === 'approve' ? 'Accepted. Have a good ride.' : 'Accepted. Take the rest.'),
         );
       })
       .catch(() => {
-        if (!cancelled) setMessage('通信エラーが発生しました');
+        if (!cancelled) setMessage('Network error');
       });
     return () => {
       cancelled = true;
@@ -421,22 +421,22 @@ function WeeklyReviewView({ reviewId, action }: { reviewId: string; action: Week
   }, [review]);
 
   if (status === 'loading') {
-    return <ConfirmationView message="読み込み中..." />;
+    return <ConfirmationView message="Loading..." />;
   }
   if (status === 'error') {
     return <ConfirmationView message={message} />;
   }
   if (!review) {
-    return <ConfirmationView message="review が見つかりません。" />;
+    return <ConfirmationView message="Review not found." />;
   }
   if (status === 'done') {
-    return <ConfirmationView message={message || '処理が完了しました。'} />;
+    return <ConfirmationView message={message || 'Done.'} />;
   }
 
   return (
     <div style={styles.container}>
       <div style={styles.card}>
-        <div style={styles.title}>今週のプラン案</div>
+        <div style={styles.title}>Weekly Plan Draft</div>
         <div style={{ marginTop: '0.75rem', fontSize: '0.95rem' }}>{summary}</div>
         <div style={{ marginTop: '0.75rem', fontSize: '0.85rem', opacity: 0.7 }}>
           week_start: {review.week_start} / phase: {review.draft.phase} / target_tss:{' '}
@@ -454,11 +454,11 @@ function WeeklyReviewView({ reviewId, action }: { reviewId: string; action: Week
       </div>
 
       <div style={styles.card}>
-        <div style={{ fontWeight: 600, marginBottom: '0.75rem' }}>変更メモ</div>
+        <div style={{ fontWeight: 600, marginBottom: '0.75rem' }}>Change Notes</div>
         <textarea
           value={modifyText}
           onChange={(event) => setModifyText(event.target.value)}
-          placeholder="例: 木曜は 45 分まで、土曜は外で走りたい"
+          placeholder="Example: keep Thursday under 45 minutes; ride outdoors on Saturday"
           rows={4}
           style={{ ...styles.input, resize: 'vertical' }}
         />
@@ -468,25 +468,25 @@ function WeeklyReviewView({ reviewId, action }: { reviewId: string; action: Week
             style={styles.primaryBtn}
             disabled={status === 'submitting'}
           >
-            承認
+            Approve
           </button>
           <button
             onClick={() => submit('modify', modifyText)}
             style={styles.secondaryBtn}
             disabled={status === 'submitting' || !modifyText.trim()}
           >
-            修正して再生成
+            Modify and regenerate
           </button>
           <button
             onClick={() => submit('dismiss')}
             style={styles.secondaryBtn}
             disabled={status === 'submitting'}
           >
-            見送る
+            Dismiss
           </button>
         </div>
         {status === 'submitting' && (
-          <div style={{ marginTop: '0.75rem', fontSize: '0.85rem', opacity: 0.7 }}>送信中...</div>
+          <div style={{ marginTop: '0.75rem', fontSize: '0.85rem', opacity: 0.7 }}>Sending...</div>
         )}
         {message && (
           <div style={{ marginTop: '0.75rem', fontSize: '0.85rem', opacity: 0.8 }}>{message}</div>
@@ -530,7 +530,7 @@ function RespondPageInner() {
   }
 
   if (resolved.kind === 'invalid') {
-    return <ConfirmationView message="session_id がありません。" />;
+    return <ConfirmationView message="session_id is missing." />;
   }
 
   if (action === 'approve' || action === 'rest') {
@@ -542,7 +542,7 @@ function RespondPageInner() {
 
 export default function RespondPage() {
   return (
-    <Suspense fallback={<ConfirmationView message="読み込み中..." />}>
+    <Suspense fallback={<ConfirmationView message="Loading..." />}>
       <RespondPageInner />
     </Suspense>
   );

@@ -72,7 +72,7 @@ async def test_coach_daily_uses_trigger_and_preserves_plan_context_key():
     ):
         response = await recommend_training(request)
 
-    mock_build_agent.assert_called_once_with("hybrid", True, trigger="coach_daily")
+    mock_build_agent.assert_called_once_with("hybrid", True, trigger="coach_daily", locale="ja")
     assert response.plan_context_key == "coach:2026-04-06:3:approved"
 
 

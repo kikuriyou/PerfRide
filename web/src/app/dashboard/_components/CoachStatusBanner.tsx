@@ -85,7 +85,7 @@ export default function CoachStatusBanner() {
       )}
       <button
         type="button"
-        aria-label="通知を閉じる"
+        aria-label="Dismiss notification"
         onClick={dismiss}
         style={{
           border: 'none',

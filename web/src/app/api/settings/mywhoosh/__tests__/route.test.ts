@@ -35,7 +35,7 @@ describe('MyWhoosh verification operation logs', () => {
     };
 
     expect(myWhooshVerificationLogStatus(verification)).toBe('error');
-    expect(myWhooshVerificationLogMessage(verification)).toContain('別デバイス');
+    expect(myWhooshVerificationLogMessage(verification)).toContain('another device');
     expect(myWhooshVerificationLogMessage(verification)).toContain('already logged in');
   });
 });
