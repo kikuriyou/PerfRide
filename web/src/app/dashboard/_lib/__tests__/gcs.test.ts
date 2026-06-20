@@ -56,6 +56,23 @@ describe('computeFitnessMetrics', () => {
     expect(result.activities[0].tss_estimated).toBe(100);
   });
 
+  it('keeps estimated TSS finite when no-power elevation data is missing', () => {
+    const activities: StravaActivity[] = [
+      makeStravaActivity({
+        id: 1,
+        average_watts: undefined,
+        weighted_average_watts: undefined,
+        total_elevation_gain: undefined as unknown as number,
+      }),
+    ];
+    const result = computeFitnessMetrics(activities, 200);
+    expect(result.activities[0].tss_estimated).toBe(50);
+    expect(result.activities[0].total_elevation_gain_m).toBe(0);
+    expect(Number.isFinite(result.fitness_metrics.ctl)).toBe(true);
+    expect(Number.isFinite(result.fitness_metrics.atl)).toBe(true);
+    expect(Number.isFinite(result.fitness_metrics.tsb)).toBe(true);
+  });
+
   it('computes intensity_factor from weighted_average_watts / FTP', () => {
     const activities: StravaActivity[] = [
       makeStravaActivity({

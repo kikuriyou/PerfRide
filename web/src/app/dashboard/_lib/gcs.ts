@@ -7,6 +7,7 @@ import { StravaActivity } from '@/lib/strava';
 import { JST_OFFSET_MS, jstTimestamp } from '@/lib/jst-clock';
 import type { GCSUserId } from '@/lib/gcs-settings';
 import { userObjectPath } from '@/lib/gcs-settings';
+import { estimateActivityTss } from '@/lib/training-stress';
 
 export interface ProcessedActivity {
   id: number;
@@ -51,18 +52,20 @@ interface SchemaField {
 const CTL_DECAY = 42;
 const ATL_DECAY = 7;
 
-function estimateTSS(activity: StravaActivity, ftp: number): number {
-  const hours = activity.moving_time / 3600;
-  const userFTP = ftp || 200;
+function finiteNumber(value: unknown, fallback = 0): number {
+  const numeric =
+    typeof value === 'number'
+      ? value
+      : typeof value === 'string' && value.trim() !== ''
+        ? Number(value)
+        : NaN;
 
-  if (activity.average_watts) {
-    const intensityFactor = activity.average_watts / userFTP;
-    return hours * intensityFactor * intensityFactor * 100;
-  }
+  return Number.isFinite(numeric) ? numeric : fallback;
+}
 
-  const elevationFactor = 1 + activity.total_elevation_gain / (activity.distance / 1000) / 50;
-  const baseTSS = hours * 50 * elevationFactor;
-  return Math.min(baseTSS, 300);
+function nullableFiniteNumber(value: unknown): number | null {
+  const numeric = finiteNumber(value, NaN);
+  return Number.isFinite(numeric) ? numeric : null;
 }
 
 function weekStartMonday(reference: Date): Date {
@@ -119,8 +122,12 @@ export function computeFitnessMetrics(
     .sort((a, b) => jstTimestamp(a.start_date_local) - jstTimestamp(b.start_date_local));
 
   const processedActivities: ProcessedActivity[] = rides.map((activity) => {
-    const tss = estimateTSS(activity, ftp);
-    const npWatts = activity.weighted_average_watts || activity.average_watts;
+    const tss = estimateActivityTss(activity, ftp);
+    const distance = finiteNumber(activity.distance);
+    const movingTime = finiteNumber(activity.moving_time);
+    const elevationGain = finiteNumber(activity.total_elevation_gain);
+    const averageSpeed = finiteNumber(activity.average_speed);
+    const npWatts = nullableFiniteNumber(activity.weighted_average_watts || activity.average_watts);
     const intensityFactor = npWatts ? Math.round((npWatts / userFTP) * 100) / 100 : null;
     return {
       id: activity.id,
@@ -128,15 +135,15 @@ export function computeFitnessMetrics(
       type: activity.type,
       sport_type: activity.sport_type,
       start_date_local: activity.start_date_local,
-      distance_km: Math.round((activity.distance / 1000) * 10) / 10,
-      moving_time_hours: Math.round((activity.moving_time / 3600) * 100) / 100,
-      total_elevation_gain_m: Math.round(activity.total_elevation_gain),
-      average_speed_kmh: Math.round(activity.average_speed * 3.6 * 10) / 10,
-      average_watts: activity.average_watts || null,
-      weighted_average_watts: activity.weighted_average_watts || null,
-      average_heartrate: activity.average_heartrate || null,
-      max_heartrate: activity.max_heartrate || null,
-      suffer_score: activity.suffer_score || null,
+      distance_km: Math.round((distance / 1000) * 10) / 10,
+      moving_time_hours: Math.round((movingTime / 3600) * 100) / 100,
+      total_elevation_gain_m: Math.round(elevationGain),
+      average_speed_kmh: Math.round(averageSpeed * 3.6 * 10) / 10,
+      average_watts: nullableFiniteNumber(activity.average_watts),
+      weighted_average_watts: nullableFiniteNumber(activity.weighted_average_watts),
+      average_heartrate: nullableFiniteNumber(activity.average_heartrate),
+      max_heartrate: nullableFiniteNumber(activity.max_heartrate),
+      suffer_score: nullableFiniteNumber(activity.suffer_score),
       tss_estimated: Math.round(tss),
       intensity_factor: intensityFactor,
     };

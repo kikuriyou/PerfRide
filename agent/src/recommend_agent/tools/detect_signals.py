@@ -41,7 +41,9 @@ def _parse_activity_date(act: dict) -> datetime | None:
 
 
 def _check_tsb_critical(metrics: dict) -> dict:
-    tsb = metrics.get("tsb", 0)
+    tsb = metrics.get("tsb")
+    if not isinstance(tsb, (int, float)):
+        tsb = 0
     return {
         "type": "tsb_critical",
         "triggered": tsb <= -25,
@@ -236,14 +238,22 @@ def detect_signals(
             a for a in activities if (date := _parse_activity_date(a)) is not None and date <= now
         ]
 
-    all_signals = [
-        _check_tsb_critical(metrics),
-        _check_weekly_tss_spike(activities, now),
-        _check_recent_intensity_high(activities, now),
-        _check_long_gap(activities, now),
-        _check_new_pr(activities, now),
-        _check_weekly_tss_front_loaded(activities, now),
+    checks = [
+        lambda: _check_tsb_critical(metrics),
+        lambda: _check_weekly_tss_spike(activities, now),
+        lambda: _check_recent_intensity_high(activities, now),
+        lambda: _check_long_gap(activities, now),
+        lambda: _check_new_pr(activities, now),
+        lambda: _check_weekly_tss_front_loaded(activities, now),
     ]
+
+    all_signals: list[dict] = []
+    for check in checks:
+        try:
+            all_signals.append(check())
+        except Exception:
+            # 単一ルールの失敗で推薦/insight 全体が 500 にならないよう劣化させる。
+            continue
 
     triggered = [s for s in all_signals if s["triggered"]]
 
