@@ -60,3 +60,6 @@ docker-compose.yml
 # Local AI context (contains project-specific config)
 .claude/context/local-env.md
 .taskflow/active-task.json
+
+# Claude Code worktrees (local working dirs, not part of the repo)
+.claude/worktrees/
